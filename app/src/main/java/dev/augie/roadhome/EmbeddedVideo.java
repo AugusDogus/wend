@@ -219,18 +219,18 @@ final class EmbeddedVideo extends FrameLayout {
 
     private void applyBounds(VideoSurface.Bounds bounds) {
         if (player == null || playerSurface == null || (state != State.PREPARING && state != State.SHOWN)) return;
-        if (bounds != null && sameBounds(bounds, previousBounds)) {
+        if (bounds != null && sameBounds(bounds, previousBounds)
+                && (state == State.SHOWN || bounds.advances(previousBounds))) {
             float scale = Math.min(getWidth() / bounds.width, getHeight() / bounds.height);
-            player.setScaleX(scale);
-            player.setScaleY(scale);
-            player.setTranslationX((getWidth() - bounds.width * scale) / 2 - bounds.left * scale);
-            player.setTranslationY((getHeight() - bounds.height * scale) / 2 - bounds.top * scale);
+            float x = (getWidth() - bounds.width * scale) / 2 - bounds.left * scale;
+            float y = (getHeight() - bounds.height * scale) / 2 - bounds.top * scale;
             Rect crop = new Rect(Math.round(bounds.left), Math.round(bounds.top),
                     Math.round(bounds.left + bounds.width), Math.round(bounds.top + bounds.height));
             player.setClipBounds(crop);
             try {
-                // View clipping alone does not crop ActivityView's separate SurfaceFlinger tree.
-                playerSurface.show(crop);
+                // Scaling the View and revealing the surface use different frame schedules.
+                // Commit scale, crop, position, input, and visibility atomically on the root.
+                playerSurface.show(scale, x, y, crop);
             } catch (ReflectiveOperationException | RuntimeException error) {
                 fail(error);
                 return;

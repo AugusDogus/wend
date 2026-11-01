@@ -124,8 +124,13 @@ final class ActivityViewSurface {
     }
 
     void show(Rect bounds) throws ReflectiveOperationException {
+        show(1, 0, 0, bounds);
+    }
+
+    /** Reveal geometry and pixels together, without waiting for a separate View render frame. */
+    void show(float scale, float x, float y, Rect bounds) throws ReflectiveOperationException {
         try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
-            crop.invoke(transaction, surface, bounds);
+            transform(transaction, scale, x, y, bounds);
             touchableRegion.set(bounds);
             updateInput(transaction);
             transaction.setAlpha(surface, 1).apply();

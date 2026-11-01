@@ -86,4 +86,25 @@ public class VideoSurfaceTest {
         scene.window.parent = scene.video.id;
         assertNull(scene.find());
     }
+
+    @Test public void retainedDecoderBufferDoesNotCountAsPlayingUntilItsFramesAdvance() {
+        Scene scene = new Scene();
+        scene.video.frame = 50;
+        VideoSurface.Bounds previous = scene.find();
+        assertFalse(scene.find().advances(previous));
+        scene.video.frame = 51;
+        assertTrue(scene.find().advances(previous));
+        scene.video.id = 5;
+        assertFalse(scene.find().advances(previous));
+    }
+
+    @Test public void replacementDecoderWinsOverRetainedBufferAtTheSameSize() {
+        Scene scene = new Scene();
+        VideoSurface.Layer replacement = scene.layer(5, scene.video.parent, scene.video.name);
+        replacement.x = scene.video.x; replacement.y = scene.video.y;
+        replacement.width = scene.video.width; replacement.height = scene.video.height;
+        replacement.buffered = true;
+        replacement.frame = 1;
+        assertEquals(5, scene.find().layerId);
+    }
 }

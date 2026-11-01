@@ -18,8 +18,15 @@ final class VideoSurface {
 
     static final class Bounds {
         final float left, top, width, height;
-        Bounds(float left, float top, float width, float height) {
+        final int layerId;
+        final long frame;
+        Bounds(float left, float top, float width, float height, int layerId, long frame) {
             this.left = left; this.top = top; this.width = width; this.height = height;
+            this.layerId = layerId; this.frame = frame;
+        }
+
+        boolean advances(Bounds previous) {
+            return previous != null && layerId == previous.layerId && frame > previous.frame;
         }
     }
 
@@ -28,6 +35,7 @@ final class VideoSurface {
         String name = "";
         float x, y, sx = 1, sy = 1, crossX, crossY;
         boolean buffered, protectedContent;
+        long frame;
     }
 
     private VideoSurface() { }
@@ -66,6 +74,7 @@ final class VideoSurface {
                     case 25: layer.parent = proto.readInt(INTEGER | field); break;
                     case 27: layer.buffered = true; break;
                     case 36: layer.protectedContent = proto.readBoolean(BOOLEAN | field); break;
+                    case 37: layer.frame = proto.readLong(0x10400000025L); break;
                     default: break;
                 }
             }
@@ -127,13 +136,15 @@ final class VideoSurface {
             Layer host = layers.get(root.parent);
             if (host == null || !host.name.startsWith("SurfaceView - " + BuildConfig.APPLICATION_ID + "/")) continue;
             Bounds bounds = new Bounds((video.x - root.x) / root.sx, (video.y - root.y) / root.sy,
-                    video.width * video.sx / root.sx, video.height * video.sy / root.sy);
+                    video.width * video.sx / root.sx, video.height * video.sy / root.sy, video.id, video.frame);
             if (!Float.isFinite(bounds.left) || !Float.isFinite(bounds.top)
                     || !Float.isFinite(bounds.width) || !Float.isFinite(bounds.height)
                     || bounds.width < 100 || bounds.height < 50 || bounds.left < -1 || bounds.top < -1
                     || bounds.left + bounds.width > displayWidth + 1
                     || bounds.top + bounds.height > displayHeight + 1) continue;
-            if (largest == null || bounds.width * bounds.height > largest.width * largest.height) largest = bounds;
+            float area = bounds.width * bounds.height;
+            if (largest == null || area > largest.width * largest.height
+                    || (area == largest.width * largest.height && bounds.layerId > largest.layerId)) largest = bounds;
         }
         return largest;
     }

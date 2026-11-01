@@ -65,3 +65,29 @@ Build `f5c5c34` and its matching decoration overlay were installed on the PX6 on
 Maps fullscreen/Home ran on hardware; an initial stale map surface extending into
 the sidebar cleared after restarting Maps. The final Home screenshot showed the
 correct panel bounds. This deployment did not measure YouTube animation performance.
+
+
+## Return artifact correction
+
+A later fullscreen-layout recording exposed a large video frame over Maps when
+returning Home. The View transform was queued for rendering while a separate
+SurfaceControl transaction immediately revealed the root. Preview placement now
+commits scale, position, crop, input geometry, and alpha in one compositor
+transaction. The ActivityView itself remains unscaled. The new recording shows
+no oversized video during the return, and Maps' layer button remained usable
+beside playback.
+
+SurfaceFlinger also retained an older decoder surface after creating its
+replacement. Equal-area candidates now prefer the newer layer, and initial
+reveal requires frame-number advancement on that same layer, in addition to
+stable geometry. A retained buffer alone is not proof of current playback.
+Once shown, a temporarily unchanged frame does not hide the preview.
+
+Release build, lint, and 48 tests pass. Two added tests cover retained frames
+and replacement decoder selection. The final real-app recording is locally at
+`build/preview-handoff/ready-frames.mp4`. No oversized frame or second black flash
+was observed after reveal in its two Home returns. The initial black preview
+remains: cropped-frame analysis measured 1.98 seconds on the first return and
+0.95 seconds on the repeat. This correction does not provide a seamless video
+return animation. Emulator recording does not establish hardware frame rate.
+The signed PX6 APK is prepared, but these changes have not been deployed there.
