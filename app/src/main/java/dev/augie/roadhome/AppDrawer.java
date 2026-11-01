@@ -126,33 +126,49 @@ final class AppDrawer {
     }
 
     static void open(Activity activity, String packageName) {
+        if (EmbeddedVideo.PACKAGE.equals(packageName) && activity instanceof MainActivity
+                && ((MainActivity) activity).openVideoFullscreen(() -> openDirect(activity, packageName))) return;
+        openDirect(activity, packageName);
+    }
+
+    private static void openDirect(Activity activity, String packageName) {
         if (EmbeddedMaps.PACKAGE.equals(packageName) && activity instanceof MainActivity) {
             ((MainActivity) activity).openMapsFullscreen();
             return;
         }
+        MainActivity home = activity instanceof MainActivity ? (MainActivity) activity : null;
+        if (home != null) home.externalAppOpening();
+        if (openExternal(activity, packageName)) {
+            if (home != null && EmbeddedVideo.PACKAGE.equals(packageName)) home.videoOpened();
+        } else if (home != null) home.externalAppFailed();
+    }
+
+    private static boolean openExternal(Activity activity, String packageName) {
         if (EmbeddedVideo.PACKAGE.equals(packageName)) {
             try {
-                if (VideoTask.openFullscreen(activity)) return;
+                if (VideoTask.openFullscreen(activity)) return true;
             } catch (ReflectiveOperationException | RuntimeException error) {
                 android.util.Log.e("RoadHome", "Could not restore the existing video task", error);
                 Toast.makeText(activity, "The video could not be restored. Open it from Recents; existing tasks were left intact.",
                         Toast.LENGTH_LONG).show();
-                return;
+                return false;
             }
         }
         Intent launch = activity.getPackageManager().getLaunchIntentForPackage(packageName);
         if (launch == null) {
             Toast.makeText(activity, "This app is not installed or cannot be opened.", Toast.LENGTH_LONG).show();
-            return;
+            return false;
         }
         try {
             ActivityOptions options = ActivityOptions.makeBasic();
             options.setLaunchDisplayId(activity.getWindowManager().getDefaultDisplay().getDisplayId());
             activity.startActivity(launch, options.toBundle());
+            return true;
         }
         catch (ActivityNotFoundException | SecurityException error) {
             android.util.Log.e("RoadHome", "Cannot launch " + packageName, error);
             Toast.makeText(activity, "Android could not open this app. Try another app.", Toast.LENGTH_LONG).show();
+            return false;
         }
     }
 

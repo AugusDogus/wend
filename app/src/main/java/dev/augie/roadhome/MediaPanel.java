@@ -94,6 +94,10 @@ final class MediaPanel extends LinearLayout {
     }
 
     String musicPackage() { return controller == null ? "com.spotify.music" : controller.getPackageName(); }
+    boolean openVideoFullscreen(Runnable open) { return video.openFullscreen(open); }
+    void resumeVideo() { video.resume(); }
+    void suspendVideo() { video.suspend(); }
+    void videoOpened() { video.fullscreenOpened(); }
 
     void start() {
         if (sessions == null) {

@@ -99,6 +99,12 @@ public final class MainActivity extends Activity {
 
     private void openMusic() { AppDrawer.open(this, media.musicPackage()); }
     void openMapsFullscreen() { maps.openFullscreen(); }
+    boolean openVideoFullscreen(Runnable open) { return media.openVideoFullscreen(open); }
+    // A virtual display can keep Home started behind another fullscreen app on Android 10.
+    // Remove native Maps overlays explicitly instead of relying on onStop.
+    void externalAppOpening() { maps.suspend(); media.suspendVideo(); }
+    void externalAppFailed() { maps.resume(); media.resumeVideo(); }
+    void videoOpened() { media.videoOpened(); }
 
     private void arrangePanels() {
         content.removeAllViews();
@@ -161,7 +167,8 @@ public final class MainActivity extends Activity {
         hideSystemBars();
         // Moving an embedded task fullscreen can leave Home started. Its return intent
         // must restore Maps even when Android does not deliver another onStart.
-        maps.launch();
+        maps.resume();
+        media.resumeVideo();
     }
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);

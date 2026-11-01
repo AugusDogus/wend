@@ -26,6 +26,7 @@ final class EmbeddedVideo extends FrameLayout {
     private ActivityView player;
     private ActivityViewSurface playerSurface;
     private final Activity host;
+    private final VideoExpansion expansion;
     private final TextView status;
     private final ImageView thumbnail;
     private final Point displaySize = new Point();
@@ -40,6 +41,7 @@ final class EmbeddedVideo extends FrameLayout {
     EmbeddedVideo(Activity context) {
         super(context);
         host = context;
+        expansion = new VideoExpansion(context);
         context.getSystemService(WindowManager.class).getDefaultDisplay().getRealSize(displaySize);
         setBackgroundColor(android.graphics.Color.BLACK);
         setClipChildren(true);
@@ -69,6 +71,7 @@ final class EmbeddedVideo extends FrameLayout {
             thumbnail.setImageDrawable(new Ui.Symbol(Ui.Icon.PLAY, Ui.MUTED));
         }
         thumbnail.setVisibility(presentation == VideoCardState.THUMBNAIL ? VISIBLE : GONE);
+        if (expansion.active()) return;
         if (presentation != VideoCardState.PLAYING) {
             cancelPreparation();
             if (state == State.SHOWN) state = State.READY;
@@ -82,13 +85,58 @@ final class EmbeddedVideo extends FrameLayout {
         maybeLaunch();
     }
 
-    void resume() { hostActive = true; maybeLaunch(); }
+    void resume() {
+        hostActive = true;
+        if (expansion.active()) {
+            expansion.cancel();
+            state = State.READY;
+            if (presentation != VideoCardState.PLAYING) {
+                coverPlayer();
+                status.setVisibility(GONE);
+                setVisibility(presentation == VideoCardState.HIDDEN ? GONE : VISIBLE);
+            }
+        }
+        maybeLaunch();
+    }
 
     void suspend() {
         hostActive = false;
+        expansion.cancel();
         cancelPreparation();
         if (state == State.SHOWN) state = State.READY;
-        coverPlayer();
+        if (!expansion.handingOff()) coverPlayer();
+    }
+
+    boolean openFullscreen(Runnable open) {
+        if (expansion.active()) return true;
+        if (state != State.SHOWN || playerSurface == null || previousBounds == null
+                || presentation != VideoCardState.PLAYING || !hostActive) return false;
+        cancelPreparation();
+        expansion.open(this, playerSurface, previousBounds, displaySize.x, displaySize.y, () -> {
+            state = State.READY;
+            open.run();
+            // If Android rejects the launch, restore the preview instead of leaving a hidden surface.
+            post(() -> { if (hostActive) maybeLaunch(); });
+        });
+        return true;
+    }
+
+    void fullscreenOpened() {
+        // Run after the expansion restores its surface parent. The task is already on display 0.
+        // Removing the now-empty virtual display clears Android 10's stale input-window entry.
+        post(() -> {
+            if (hostActive || state == State.CLOSED) return;
+            cancelPreparation();
+            if (player != null) {
+                player.setCallback(null);
+                player.release();
+                removeView(player);
+                player = null;
+                playerSurface = null;
+            }
+            previousBounds = null;
+            state = State.EMPTY;
+        });
     }
 
     private void cancelPreparation() {
@@ -105,6 +153,7 @@ final class EmbeddedVideo extends FrameLayout {
     }
 
     private void maybeLaunch() {
+        if (expansion.active()) return;
         if (!hostActive || presentation != VideoCardState.PLAYING) return;
         if (state == State.EMPTY) {
             state = State.WAITING;
@@ -124,6 +173,7 @@ final class EmbeddedVideo extends FrameLayout {
                         } catch (ReflectiveOperationException | RuntimeException error) { fail(error); }
                     }
                     @Override public void onActivityViewDestroyed(ActivityView view) {
+                        expansion.cancel();
                         playerSurface = null;
                         state = State.CLOSED;
                     }
@@ -218,6 +268,7 @@ final class EmbeddedVideo extends FrameLayout {
 
     void release() {
         hostActive = false;
+        expansion.cancel();
         cancelPreparation();
         geometryReader.shutdownNow();
         if (player != null) {

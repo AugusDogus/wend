@@ -6,6 +6,8 @@ import android.graphics.Region;
 import android.os.Binder;
 import android.os.Process;
 import android.view.SurfaceControl;
+import android.view.SurfaceView;
+import android.view.View;
 import android.view.WindowManager;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -13,7 +15,12 @@ import java.lang.reflect.Method;
 /** Android 10 ActivityView's own container surface, never a foreign app's surface. */
 final class ActivityViewSurface {
     private final SurfaceControl surface;
+    private final SurfaceView parent;
     private final Method crop;
+    private final Method matrix;
+    private final Method position;
+    private final Method reparent;
+    private final Method surfaceControl;
     private final Method setInput;
     private final Object portal;
     private final Region touchableRegion;
@@ -26,7 +33,19 @@ final class ActivityViewSurface {
             throw new IllegalStateException("ActivityView has no initialized container surface");
         }
         surface = (SurfaceControl) value;
+        Field parentField = ActivityView.class.getDeclaredField("mSurfaceView");
+        parentField.setAccessible(true);
+        Object parentValue = parentField.get(view);
+        if (!(parentValue instanceof SurfaceView)) {
+            throw new IllegalStateException("ActivityView has no surface parent");
+        }
+        parent = (SurfaceView) parentValue;
         crop = SurfaceControl.Transaction.class.getMethod("setWindowCrop", SurfaceControl.class, Rect.class);
+        matrix = SurfaceControl.Transaction.class.getMethod("setMatrix", SurfaceControl.class,
+                float.class, float.class, float.class, float.class);
+        position = SurfaceControl.Transaction.class.getMethod("setPosition", SurfaceControl.class, float.class, float.class);
+        reparent = SurfaceControl.Transaction.class.getMethod("reparent", SurfaceControl.class, SurfaceControl.class);
+        surfaceControl = SurfaceView.class.getMethod("getSurfaceControl");
         Class<?> handle = Class.forName("android.view.InputWindowHandle");
         portal = handle.getConstructor(Class.forName("android.view.InputApplicationHandle"),
                 Class.forName("android.view.IWindow"), int.class).newInstance(null, null, -1);
@@ -44,6 +63,55 @@ final class ActivityViewSurface {
         if (!(region instanceof Region)) throw new IllegalStateException("Video input portal has no touch region");
         touchableRegion = (Region) region;
         setInput = SurfaceControl.Transaction.class.getMethod("setInputWindowInfo", SurfaceControl.class, handle);
+    }
+
+    /** Temporarily puts our live display above Maps; disables its input portal during motion. */
+    void attach(View destination, float scale, float x, float y, Rect bounds)
+            throws ReflectiveOperationException {
+        try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+            Object root = View.class.getMethod("getViewRootImpl").invoke(destination);
+            Object target = Class.forName("android.view.ViewRootImpl").getMethod("getSurfaceControl").invoke(root);
+            if (!(target instanceof SurfaceControl)) throw new IllegalStateException("Video overlay has no surface");
+            reparent.invoke(transaction, surface, target);
+            SurfaceControl.Transaction.class.getMethod("setLayer", SurfaceControl.class, int.class)
+                    .invoke(transaction, surface, 1);
+            touchableRegion.setEmpty();
+            updateInput(transaction);
+            transform(transaction, scale, x, y, bounds);
+            transaction.setAlpha(surface, 1).apply();
+        }
+    }
+
+    void transform(float scale, float x, float y, Rect bounds) throws ReflectiveOperationException {
+        try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+            transform(transaction, scale, x, y, bounds);
+            transaction.setAlpha(surface, 1).apply();
+        }
+    }
+
+    private void transform(SurfaceControl.Transaction transaction, float scale, float x, float y, Rect bounds)
+            throws ReflectiveOperationException {
+        matrix.invoke(transaction, surface, scale, 0f, 0f, scale);
+        position.invoke(transaction, surface, x, y);
+        crop.invoke(transaction, surface, bounds);
+    }
+
+    void restore() throws ReflectiveOperationException {
+        try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+            reparent(transaction, parent);
+            SurfaceControl.Transaction.class.getMethod("setLayer", SurfaceControl.class, int.class)
+                    .invoke(transaction, surface, 0);
+            matrix.invoke(transaction, surface, 1f, 0f, 0f, 1f);
+            position.invoke(transaction, surface, 0f, 0f);
+            transaction.setAlpha(surface, 0).apply();
+        }
+    }
+
+    private void reparent(SurfaceControl.Transaction transaction, SurfaceView destination)
+            throws ReflectiveOperationException {
+        Object target = surfaceControl.invoke(destination);
+        if (!(target instanceof SurfaceControl)) throw new IllegalStateException("Video animation surface unavailable");
+        reparent.invoke(transaction, surface, target);
     }
 
     void hide() {
