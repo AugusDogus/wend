@@ -127,3 +127,23 @@ remained usable and tiles rendered at both sizes. Maps task 42, ActivityRecord
 The paused YouTube thumbnail filled the entire 320 × 180 card after returning
 Home. The map display remained ON while YouTube was foregrounded. This was a
 stationary route preview, not a live-guidance or vehicle-audio test.
+
+## Motion follow-up
+
+Later testing reproduced stale-sized frames and black tiles after the emulator's
+long-running Maps session. The earlier lifecycle trial did not establish a
+complete renderer fix. Relaunching Maps restored its tiles for motion testing;
+that is test setup, not a navigation-preserving workaround shipped in the app.
+
+The new Maps transition uses an in-memory cover to animate panel bounds while
+moving the task once. Native window animation alone exposed the resize. The
+cover now waits for the window and tile buffers to match the new width in three
+consecutive queries, then crossfades away. Ordinary queued animation frames do
+not prevent readiness. A 900 ms deadline removes the cover even if the renderer
+stalls. This limits visual disruption; it does not repair stalled Maps rendering.
+
+Final motion validation: 28 tests pass per variant, with release assembly and
+lint passing. Recorded two fullscreen/Home pairs with real Maps; task 54 was
+reused throughout. WindowManager showed no transition overlay afterward, and
+neither pair reached the frame-readiness deadline. The recording preserves the
+actual motion and layout change, with no claim of head-unit performance.

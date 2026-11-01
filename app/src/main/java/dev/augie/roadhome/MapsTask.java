@@ -68,7 +68,7 @@ final class MapsTask {
     }
 
     void move(Task task, int displayId) throws ReflectiveOperationException {
-        ActivityOptions options = ActivityOptions.makeBasic();
+        ActivityOptions options = ActivityOptions.makeCustomAnimation(host, 0, 0);
         options.setLaunchDisplayId(displayId);
         ActivityOptions.class.getMethod("setLaunchWindowingMode", int.class).invoke(options, 1);
         Object result = api().getMethod("startActivityFromRecents", int.class, Bundle.class)

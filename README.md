@@ -134,3 +134,18 @@ so the system Home key continues to work. A late task-removal callback now check
 for a surviving Maps task before covering the panel with a closed-app message.
 These changes supersede the earlier map-display destruction behavior above.
 They have not been installed on the PX6. See the [real-app validation notes](task-fixture/GOOGLE-APPS.md).
+
+### Maps transitions
+
+Maps expands from its panel and contracts back with a short ease-out curve
+(260 ms outward, 220 ms inward). A temporary, touch-blocking overlay animates an
+in-memory screenshot while the existing task moves once underneath. Only the
+sidebar-facing corners are rounded. The cover crossfades away after both Maps
+buffers reach the destination width, with a 900 ms maximum wait. This observes
+buffer geometry, not whether individual map tiles have finished loading.
+
+The Android 10 screenshot overload excludes secure content. Captures are never
+saved or transmitted. The platform-signed app declares SYSTEM_ALERT_WINDOW for
+this brief overlay, releases it on completion/destruction, and skips the animation
+when Android animators are disabled. Capture/window failures fall back to the
+normal task move. This change is emulator-tested, not yet installed on the PX6.

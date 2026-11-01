@@ -17,7 +17,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/** Owns one Android 10 virtual display. No polling, signature bypass, or root shell. */
+/** Owns the Android 10 map display and its task transitions, without a root shell. */
 final class EmbeddedMaps extends FrameLayout {
     static final String PACKAGE = BuildConfig.MAPS_PACKAGE;
     private enum State { WAITING, READY, CLOSED }
@@ -25,6 +25,7 @@ final class EmbeddedMaps extends FrameLayout {
     private ActivityView activityView;
     private MapDisplayLifecycle displayLifecycle;
     private final MapsTask tasks;
+    private final MapTransition transition;
     private boolean hostActive;
     private boolean launching;
     private final LinearLayout status;
@@ -35,6 +36,7 @@ final class EmbeddedMaps extends FrameLayout {
     EmbeddedMaps(Activity context) {
         super(context);
         tasks = new MapsTask(context);
+        transition = new MapTransition(context, this);
         setBackground(Ui.surface(context, Ui.PANEL, 10));
         status = new LinearLayout(context);
         status.setOrientation(LinearLayout.VERTICAL);
@@ -97,12 +99,20 @@ final class EmbeddedMaps extends FrameLayout {
     }
 
     void launch() {
-        if (!hostActive || state != State.READY || activityView == null || launching) return;
+        if (!hostActive || state != State.READY || activityView == null) return;
+        cancelPendingTransition();
+        if (launching) return;
         openOnDisplay(activityView.getVirtualDisplayId());
     }
 
     void resume() { hostActive = true; launch(); }
-    void suspend() { hostActive = false; }
+    void suspend() { hostActive = false; cancelPendingTransition(); }
+
+    private void cancelPendingTransition() {
+        if (!transition.pending()) return;
+        transition.cancel();
+        launching = false;
+    }
 
     void openFullscreen() { openOnDisplay(0); }
 
@@ -111,8 +121,24 @@ final class EmbeddedMaps extends FrameLayout {
         try {
             MapsTask.Task existing = tasks.find();
             if (existing != null) {
-                if (existing.displayId != displayId || existing.windowingMode != 1 || displayId == 0) tasks.move(existing, displayId);
-                status.setVisibility(View.GONE);
+                if (existing.displayId != displayId) {
+                    launching = true;
+                    transition.move(displayId == 0, () -> {
+                        launching = false;
+                        if (state == State.CLOSED) return;
+                        try {
+                            tasks.move(existing, displayId);
+                            status.setVisibility(View.GONE);
+                        } catch (ReflectiveOperationException | RuntimeException error) {
+                            transition.cancel();
+                            Log.e("RoadHome", "Could not move Maps task " + existing.id, error);
+                            showError("Maps could not be restored. Open Maps from Recents to recover your route.");
+                        }
+                    });
+                } else {
+                    if (existing.windowingMode != 1 || displayId == 0) tasks.move(existing, displayId);
+                    status.setVisibility(View.GONE);
+                }
                 return;
             }
             launchNew(displayId);
@@ -174,6 +200,7 @@ final class EmbeddedMaps extends FrameLayout {
     }
 
     void release() {
+        transition.cancel();
         if (activityView == null || state == State.CLOSED) return;
         if (state == State.READY) {
             try {
