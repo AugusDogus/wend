@@ -94,7 +94,6 @@ final class EmbeddedMaps extends MapPanel {
                 @Override public void onTaskCreated(int taskId, ComponentName component) {
                     if (component != null && PACKAGE.equals(component.getPackageName())) {
                         tasks.remember(taskId);
-                        launching = false;
                     }
                 }
             });
@@ -189,10 +188,17 @@ final class EmbeddedMaps extends MapPanel {
                 launching = true;
                 PendingIntent pending = PendingIntent.getActivity(getContext(), 0, intent,
                         PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                activityView.startActivity(pending);
+                try {
+                    activityView.startActivity(pending);
+                } finally {
+                    // PendingIntent.send returns after the launch request. Android can reuse
+                    // a task missed by find(), in which case onTaskCreated never arrives.
+                    // Waiting for that callback would disable both Home restoration and the dock.
+                    launching = false;
+                }
             }
             status.setVisibility(View.GONE);
-            Log.i("RoadHome", "Started Maps because no running Maps task exists, display " + displayId);
+            Log.i("RoadHome", "Requested Maps launch after no task was found, display " + displayId);
         } catch (RuntimeException error) {
             launching = false;
             Log.e("RoadHome", "Could not launch Google Maps in ActivityView", error);
