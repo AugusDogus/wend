@@ -1,0 +1,8 @@
+.gradle/
+**/build/
+local.properties
+*.apk
+*.pk8
+*.keystore
+*.jks
+__pycache__/
