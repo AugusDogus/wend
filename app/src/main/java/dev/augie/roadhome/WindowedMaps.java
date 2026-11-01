@@ -16,7 +16,7 @@ final class WindowedMaps extends MapPanel {
     private final MapsTask tasks;
     private final Activity host;
     private final LiveMapsAnimation animation;
-    private final MapTransition returning;
+    private final MapsHomeAnimation returning;
     private final MapWindowCorners corners;
     private final TextView status;
     private boolean ready;
@@ -31,7 +31,7 @@ final class WindowedMaps extends MapPanel {
         this.host = host;
         tasks = new MapsTask(host);
         animation = new LiveMapsAnimation(host, this);
-        returning = new MapTransition(host, this);
+        returning = new MapsHomeAnimation(host, this);
         corners = new MapWindowCorners(host, this);
         status = Ui.text(host, "Opening Maps…", 18, Ui.TEXT);
         status.setGravity(Gravity.CENTER);
@@ -45,6 +45,7 @@ final class WindowedMaps extends MapPanel {
         try {
             WindowDecoration.enable(host);
             animation.initialize();
+            returning.initialize();
             ready = true;
         } catch (ReflectiveOperationException | java.io.IOException | RuntimeException error) {
             Log.e("RoadHomeLive", "Native Maps setup failed", error);
@@ -57,7 +58,7 @@ final class WindowedMaps extends MapPanel {
         active = false;
         needsForeground = true;
         corners.hide();
-        if (returning.pending()) returning.cancel();
+        returning.cancel();
     }
 
     @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
@@ -78,7 +79,7 @@ final class WindowedMaps extends MapPanel {
                 // Restarting an already placed task interrupts Maps' SurfaceView handoff.
                 if (!needsForeground && task.id == lastTask && task.windowingMode == 5
                         && task.displayId == 0 && bounds.equals(lastBounds)) return;
-                if (task.windowingMode == 1) returning.move(false, () -> restore(task, bounds));
+                if (task.windowingMode == 1) returning.move(task.id, bounds, () -> restore(task, bounds));
                 else restore(task, bounds);
                 return;
             }
@@ -115,9 +116,15 @@ final class WindowedMaps extends MapPanel {
     @Override void openFullscreen() {
         if (!ready) return;
         returning.cancel();
+        animation.cancel();
         try {
             MapsTask.Task task = tasks.find();
             if (task == null) { launch(); return; }
+            if (task.windowingMode == 1 && task.displayId == 0) {
+                corners.hide();
+                tasks.move(task, 0);
+                return;
+            }
             animation.expand(task.id, () -> {
                 corners.hide();
                 try { tasks.fullscreen(task); }
@@ -136,7 +143,7 @@ final class WindowedMaps extends MapPanel {
     @Override void setInnerCorners(boolean right) { mapsOnRight = right; }
     @Override void release() {
         active = false;
-        returning.cancel(); animation.release(); corners.hide();
+        returning.release(); animation.release(); corners.hide();
     }
     private void showError(String message) { status.setText(message); status.setVisibility(View.VISIBLE); }
 }

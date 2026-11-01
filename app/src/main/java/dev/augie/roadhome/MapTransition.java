@@ -17,7 +17,7 @@ import android.view.animation.AnimationUtils;
 
 /** Brief, in-memory visual bridge while the real Maps task changes displays once. */
 final class MapTransition {
-    private enum Completion { CROSSFADE, HANDOFF }
+    private enum Completion { CROSSFADE, HANDOFF, REVEAL }
     private enum Phase { PENDING, WAITING_FOR_FRAME, REVEALING, DISPOSED }
     private final Activity host;
     private final View panel;
@@ -36,6 +36,9 @@ final class MapTransition {
 
     /** Keep the original pixels stationary until the native window animator is ready. */
     void hold(Runnable moveTask) { prepare(true, moveTask, Completion.HANDOFF); }
+
+    /** Keep the final cropped frame still while Maps lays out, then remove it without fading. */
+    void settle(Runnable moveTask) { prepare(false, moveTask, Completion.REVEAL); }
 
     private void prepare(boolean expanding, Runnable moveTask, Completion completion) {
         cancel();
@@ -126,7 +129,7 @@ final class MapTransition {
 
         private void reveal() {
             if (phase != Phase.WAITING_FOR_FRAME) return;
-            if (completion == Completion.HANDOFF) { cancel(); return; }
+            if (completion != Completion.CROSSFADE) { cancel(); return; }
             phase = Phase.REVEALING;
             removeCallbacks(deadline);
             if (frame != null) frame.close();

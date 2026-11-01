@@ -73,9 +73,11 @@ adb -s emulator-5558 install -r app/build/outputs/apk/windowed/road-home-windowe
 This replaces Road Home's APK while retaining its data. The overlay removes
 **all freeform window titlebars** while enabled. The experimental layout keeps
 Android's status bar visible. Fullscreen expansion animates position and crop
-of Maps' live surface after its buffers are ready; Home uses an unscaled
-crossfade. A cold transition can exceed the readiness deadline and complete
-without motion. Active navigation and vehicle suspend/audio remain unverified
+of Maps' live surface after its buffers are ready. Home moves and crops the
+fullscreen surface back into the panel over 240 ms, then commits its smaller
+layout. A stationary, unscaled cover bridges that final layout change without
+crossfading. A cold expansion can exceed the readiness deadline and complete
+without motion; a missing Home callback also falls back to a direct handoff. Active navigation and vehicle suspend/audio remain unverified
 in this variant.
 
 To roll back, build and sign the regular release with the same target key,

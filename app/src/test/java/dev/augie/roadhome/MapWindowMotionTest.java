@@ -25,4 +25,14 @@ public class MapWindowMotionTest {
         MapWindowMotion.interpolate(new Rect(447, 36, 1280, 720), end, 1, out);
         assertEquals(end, out);
     }
+    @Test public void returningRightPanelKeepsTheOuterScreenEdgeFixed() {
+        Rect out = new Rect();
+        MapWindowMotion.interpolate(new Rect(0, 0, 1280, 720), new Rect(447, 36, 1280, 720), .5f, out);
+        assertEquals(new Rect(224, 18, 1280, 720), out);
+    }
+    @Test public void returningLeftPanelLeavesSpaceForTheDockAndMedia() {
+        Rect out = new Rect();
+        MapWindowMotion.interpolate(new Rect(0, 0, 1280, 720), new Rect(91, 36, 804, 720), 1, out);
+        assertEquals(new Rect(91, 36, 804, 720), out);
+    }
 }

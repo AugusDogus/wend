@@ -61,13 +61,39 @@ An unscaled, stationary screenshot covers preparation while Maps produces its
 new buffers. The cover disappears before live motion begins. Readiness requires
 both the Maps window and tile buffers at the destination width, accounting for
 freeform shadow insets. A 900 ms deadline completes the window change without
-motion if readiness fails. Home still uses the existing unscaled crossfade.
+motion if readiness fails. The standard ActivityView build retains its crossfade.
 Android's disabled-animation setting bypasses the custom animation.
 
 The display animation definition is registered only for expansion and removed
 when its callback arrives, when canceled, or after the missing-callback deadline.
 The runner finishes unexpected targets immediately. It never registers normal
 app-launch transitions. Cleanup removes screenshot and corner overlay windows.
+
+### Returning Home
+
+An activity-local remote animation definition handles Home's task-open,
+front/back, and wallpaper transitions. It requires both an opening Road Home
+target and the requested closing Maps task. Other transitions finish immediately;
+the registration cannot intercept app switches that do not involve Road Home.
+
+The original fullscreen Maps surface moves and crops into the panel over 240 ms
+with the same ease-out curve as expansion. Its pixel scale stays at one. The Home
+leash must be explicitly shown: Android supplies it with the hidden flag even
+though its alpha is one. Without that step the shrinking map exposes black.
+
+At the final geometry, a stationary screenshot briefly covers the new panel
+layout. The task is bounded **before** acknowledging the closing animation, which
+avoids hiding/recreating Maps' SurfaceView and leaving an old tile surface outside
+the panel. The cover disappears when the new buffers settle, without an alpha
+animation. Maps' own controls still reflow at that final handoff. This is a live
+window animation, not continuous application relayout.
+
+Repeated Home requests are coalesced. Leaving the launcher cancels pending task
+moves and removes the cover, and finishing/canceling the remote callback is
+idempotent. Reopening fullscreen during a return brings the same task forward
+without waiting for a nonexistent mode-change callback. If Android provides no
+Home target within 700 ms, the panel uses a direct covered handoff. Disabled
+animations restore immediately. No snapshot is stretched, saved, or transmitted.
 
 Freeform titlebars are removed by a separate reversible framework resource
 overlay. It must be compiled against the device's exact `framework-res.apk`,
@@ -83,8 +109,10 @@ the sidebar-facing Maps corners are masked.
 
 ## Validation and limits
 
-Release, fixture, and windowed unit tests passed (32 each), along with release
-and windowed builds and lint. Geometry tests cover both panel sides and exact
+Release and windowed unit tests passed (38 each), along with their builds and
+lint. The earlier fixture suite passed 32 tests. New tests cover missing Home
+callbacks, cancellation before a task move, superseded destinations, disabled
+animations, and return geometry. Geometry tests cover both panel sides and exact
 final bounds. Buffer tests accept real freeform shadow insets and reject stale
 tile widths.
 
@@ -107,8 +135,15 @@ stability.
 
 Active navigation continuity has not been verified in this variant: Maps returned
 “Something went wrong” when calculating the test route. Keeping the same task is
-verified separately from maintaining an active route. Vehicle suspend/audio,
-head-unit performance, and reverse live animation are not validated.
+verified separately from maintaining an active route. Vehicle suspend/audio
+and head-unit performance remain unverified.
+
+The reverse-animation emulator trial kept Maps task 108 through returns on both
+panel sides, repeated Home presses, and a YouTube round trip. The corrected trial
+showed the launcher behind the shrinking map, no leaked tile strip afterward,
+and no leftover transition/corner overlays while YouTube was foregrounded.
+The first two prototype recordings contained a hidden Home surface and a bad
+handoff order; they are retained as failure evidence, not demos.
 
 See the [setup and rollback instructions](../README.md#experimental-live-maps-window).
 
@@ -120,4 +155,5 @@ See the [setup and rollback instructions](../README.md#experimental-live-maps-wi
 
 Local recordings and dumps live in ignored `build/motion/` and
 `build/live-transition/`. `maps-live-verified.mp4` captures the final expansion, Home return, and drawer;
+`maps-home-visible.mp4` and `maps-home-left.mp4` capture the reverse animation.
 `maps-live-resize-*` captures the earlier failed per-frame resize approach.
