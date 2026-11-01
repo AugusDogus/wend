@@ -59,3 +59,9 @@ there is no new `onStart`; failed launches restore them immediately.
 Hardware animation, ignition/audio behavior, non-fullscreen watch-page playback,
 and portrait-video playback still require device validation. Geometry for those
 layouts is unit-tested. The return-to-Home video path is not animated by this change.
+
+Build `f5c5c34` and its matching decoration overlay were installed on the PX6 on
+2026-11-01, preserving app data. The installed APK hash matched the signed artifact.
+Maps fullscreen/Home ran on hardware; an initial stale map surface extending into
+the sidebar cleared after restarting Maps. The final Home screenshot showed the
+correct panel bounds. This deployment did not measure YouTube animation performance.

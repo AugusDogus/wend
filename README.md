@@ -47,7 +47,8 @@ The unsigned release APK cannot be installed as-is. Sign it with the device's ma
 
 The `windowed` build uses a real bounded Maps task on the main display and
 animates its live surface into fullscreen. It does not stretch a preview. This
-is opt-in, emulator-tested on Android 10, and not installed on the PX6. The
+is opt-in and was installed on the PX6 on 2026-11-01. Maps fullscreen/Home was
+exercised; hardware animation performance and YouTube expansion remain unverified. The
 standard release retains ActivityView. See [implementation and validation
 notes](docs/maps-window-transitions.md) for the API findings and remaining limits.
 
