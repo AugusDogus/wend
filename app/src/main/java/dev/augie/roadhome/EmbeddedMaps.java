@@ -7,6 +7,7 @@ import android.app.PendingIntent;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.Rect;
 import android.os.Build;
 import android.os.Process;
 import android.util.Log;
@@ -24,6 +25,7 @@ final class EmbeddedMaps extends MapPanel {
     private State state = State.WAITING;
     private ActivityView activityView;
     private MapDisplayLifecycle displayLifecycle;
+    private EmbeddedMapMotion motion;
     private final MapsTask tasks;
     private final MapTransition transition;
     private boolean hostActive;
@@ -59,6 +61,10 @@ final class EmbeddedMaps extends MapPanel {
             activityView = new ActivityView(context);
             displayLifecycle = new MapDisplayLifecycle(activityView);
             addView(activityView, 0, new LayoutParams(-1, -1));
+            try { motion = new EmbeddedMapMotion(context, this, activityView); }
+            catch (ReflectiveOperationException | RuntimeException error) {
+                Log.w("RoadHome", "Live map transitions unavailable; using the covered task handoff", error);
+            }
             activityView.setCallback(new ActivityView.StateCallback() {
                 @Override public void onActivityViewReady(ActivityView view) {
                     try {
@@ -100,21 +106,30 @@ final class EmbeddedMaps extends MapPanel {
 
     void launch() {
         if (!hostActive || state != State.READY || activityView == null) return;
+        if (motion != null && motion.pending()) return;
         cancelPendingTransition();
         if (launching) return;
         openOnDisplay(activityView.getVirtualDisplayId());
     }
 
-    void resume() { hostActive = true; launch(); }
+    void resume() {
+        hostActive = true;
+        if (motion != null && motion.expanding()) cancelPendingTransition();
+        launch();
+    }
     void suspend() { hostActive = false; cancelPendingTransition(); }
 
     private void cancelPendingTransition() {
+        if (motion != null && motion.pending()) {
+            motion.cancel();
+            launching = false;
+        }
         if (!transition.pending()) return;
         transition.cancel();
         launching = false;
     }
 
-    void openFullscreen() { openOnDisplay(0); }
+    void openFullscreen() { cancelPendingTransition(); openOnDisplay(0); }
 
     private void openOnDisplay(int displayId) {
         if (launching) return;
@@ -123,20 +138,26 @@ final class EmbeddedMaps extends MapPanel {
             if (existing != null) {
                 if (existing.displayId != displayId) {
                     launching = true;
-                    transition.move(displayId == 0, () -> {
+                    Runnable move = () -> {
                         launching = false;
                         if (state == State.CLOSED) return;
                         try {
                             tasks.move(existing, displayId);
+                            if (displayId != 0) revealSurface();
                             status.setVisibility(View.GONE);
                         } catch (ReflectiveOperationException | RuntimeException error) {
                             transition.cancel();
                             Log.e("RoadHome", "Could not move Maps task " + existing.id, error);
                             showError("Maps could not be restored. Open Maps from Recents to recover your route.");
                         }
-                    });
+                    };
+                    if (motion != null) {
+                        if (displayId == 0) motion.expand(move);
+                        else motion.returnHome(existing.id, move);
+                    } else transition.move(displayId == 0, move);
                 } else {
                     if (existing.windowingMode != 1 || displayId == 0) tasks.move(existing, displayId);
+                    if (displayId != 0) revealSurface();
                     status.setVisibility(View.GONE);
                 }
                 return;
@@ -146,6 +167,11 @@ final class EmbeddedMaps extends MapPanel {
             Log.e("RoadHome", "Could not reuse Maps task on display " + displayId, error);
             showError("Maps could not be restored. Existing tasks were left intact. Open Maps from Recents to recover your route.");
         }
+    }
+
+    private void revealSurface() throws ReflectiveOperationException {
+        if (activityView != null) new ActivityViewSurface(activityView).show(
+                new Rect(0, 0, getWidth(), getHeight()));
     }
 
     private void launchNew(int displayId) {
@@ -200,6 +226,7 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     void release() {
+        if (motion != null) motion.release();
         transition.cancel();
         if (activityView == null || state == State.CLOSED) return;
         if (state == State.READY) {

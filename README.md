@@ -4,9 +4,17 @@ A small native launcher for the PX6 running Hal9k Android 10. The real Google Ma
 
 ## Current development status
 
+The corrected build uses the standard `release` variant. The `windowed` experiment
+forced Android 10's status bar, added a header inset, and hid the dock clock.
+It is unsuitable for the intended fullscreen layout. The embedded Maps host now
+shares the live surface expansion with video and uses the activity-local Home
+return animation. The dock has a distinct opaque background and its original
+clock, padding, and divider. See [the correction and validation](docs/maps-window-transitions.md#fullscreen-layout-correction).
+
+
 This repository captures the current development build, including the Android 10 emulator fixtures and decoder probe. It is not a general-purpose launcher release. Installation requires the target ROM's matching platform signature.
 
-The latest source passes release/emulator unit tests, builds, and lint. Emulator checks verified Maps task restoration, paused-video thumbnails, and video surface clipping. The latest recording also verified map controls remain usable beside playing video at the default layout. Video-player hitboxes and other panel sizes remain untested. Vehicle suspend/audio behavior and the latest build on the PX6 also remain unverified. See the [offline development guide](task-fixture/README.md) for reproducible setup and the exact validation limits.
+The latest source passes release/windowed unit tests, builds, and lint. Emulator checks verified Maps task restoration, paused-video thumbnails, and video surface clipping. The latest recording also verified map controls remain usable beside playing video at the default layout. Video-player hitboxes and other panel sizes remain untested. Vehicle suspend/audio behavior and the latest build on the PX6 also remain unverified. See the [offline development guide](task-fixture/README.md) for reproducible setup and the exact validation limits.
 
 ## First version
 
@@ -47,7 +55,8 @@ The unsigned release APK cannot be installed as-is. Sign it with the device's ma
 
 The `windowed` build uses a real bounded Maps task on the main display and
 animates its live surface into fullscreen. It does not stretch a preview. This
-is opt-in and was installed on the PX6 on 2026-11-01. Maps fullscreen/Home was
+is an archived experiment that was installed on the PX6 on 2026-11-01.
+Use `release` for the corrected fullscreen layout. Maps fullscreen/Home was
 exercised; hardware animation performance and YouTube expansion remain unverified. The
 standard release retains ActivityView. See [implementation and validation
 notes](docs/maps-window-transitions.md) for the API findings and remaining limits.

@@ -7,20 +7,21 @@ import android.app.Activity;
 import android.graphics.PixelFormat;
 import android.graphics.Color;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.animation.AnimationUtils;
 
-/** Expands the owned ActivityView surface, then transfers the same YouTube task once. */
-final class VideoExpansion {
+/** Expands an owned ActivityView surface, then transfers its existing task once. */
+final class SurfaceExpansion {
     private enum Phase { PREPARING, ANIMATING, HANDOFF, CLOSED }
     private final Activity host;
     private final WindowManager windows;
     private Running running;
 
-    VideoExpansion(Activity host) {
+    SurfaceExpansion(Activity host) {
         this.host = host;
         windows = host.getSystemService(WindowManager.class);
     }
@@ -28,8 +29,13 @@ final class VideoExpansion {
     boolean active() { return running != null; }
     boolean handingOff() { return running != null && running.phase == Phase.HANDOFF; }
 
-    void open(View card, ActivityViewSurface surface, VideoSurface.Bounds video,
+    void open(View card, ActivityViewSurface surface, RectF source,
             int width, int height, Runnable open) {
+        open(card, surface, source, width, height, () -> { }, open);
+    }
+
+    void open(View card, ActivityViewSurface surface, RectF source,
+            int width, int height, Runnable reveal, Runnable open) {
         if (running != null) return;
         if (!ValueAnimator.areAnimatorsEnabled() || !card.isLaidOut() || windows == null) {
             open.run();
@@ -37,8 +43,8 @@ final class VideoExpansion {
         }
         int[] location = new int[2];
         card.getLocationOnScreen(location);
-        Running next = new Running(surface, new VideoWindowMotion(location[0], location[1],
-                card.getWidth(), card.getHeight(), video, width, height), open);
+        Running next = new Running(surface, new PanelWindowMotion(location[0], location[1],
+                card.getWidth(), card.getHeight(), source, width, height), reveal, open);
         running = next;
         try {
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(width, height,
@@ -49,7 +55,7 @@ final class VideoExpansion {
                             | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                     PixelFormat.TRANSLUCENT);
             params.gravity = Gravity.TOP | Gravity.LEFT;
-            params.setTitle("Road Home video expansion");
+            params.setTitle("Road Home panel expansion");
             next.view.setSystemUiVisibility(host.getWindow().getDecorView().getSystemUiVisibility());
             windows.addView(next.view, params);
             next.view.getViewTreeObserver().registerFrameCommitCallback(next::start);
@@ -65,17 +71,19 @@ final class VideoExpansion {
     private final class Running {
         final View view = new View(host);
         final ActivityViewSurface surface;
-        final VideoWindowMotion motion;
+        final PanelWindowMotion motion;
         final Runnable open;
+        final Runnable reveal;
         final ValueAnimator animator = ValueAnimator.ofFloat(0, 1);
         final Rect crop = new Rect();
-        final Runnable deadline = () -> fail(new IllegalStateException("Video expansion surface was not ready within 700 ms"));
+        final Runnable deadline = () -> fail(new IllegalStateException("Panel expansion surface was not ready within 700 ms"));
         Phase phase = Phase.PREPARING;
 
-        Running(ActivityViewSurface surface, VideoWindowMotion motion, Runnable open) {
+        Running(ActivityViewSurface surface, PanelWindowMotion motion, Runnable reveal, Runnable open) {
             this.surface = surface;
             this.motion = motion;
             this.open = open;
+            this.reveal = reveal;
             view.setBackgroundColor(Color.TRANSPARENT);
             animator.setDuration(260);
             animator.setInterpolator(AnimationUtils.loadInterpolator(host, R.interpolator.window_ease_out));
@@ -92,6 +100,7 @@ final class VideoExpansion {
                 motion.crop(0, crop);
                 surface.attach(view, motion.scale(0), motion.x(0), motion.y(0), crop);
                 phase = Phase.ANIMATING;
+                reveal.run();
                 animator.start();
             } catch (ReflectiveOperationException | RuntimeException error) { fail(error); }
         }
@@ -105,7 +114,7 @@ final class VideoExpansion {
 
         void fail(Exception error) {
             if (phase == Phase.CLOSED) return;
-            Log.w("RoadHomeVideo", "Live video expansion unavailable; opening the existing task directly", error);
+            Log.w("RoadHomeSurface", "Live panel expansion unavailable; opening the existing task directly", error);
             finish(true);
         }
 
@@ -121,7 +130,7 @@ final class VideoExpansion {
             if (restore) {
                 try { surface.restore(); }
                 catch (ReflectiveOperationException | RuntimeException error) {
-                    Log.e("RoadHomeVideo", "Could not restore the embedded video surface after expansion", error);
+                    Log.e("RoadHomeSurface", "Could not restore the embedded surface after expansion", error);
                 }
             }
             if (view.isAttachedToWindow()) windows.removeViewImmediate(view);

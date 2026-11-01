@@ -2,6 +2,7 @@ package dev.augie.roadhome;
 
 import android.animation.ValueAnimator;
 import android.app.Activity;
+import android.graphics.RectF;
 import android.os.Looper;
 import android.view.View;
 import java.lang.reflect.Method;
@@ -20,15 +21,15 @@ import static org.robolectric.Shadows.shadowOf;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 29)
-public class VideoExpansionTest {
+public class SurfaceExpansionTest {
     private final Activity host = Robolectric.buildActivity(Activity.class).setup().get();
     private final View card = new View(host);
-    private final VideoExpansion expansion = new VideoExpansion(host);
+    private final SurfaceExpansion expansion = new SurfaceExpansion(host);
     private final List<String> opened = new ArrayList<>();
 
     private void open(String name) {
         // No real compositor surface: exercise cancellation and bounded fallback before attachment.
-        expansion.open(card, null, new VideoSurface.Bounds(0, 0, 1280, 720), 1280, 720,
+        expansion.open(card, null, new RectF(0, 0, 1280, 720), 1280, 720,
                 () -> opened.add(name));
     }
 

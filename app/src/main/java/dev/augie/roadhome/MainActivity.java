@@ -51,7 +51,7 @@ public final class MainActivity extends Activity {
         dock.setOrientation(LinearLayout.VERTICAL);
         dock.setGravity(Gravity.CENTER_HORIZONTAL);
         dock.setPadding(Ui.dp(this, 6), 0, Ui.dp(this, 6), Ui.dp(this, 4));
-        dock.setBackgroundColor(0x40101820);
+        dock.setBackgroundColor(0xFF15242E);
         TextClock clock = new TextClock(this);
         if (BuildConfig.WINDOWED_MAPS) clock.setVisibility(View.GONE);
         clock.setFormat12Hour("h:mm");

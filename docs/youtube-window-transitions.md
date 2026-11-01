@@ -7,7 +7,7 @@ preparing use the existing direct task-opening path. Nothing sends Play.
 
 ## Live surface ownership
 
-`VideoExpansion` temporarily reparents our ActivityView container under a
+`SurfaceExpansion` temporarily reparents our ActivityView container under a
 transparent application-overlay window. It waits for that window's first
 committed frame before starting motion. An extra SurfaceView introduced missing
 early frames in testing, so the live container attaches directly to the owned

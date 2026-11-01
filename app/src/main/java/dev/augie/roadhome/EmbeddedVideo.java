@@ -1,6 +1,7 @@
 package dev.augie.roadhome;
 
 import android.app.ActivityView;
+import android.graphics.RectF;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Point;
@@ -26,7 +27,7 @@ final class EmbeddedVideo extends FrameLayout {
     private ActivityView player;
     private ActivityViewSurface playerSurface;
     private final Activity host;
-    private final VideoExpansion expansion;
+    private final SurfaceExpansion expansion;
     private final TextView status;
     private final ImageView thumbnail;
     private final Point displaySize = new Point();
@@ -41,7 +42,7 @@ final class EmbeddedVideo extends FrameLayout {
     EmbeddedVideo(Activity context) {
         super(context);
         host = context;
-        expansion = new VideoExpansion(context);
+        expansion = new SurfaceExpansion(context);
         context.getSystemService(WindowManager.class).getDefaultDisplay().getRealSize(displaySize);
         setBackgroundColor(android.graphics.Color.BLACK);
         setClipChildren(true);
@@ -112,7 +113,9 @@ final class EmbeddedVideo extends FrameLayout {
         if (state != State.SHOWN || playerSurface == null || previousBounds == null
                 || presentation != VideoCardState.PLAYING || !hostActive) return false;
         cancelPreparation();
-        expansion.open(this, playerSurface, previousBounds, displaySize.x, displaySize.y, () -> {
+        RectF source = new RectF(previousBounds.left, previousBounds.top,
+                previousBounds.left + previousBounds.width, previousBounds.top + previousBounds.height);
+        expansion.open(this, playerSurface, source, displaySize.x, displaySize.y, () -> {
             state = State.READY;
             open.run();
             // If Android rejects the launch, restore the preview instead of leaving a hidden surface.

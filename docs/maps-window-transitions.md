@@ -1,8 +1,8 @@
 # Live Maps window transitions
 
 Tested November 1, 2026 on the Android 10 (API 29) Google-apps emulator,
-1280 × 720, with platform-signed Road Home and real Google Maps. No head-unit
-changes. The emulator uses software rendering, so these observations do not
+1280 × 720, with platform-signed Road Home and real Google Maps. The initial
+experiment was later deployed to the PX6; the correction below supersedes it. The emulator uses software rendering, so these observations do not
 establish head-unit performance.
 
 ## What works
@@ -157,3 +157,49 @@ Local recordings and dumps live in ignored `build/motion/` and
 `build/live-transition/`. `maps-live-verified.mp4` captures the final expansion, Home return, and drawer;
 `maps-home-visible.mp4` and `maps-home-left.mp4` capture the reverse animation.
 `maps-live-resize-*` captures the earlier failed per-frame resize approach.
+
+## Fullscreen layout correction
+
+The freeform experiment caused a UI regression on the PX6: its OEM status bar
+and back control appeared above Home, the whole layout moved down, and the dock
+clock was hidden. Android 10 `DisplayPolicy.updateSystemBarsLw` forces system
+bars while a freeform stack is visible, irrespective of Home's immersive flags.
+Removing freeform captions does not remove this system bar.
+
+Use the standard `release` build, which retains the embedded ActivityView.
+Its dock clock and full-height layout remain intact; the dock now has an opaque
+background to distinguish it from the media sidebar. No ROM patch or global
+immersive override is needed. Uninstall our experimental
+`dev.augie.roadhome.windowdecor` overlay when migrating from `windowed`.
+
+`EmbeddedMapMotion` resizes the embedded display once beneath a stationary
+cover, waits for Maps' window and tile buffers, then expands the owned live
+surface using `SurfaceExpansion`. Maps stays at pixel scale one throughout:
+only position and crop animate. The exact existing task moves to display 0 at
+the end. A cold render can miss the 900 ms preparation deadline; that path moves
+the task under the original cover and waits for the fullscreen frame with a
+bounded deadline. It does not leave an overlay indefinitely. Maps' own controls
+still change layout between panel and fullscreen sizes.
+
+Returning Home uses the activity-local `MapsHomeAnimation` to shrink the live
+fullscreen task before returning it to the embedded display. This differs from
+the earlier unsuccessful attempt to pass a remote adapter directly to a
+cross-display `startActivityFromRecents` call. The input portal and root surface
+are restored when Maps returns, including when Home never received `onStop`.
+Queued buffer callbacks from a canceled expansion cannot start a newer request.
+
+Validation: release and windowed builds, lint, and 46 unit tests per variant
+passed. The new geometry case verifies Maps stays unscaled and its moving edge
+meets the display edge throughout expansion. Android 10 emulator screenshots
+verified the restored full-height panel, dock clock, insets, and separation.
+Repeated Maps fullscreen/Home trials retained task 108 and exercised the live
+Home return. One cold expansion hit the readiness fallback; subsequent warm
+expansions used the live surface. This is not a head-unit performance claim.
+
+Real YouTube playback beside Maps, Maps layer-button input, Open YouTube, and
+returning Home were also exercised after the correction. No playback command
+was added to embedding.
+
+The PX6 was offline during this correction. Its last installed launcher is the
+regressed `windowed` build; installation and hardware verification of the
+corrected `release` remain pending reconnection.

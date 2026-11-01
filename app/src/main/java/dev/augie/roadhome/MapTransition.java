@@ -40,6 +40,11 @@ final class MapTransition {
     /** Keep the final cropped frame still while Maps lays out, then remove it without fading. */
     void settle(Runnable moveTask) { prepare(false, moveTask, Completion.REVEAL); }
 
+    /** After a slow expansion, keep its original cover until the fullscreen frame is ready. */
+    void settleHeld() {
+        if (cover != null && cover.phase == Phase.WAITING_FOR_FRAME) cover.awaitFrame();
+    }
+
     private void prepare(boolean expanding, Runnable moveTask, Completion completion) {
         cancel();
         if (!ValueAnimator.areAnimatorsEnabled() || windows == null || !panel.isLaidOut()) {
@@ -82,6 +87,8 @@ final class MapTransition {
         }
     }
 
+    boolean active() { return cover != null; }
+
     boolean pending() { return cover != null && cover.phase == Phase.PENDING; }
 
     void cancel() {
@@ -123,6 +130,12 @@ final class MapTransition {
                 postDelayed(deadline, 1500);
                 return;
             }
+            awaitFrame();
+        }
+
+        void awaitFrame() {
+            removeCallbacks(deadline);
+            if (frame != null) frame.close();
             frame = new MapFrame(destinationWidth, () -> post(this::reveal));
             postDelayed(deadline, 900);
         }
