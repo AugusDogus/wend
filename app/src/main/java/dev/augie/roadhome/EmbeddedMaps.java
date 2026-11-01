@@ -11,6 +11,7 @@ import android.os.Build;
 import android.os.Process;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.Display;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -22,6 +23,7 @@ final class EmbeddedMaps extends FrameLayout {
     private enum State { WAITING, READY, CLOSED }
     private State state = State.WAITING;
     private ActivityView activityView;
+    private MapDisplayLifecycle displayLifecycle;
     private final MapsTask tasks;
     private boolean hostActive;
     private boolean launching;
@@ -53,18 +55,33 @@ final class EmbeddedMaps extends FrameLayout {
         }
         try {
             activityView = new ActivityView(context);
+            displayLifecycle = new MapDisplayLifecycle(activityView);
             addView(activityView, 0, new LayoutParams(-1, -1));
             activityView.setCallback(new ActivityView.StateCallback() {
                 @Override public void onActivityViewReady(ActivityView view) {
-                    state = State.READY;
-                    if (hostActive) launch();
+                    try {
+                        displayLifecycle.retainTasksOnRemoval();
+                        state = State.READY;
+                        if (hostActive) launch();
+                    } catch (ReflectiveOperationException | RuntimeException error) {
+                        Log.e("RoadHome", "Could not initialize the persistent map display", error);
+                        showError("The map display could not start. Open Maps from Apps while the display issue is checked.");
+                    }
                 }
                 @Override public void onActivityViewDestroyed(ActivityView view) {
                     state = State.CLOSED;
                 }
                 @Override public void onTaskRemovalStarted(int taskId) {
                     launching = false;
-                    post(() -> showError("Maps was closed. Tap Open Maps to bring it back."));
+                    post(() -> {
+                        if (state != State.READY) return;
+                        try {
+                            if (tasks.find() == null) showError("Maps was closed. Tap Open Maps to bring it back.");
+                        } catch (ReflectiveOperationException | RuntimeException error) {
+                            Log.e("RoadHome", "Could not check Maps after task removal", error);
+                            showError("Maps task status could not be checked. Tap Open Maps to retry.");
+                        }
+                    });
                 }
                 @Override public void onTaskCreated(int taskId, ComponentName component) {
                     if (component != null && PACKAGE.equals(component.getPackageName())) {
@@ -73,7 +90,7 @@ final class EmbeddedMaps extends FrameLayout {
                     }
                 }
             });
-        } catch (RuntimeException | LinkageError error) {
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
             Log.e("RoadHome", "ActivityView creation failed", error);
             showError("The map panel could not start. Open Maps from Apps while the display issue is checked.");
         }
@@ -157,7 +174,8 @@ final class EmbeddedMaps extends FrameLayout {
     }
 
     void release() {
-        if (activityView != null && state == State.READY) {
+        if (activityView == null || state == State.CLOSED) return;
+        if (state == State.READY) {
             try {
                 MapsTask.Task existing = tasks.find();
                 if (existing != null && existing.displayId == activityView.getVirtualDisplayId()) {
@@ -166,9 +184,10 @@ final class EmbeddedMaps extends FrameLayout {
             } catch (ReflectiveOperationException | RuntimeException error) {
                 Log.e("RoadHome", "Could not return Maps to the main display before launcher destruction", error);
             }
-            activityView.setCallback(null);
-            activityView.release();
         }
+        activityView.setCallback(null);
+        if (displayLifecycle != null) displayLifecycle.release();
+        if (activityView.getVirtualDisplayId() != Display.INVALID_DISPLAY) activityView.release();
         state = State.CLOSED;
     }
 }

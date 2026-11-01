@@ -62,7 +62,7 @@ final class EmbeddedVideo extends FrameLayout {
     void update(VideoCardState presentation, Bitmap artwork) {
         this.presentation = presentation;
         if (artwork != null) {
-            thumbnail.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            thumbnail.setScaleType(ImageView.ScaleType.CENTER_CROP);
             thumbnail.setImageBitmap(artwork);
         } else {
             thumbnail.setScaleType(ImageView.ScaleType.CENTER);

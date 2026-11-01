@@ -26,7 +26,7 @@ The current source replaces the earlier PiP approach. It was installed during th
 
 Geometry queries run off the UI thread and read layer metadata, not pixels or stream URLs. The parser requires YouTube's layer to descend from a Road Home ActivityView and rejects hidden, secure, protected, rotated, and out-of-display content. The panel remains covered until two queries agree on video bounds; missing geometry produces an explicit failure message after three seconds. Six JVM tests cover the geometry and ownership checks. The proto reader and visible surface crop passed an Android 10 emulator fixture trial. SurfaceControl now crops the owned ActivityView container because View clipping alone leaked surrounding app UI. A matching bounded input portal restored map taps beside playing video in the recorded emulator trial; video-player hitboxes and other panel sizes remain untested. All of these paths still need hardware validation.
 
-Embedding never sends Play. A YouTube media session with a nonblank title keeps a 16:9 video card visible even while paused or stopped. Pausing replaces live video with session artwork; if artwork is absent, a neutral play placeholder keeps the card visible. Only STATE_PLAYING can start live embedding. Clearing the title or destroying the YouTube session hides the card. An observed session that becomes inactive retains its thumbnail while the YouTube task exists; its metadata is read live, not copied into a permanent cache. An idle Spotify session does not displace a selected paused YouTube video; active playback in another app controls the audio buttons while the selected video card stays visible. The action button uses the selected app label and opens the app on the main display. Reinstalling the launcher destroys its virtual displays and can stop embedded playback.
+Embedding never sends Play. A YouTube media session with a nonblank title keeps a 16:9 video card visible even while paused or stopped. Pausing replaces live video with center-cropped session artwork that fills the card; if artwork is absent, a neutral play placeholder keeps the card visible. Only STATE_PLAYING can start live embedding. Clearing the title or destroying the YouTube session hides the card. An observed session that becomes inactive retains its thumbnail while the YouTube task exists; its metadata is read live, not copied into a permanent cache. An idle Spotify session does not displace a selected paused YouTube video; active playback in another app controls the audio buttons while the selected video card stays visible. The action button uses the selected app label and opens the app on the main display. Reinstalling the launcher destroys its virtual displays and can stop embedded playback.
 
 A separate [cross-app decoder probe](video-probe/README.md) exercises the proposed MediaCodec output-surface handoff with a generated local video. It is not a YouTube patch and is not part of the head-unit APK.
 
@@ -124,3 +124,13 @@ YouTube now restore the exact remembered task in fullscreen mode instead of
 moving the stack or creating a second task. A paused YouTube session remains
 selected when YouTube deactivates it in the background, while its task and title
 remain available. These changes have not been installed on the head unit.
+
+### Maps display preservation
+
+The current emulator build keeps the map display awake while Road Home is hidden.
+It also preserves Maps tasks when the launcher's virtual display is removed during
+APK replacement, then adopts the existing task on Home. Fullscreen uses display 0
+so the system Home key continues to work. A late task-removal callback now checks
+for a surviving Maps task before covering the panel with a closed-app message.
+These changes supersede the earlier map-display destruction behavior above.
+They have not been installed on the PX6. See the [real-app validation notes](task-fixture/GOOGLE-APPS.md).
