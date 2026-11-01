@@ -147,3 +147,12 @@ lint passing. Recorded two fullscreen/Home pairs with real Maps; task 54 was
 reused throughout. WindowManager showed no transition overlay afterward, and
 neither pair reached the frame-readiness deadline. The recording preserves the
 actual motion and layout change, with no claim of head-unit performance.
+
+The expansion animation was rejected after visual review: it stretched text and
+controls, then visibly switched to a different layout. A subsequent non-recorded
+fullscreen/Home sample also reported janky launcher frames, confirming this was
+not merely a low-frame-rate recording. The replacement holds an unscaled image
+and crossfades it out over 160 ms using its cached render node. No animated bitmap
+resizing, corner-path allocation, or per-frame invalidation remains. The emulator
+still reports timing outliers, so this change is not a claim of sustained 60 fps.
+Both variants' 28 tests, release assembly, and lint pass.

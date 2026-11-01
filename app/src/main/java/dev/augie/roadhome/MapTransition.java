@@ -1,13 +1,10 @@
 package dev.augie.roadhome;
 
-import android.animation.Animator;
-import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -20,7 +17,7 @@ import android.view.animation.AnimationUtils;
 
 /** Brief, in-memory visual bridge while the real Maps task changes displays once. */
 final class MapTransition {
-    private enum Phase { PENDING, ANIMATING, WAITING_FOR_FRAME, REVEALING, DISPOSED }
+    private enum Phase { PENDING, WAITING_FOR_FRAME, REVEALING, DISPOSED }
     private final Activity host;
     private final View panel;
     private final WindowManager windows;
@@ -49,11 +46,7 @@ final class MapTransition {
                     width, height, rotation);
             if (!(result instanceof Bitmap)) throw new IllegalStateException("No transition snapshot returned");
             snapshot = (Bitmap) result;
-            int[] position = new int[2];
-            panel.getLocationOnScreen(position);
-            Rect bounds = new Rect(position[0], position[1], position[0] + panel.getWidth(),
-                    position[1] + panel.getHeight());
-            Cover next = new Cover(snapshot, bounds, expanding, moveTask);
+            Cover next = new Cover(snapshot, expanding ? width : panel.getWidth(), moveTask);
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(width, height,
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -88,107 +81,61 @@ final class MapTransition {
 
     private final class Cover extends View {
         private final Bitmap snapshot;
-        private final Rect source;
-        private final RectF start;
-        private final RectF end;
-        private final RectF current = new RectF();
         private final RectF screen;
-        private final Path clip = new Path();
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-        private final boolean expanding;
+        private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
+        private final int destinationWidth;
         private final Runnable moveTask;
-        private ValueAnimator animator;
         private MapFrame frame;
         private Phase phase = Phase.PENDING;
-        private boolean frameReady;
         private final Runnable deadline = () -> {
             Log.w("RoadHome", "Maps frame did not settle before transition deadline; revealing live task");
-            frameReady = true;
             reveal();
         };
-        private float progress;
 
-        Cover(Bitmap snapshot, Rect bounds, boolean expanding, Runnable moveTask) {
+        Cover(Bitmap snapshot, int destinationWidth, Runnable moveTask) {
             super(host);
             this.snapshot = snapshot;
-            this.expanding = expanding;
+            this.destinationWidth = destinationWidth;
             this.moveTask = moveTask;
             screen = new RectF(0, 0, snapshot.getWidth(), snapshot.getHeight());
-            start = expanding ? new RectF(bounds) : new RectF(screen);
-            end = expanding ? new RectF(screen) : new RectF(bounds);
-            source = expanding ? new Rect(bounds) : new Rect(0, 0, snapshot.getWidth(), snapshot.getHeight());
             setClickable(true);
         }
 
         void start() {
             if (phase != Phase.PENDING) return;
-            phase = Phase.ANIMATING;
+            phase = Phase.WAITING_FOR_FRAME;
             moveTask.run();
             if (phase == Phase.DISPOSED) return;
-            frame = new MapFrame(Math.round(end.width()), () -> post(() -> {
-                frameReady = true;
-                reveal();
-            }));
+            frame = new MapFrame(destinationWidth, () -> post(this::reveal));
             postDelayed(deadline, 900);
-            animator = ValueAnimator.ofFloat(0, 1);
-            animator.setDuration(expanding ? 260 : 220);
-            animator.setInterpolator(AnimationUtils.loadInterpolator(host, R.interpolator.window_ease_out));
-            animator.addUpdateListener(value -> {
-                progress = (float) value.getAnimatedValue();
-                invalidate();
-            });
-            animator.addListener(new AnimatorListenerAdapter() {
-                @Override public void onAnimationEnd(Animator animation) {
-                    if (phase == Phase.ANIMATING) {
-                        phase = Phase.WAITING_FOR_FRAME;
-                        reveal();
-                    }
-                }
-            });
-            animator.start();
         }
 
         private void reveal() {
-            if (phase != Phase.WAITING_FOR_FRAME || !frameReady) return;
+            if (phase != Phase.WAITING_FOR_FRAME) return;
             phase = Phase.REVEALING;
             removeCallbacks(deadline);
             if (frame != null) frame.close();
-            animate().alpha(0).setDuration(80).withEndAction(() -> {
-                if (cover == Cover.this) cancel();
-            }).start();
+            // Alpha runs on the cached render node. Never stretch Maps' controls,
+            // redraw a bitmap, or allocate a clipping path on animation frames.
+            animate().alpha(0).setDuration(160)
+                    .setInterpolator(AnimationUtils.loadInterpolator(host, R.interpolator.window_ease_out))
+                    .withEndAction(() -> {
+                        if (cover == Cover.this) cancel();
+                    }).start();
         }
 
         @Override protected void onDraw(Canvas canvas) {
-            if (phase == Phase.DISPOSED) return;
-            paint.setAlpha(expanding ? 255 : Math.round(255 * (1 - progress)));
-            canvas.drawBitmap(snapshot, null, screen, paint);
-            current.set(lerp(start.left, end.left, progress), lerp(start.top, end.top, progress),
-                    lerp(start.right, end.right, progress), lerp(start.bottom, end.bottom, progress));
-            float radius = Ui.dp(host, 20) * (expanding ? 1 - progress : progress);
-            boolean onRight = (expanding ? start.left : end.left) > Ui.dp(host, 60) + 1;
-            float[] corners = onRight
-                    ? new float[]{radius, radius, 0, 0, 0, 0, radius, radius}
-                    : new float[]{0, 0, radius, radius, radius, radius, 0, 0};
-            clip.reset();
-            clip.addRoundRect(current, corners, Path.Direction.CW);
-            canvas.save();
-            canvas.clipPath(clip);
-            paint.setAlpha(255);
-            canvas.drawBitmap(snapshot, source, current, paint);
-            canvas.restore();
+            if (phase != Phase.DISPOSED) canvas.drawBitmap(snapshot, null, screen, paint);
         }
 
         void dispose() {
             phase = Phase.DISPOSED;
             removeCallbacks(deadline);
             if (frame != null) frame.close();
-            if (animator != null) animator.cancel();
             animate().cancel();
             windows.removeViewImmediate(this);
             // RenderThread may still reference this hardware bitmap until its frame retires.
             // Let the bitmap's lifetime follow the detached cover instead of recycling early.
         }
     }
-
-    private static float lerp(float from, float to, float progress) { return from + (to - from) * progress; }
 }

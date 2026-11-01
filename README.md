@@ -137,12 +137,13 @@ They have not been installed on the PX6. See the [real-app validation notes](tas
 
 ### Maps transitions
 
-Maps expands from its panel and contracts back with a short ease-out curve
-(260 ms outward, 220 ms inward). A temporary, touch-blocking overlay animates an
-in-memory screenshot while the existing task moves once underneath. Only the
-sidebar-facing corners are rounded. The cover crossfades away after both Maps
-buffers reach the destination width, with a 900 ms maximum wait. This observes
-buffer geometry, not whether individual map tiles have finished loading.
+Maps uses a short 160 ms eased crossfade between its panel and fullscreen layouts.
+A temporary, touch-blocking overlay holds an unscaled in-memory screenshot while
+the existing task moves once underneath. It fades away after both Maps buffers
+reach the destination width, with a 900 ms maximum wait. The image is drawn once
+and its cached render node supplies the alpha animation. This avoids stretching
+text and controls or redrawing clipped bitmaps on every animation frame.
+The frame check observes buffer geometry, not whether map tiles finished loading.
 
 The Android 10 screenshot overload excludes secure content. Captures are never
 saved or transmitted. The platform-signed app declares SYSTEM_ALERT_WINDOW for
