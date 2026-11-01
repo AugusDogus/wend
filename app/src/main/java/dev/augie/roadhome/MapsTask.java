@@ -84,6 +84,25 @@ final class MapsTask {
                 + task.displayId + " to " + displayId);
     }
 
+    void bounded(Task task, android.graphics.Rect bounds) throws ReflectiveOperationException {
+        ActivityOptions options = ActivityOptions.makeBasic();
+        options.setLaunchDisplayId(0);
+        options.setLaunchBounds(bounds);
+        ActivityOptions.class.getMethod("setLaunchWindowingMode", int.class).invoke(options, 5);
+        Object result = api().getMethod("startActivityFromRecents", int.class, Bundle.class)
+                .invoke(service(), task.id, options.toBundle());
+        if (!(result instanceof Integer) || (Integer) result < 0) {
+            throw new IllegalStateException("Bounding Maps task " + task.id + " failed: " + result);
+        }
+        remember(task.id);
+        Log.i("RoadHomeLive", "Bounded task " + task.id + " " + bounds + " result=" + result);
+    }
+
+    void fullscreen(Task task) throws ReflectiveOperationException {
+        api().getMethod("setTaskWindowingMode", int.class, int.class, boolean.class)
+                .invoke(service(), task.id, 1, true);
+    }
+
     private static Class<?> api() throws ClassNotFoundException {
         return Class.forName("android.app.IActivityTaskManager");
     }

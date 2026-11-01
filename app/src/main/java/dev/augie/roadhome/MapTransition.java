@@ -17,6 +17,7 @@ import android.view.animation.AnimationUtils;
 
 /** Brief, in-memory visual bridge while the real Maps task changes displays once. */
 final class MapTransition {
+    private enum Completion { CROSSFADE, HANDOFF }
     private enum Phase { PENDING, WAITING_FOR_FRAME, REVEALING, DISPOSED }
     private final Activity host;
     private final View panel;
@@ -30,6 +31,13 @@ final class MapTransition {
     }
 
     void move(boolean expanding, Runnable moveTask) {
+        prepare(expanding, moveTask, Completion.CROSSFADE);
+    }
+
+    /** Keep the original pixels stationary until the native window animator is ready. */
+    void hold(Runnable moveTask) { prepare(true, moveTask, Completion.HANDOFF); }
+
+    private void prepare(boolean expanding, Runnable moveTask, Completion completion) {
         cancel();
         if (!ValueAnimator.areAnimatorsEnabled() || windows == null || !panel.isLaidOut()) {
             moveTask.run();
@@ -46,7 +54,7 @@ final class MapTransition {
                     width, height, rotation);
             if (!(result instanceof Bitmap)) throw new IllegalStateException("No transition snapshot returned");
             snapshot = (Bitmap) result;
-            Cover next = new Cover(snapshot, expanding ? width : panel.getWidth(), moveTask);
+            Cover next = new Cover(snapshot, expanding ? width : panel.getWidth(), moveTask, completion);
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(width, height,
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -85,6 +93,7 @@ final class MapTransition {
         private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
         private final int destinationWidth;
         private final Runnable moveTask;
+        private final Completion completion;
         private MapFrame frame;
         private Phase phase = Phase.PENDING;
         private final Runnable deadline = () -> {
@@ -92,11 +101,12 @@ final class MapTransition {
             reveal();
         };
 
-        Cover(Bitmap snapshot, int destinationWidth, Runnable moveTask) {
+        Cover(Bitmap snapshot, int destinationWidth, Runnable moveTask, Completion completion) {
             super(host);
             this.snapshot = snapshot;
             this.destinationWidth = destinationWidth;
             this.moveTask = moveTask;
+            this.completion = completion;
             screen = new RectF(0, 0, snapshot.getWidth(), snapshot.getHeight());
             setClickable(true);
         }
@@ -106,12 +116,17 @@ final class MapTransition {
             phase = Phase.WAITING_FOR_FRAME;
             moveTask.run();
             if (phase == Phase.DISPOSED) return;
+            if (completion == Completion.HANDOFF) {
+                postDelayed(deadline, 1500);
+                return;
+            }
             frame = new MapFrame(destinationWidth, () -> post(this::reveal));
             postDelayed(deadline, 900);
         }
 
         private void reveal() {
             if (phase != Phase.WAITING_FOR_FRAME) return;
+            if (completion == Completion.HANDOFF) { cancel(); return; }
             phase = Phase.REVEALING;
             removeCallbacks(deadline);
             if (frame != null) frame.close();

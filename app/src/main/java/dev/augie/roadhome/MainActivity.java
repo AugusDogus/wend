@@ -15,7 +15,7 @@ import android.widget.LinearLayout;
 import android.widget.TextClock;
 
 public final class MainActivity extends Activity {
-    private EmbeddedMaps maps;
+    private MapPanel maps;
     private MediaPanel media;
     private LinearLayout content;
     private SharedPreferences preferences;
@@ -28,7 +28,9 @@ public final class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.HORIZONTAL);
         root.setBackground(Ui.wallpaper());
-        root.setPadding(0, 0, 0, 0);
+        int inset = BuildConfig.WINDOWED_MAPS ? getResources().getDimensionPixelSize(
+                getResources().getIdentifier("status_bar_height", "dimen", "android")) : 0;
+        root.setPadding(0, inset, 0, 0);
         root.addView(createDock(), new LinearLayout.LayoutParams(Ui.dp(this, 60), -1));
         View dockDivider = new View(this);
         dockDivider.setBackgroundColor(0x20FFFFFF);
@@ -38,7 +40,7 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams body = new LinearLayout.LayoutParams(0, -1, 1);
         body.leftMargin = 0;
         root.addView(content, body);
-        maps = new EmbeddedMaps(this);
+        maps = BuildConfig.WINDOWED_MAPS ? new WindowedMaps(this) : new EmbeddedMaps(this);
         media = new MediaPanel(this, this::openMusic);
         arrangePanels();
         setContentView(root);
@@ -51,6 +53,7 @@ public final class MainActivity extends Activity {
         dock.setPadding(Ui.dp(this, 6), 0, Ui.dp(this, 6), Ui.dp(this, 4));
         dock.setBackgroundColor(0x40101820);
         TextClock clock = new TextClock(this);
+        if (BuildConfig.WINDOWED_MAPS) clock.setVisibility(View.GONE);
         clock.setFormat12Hour("h:mm");
         clock.setFormat24Hour("HH:mm");
         clock.setTextColor(Ui.TEXT);
@@ -118,7 +121,7 @@ public final class MainActivity extends Activity {
         boolean onRight = preferences.getBoolean("mapsOnRight", true);
         String[] choices = {onRight ? "Move Maps to the left" : "Move Maps to the right",
                 "Map size", "Android settings", "Choose home app"};
-        new AlertDialog.Builder(this).setTitle("Road Home").setItems(choices, (dialog, which) -> {
+        showLauncherDialog(new AlertDialog.Builder(this).setTitle("Road Home").setItems(choices, (dialog, which) -> {
             switch (which) {
                 case 0:
                     preferences.edit().putBoolean("mapsOnRight", !onRight).apply();
@@ -129,17 +132,24 @@ public final class MainActivity extends Activity {
                 case 3: startActivity(new Intent(Settings.ACTION_HOME_SETTINGS)); break;
                 default: throw new IllegalArgumentException("Unexpected settings selection: " + which);
             }
-        }).setNegativeButton("Close", null).show();
+        }).setNegativeButton("Close", null).create());
     }
 
     private void chooseMapSize() {
         int selected = preferences.getInt("mapPercent", 70) == 60 ? 0 : 1;
-        new AlertDialog.Builder(this).setTitle("Map size")
+        showLauncherDialog(new AlertDialog.Builder(this).setTitle("Map size")
                 .setSingleChoiceItems(new String[]{"Balanced (60%)", "More map (70%)"}, selected, (dialog, which) -> {
                     preferences.edit().putInt("mapPercent", which == 0 ? 60 : 70).apply();
                     arrangePanels();
                     dialog.dismiss();
-                }).setNegativeButton("Close", null).show();
+                }).setNegativeButton("Close", null).create());
+    }
+
+    private void showLauncherDialog(AlertDialog dialog) {
+        if (BuildConfig.WINDOWED_MAPS && dialog.getWindow() != null) {
+            dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
+        }
+        dialog.show();
     }
 
     @Override protected void onStart() { super.onStart(); overridePendingTransition(0, 0); maps.resume(); media.start(); }

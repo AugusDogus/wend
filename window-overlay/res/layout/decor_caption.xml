@@ -1,0 +1,7 @@
+<com.android.internal.widget.DecorCaptionView xmlns:android="http://schemas.android.com/apk/res/android"
+ android:layout_width="match_parent" android:layout_height="match_parent">
+ <LinearLayout android:id="@*android:id/caption" android:layout_width="match_parent" android:layout_height="0dp">
+  <Button android:id="@*android:id/maximize_window" android:layout_width="0dp" android:layout_height="0dp" />
+  <Button android:id="@*android:id/close_window" android:layout_width="0dp" android:layout_height="0dp" />
+ </LinearLayout>
+</com.android.internal.widget.DecorCaptionView>

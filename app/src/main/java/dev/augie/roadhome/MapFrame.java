@@ -56,17 +56,27 @@ final class MapFrame implements AutoCloseable {
     }
 
     static boolean ready(ProtoInputStream proto, int width) throws IOException {
-        boolean window = false, tiles = false;
+        int windowWidth = 0;
+        float windowX = 0, tilesX = 0;
+        boolean tiles = false;
         int field;
         while ((field = proto.nextField()) != -1) {
             if (field != 1) continue;
             long layer = proto.start(0x20b00000001L);
             String name = "";
             int flags = 0, bufferWidth = 0;
+            float positionX = 0;
             boolean protectedContent = false;
             while ((field = proto.nextField()) != -1) {
                 switch (field) {
                     case 2: name = proto.readString(0x10900000002L); break;
+                    case 11:
+                        long position = proto.start(0x10b0000000bL);
+                        while ((field = proto.nextField()) != -1) {
+                            if (field == 1) positionX = proto.readFloat(0x10200000001L);
+                        }
+                        proto.end(position);
+                        break;
                     case 22: flags = proto.readInt(0x10d00000016L); break;
                     case 27:
                         long buffer = proto.start(0x10b0000001bL);
@@ -81,11 +91,21 @@ final class MapFrame implements AutoCloseable {
                 }
             }
             proto.end(layer);
-            if (bufferWidth != width || (flags & 0x81) != 0 || protectedContent) continue;
-            if (name.startsWith(EmbeddedMaps.PACKAGE + "/")) window = true;
-            if (name.startsWith("SurfaceView - " + EmbeddedMaps.PACKAGE + "/")) tiles = true;
+            if (bufferWidth == 0 || (flags & 0x81) != 0 || protectedContent) continue;
+            if (name.startsWith(EmbeddedMaps.PACKAGE + "/")) {
+                windowWidth = bufferWidth; windowX = positionX;
+            }
+            if (name.startsWith("SurfaceView - " + EmbeddedMaps.PACKAGE + "/") && bufferWidth == width) {
+                tiles = true; tilesX = positionX;
+            }
         }
-        return window && tiles;
+        if (!tiles) return false;
+        if (windowWidth == width) return true;
+        // Freeform decor retains symmetric shadow insets while its content has already
+        // resized. Compare content width, rather than waiting for the shadow buffer to vanish.
+        float inset = tilesX - windowX;
+        return inset > 0
+                && Math.abs(windowWidth - width - 2 * inset) < 0.5f;
     }
 
     @Override public void close() {

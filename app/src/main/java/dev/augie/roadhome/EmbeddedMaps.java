@@ -18,7 +18,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /** Owns the Android 10 map display and its task transitions, without a root shell. */
-final class EmbeddedMaps extends FrameLayout {
+final class EmbeddedMaps extends MapPanel {
     static final String PACKAGE = BuildConfig.MAPS_PACKAGE;
     private enum State { WAITING, READY, CLOSED }
     private State state = State.WAITING;

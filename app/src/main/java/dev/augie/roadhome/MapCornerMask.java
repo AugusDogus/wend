@@ -18,13 +18,19 @@ final class MapCornerMask extends View {
     }
 
     private final Corner corner;
+    private final View anchor;
     private final Path cutout = new Path();
     private final Drawable wallpaper = Ui.wallpaper();
     private final int[] location = new int[2];
 
     MapCornerMask(Context context, Corner corner) {
+        this(context, corner, null);
+    }
+
+    MapCornerMask(Context context, Corner corner, View anchor) {
         super(context);
         this.corner = corner;
+        this.anchor = anchor;
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
     }
 
@@ -42,8 +48,9 @@ final class MapCornerMask extends View {
     }
 
     @Override protected void onDraw(Canvas canvas) {
-        getLocationInWindow(location);
-        View root = getRootView();
+        if (anchor == null) getLocationInWindow(location);
+        else getLocationOnScreen(location);
+        View root = anchor == null ? getRootView() : anchor;
         wallpaper.setBounds(-location[0], -location[1], root.getWidth() - location[0], root.getHeight() - location[1]);
         int save = canvas.save();
         canvas.clipPath(cutout);

@@ -29,6 +29,31 @@ public class MapFrameTest {
         assertTrue(ready(1280, 1280, 0, 1));
     }
 
+    @Test public void acceptsNewContentInsideTheExistingFreeformShadowBuffer() throws IOException {
+        assertTrue(shadowReady(1400, 1280, 1280));
+        assertTrue(shadowReady(953, 833, 833));
+        assertFalse(shadowReady(1400, 833, 833));
+    }
+
+    private static boolean shadowReady(int windowWidth, int tileWidth, int target) throws IOException {
+        ProtoOutputStream proto = new ProtoOutputStream();
+        positionedLayer(proto, EmbeddedMaps.PACKAGE + "/MapsActivity#0", windowWidth, -60);
+        positionedLayer(proto, "SurfaceView - " + EmbeddedMaps.PACKAGE + "/MapsActivity#0", tileWidth, 0);
+        return MapFrame.ready(new ProtoInputStream(new ByteArrayInputStream(proto.getBytes())), target);
+    }
+
+    private static void positionedLayer(ProtoOutputStream proto, String name, int width, float x) {
+        long layer = proto.start(0x20b00000001L);
+        proto.write(0x10900000002L, name);
+        long position = proto.start(0x10b0000000bL);
+        proto.write(0x10200000001L, x);
+        proto.end(position);
+        long buffer = proto.start(0x10b0000001bL);
+        proto.write(0x10d00000001L, width);
+        proto.end(buffer);
+        proto.end(layer);
+    }
+
     private static boolean ready(int windowWidth, int tileWidth, int flags, int queued) throws IOException {
         ProtoOutputStream proto = new ProtoOutputStream();
         layer(proto, EmbeddedMaps.PACKAGE + "/MapsActivity#0", windowWidth, 0, 0);

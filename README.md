@@ -41,6 +41,49 @@ export ANDROID_HOME=/path/to/Android/Sdk
 
 The unsigned release APK cannot be installed as-is. Sign it with the device's matching platform key using `scripts/sign-px6.py app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/road-home-px6.apk`. That helper is specifically pinned to this PX6's verified public Rockchip development certificate. Do not disable Android signature verification. The release build is not debuggable.
 
+## Experimental live Maps window
+
+The `windowed` build uses a real bounded Maps task on the main display and
+animates its live surface into fullscreen. It does not stretch a preview. This
+is opt-in, emulator-tested on Android 10, and not installed on the PX6. The
+standard release retains ActivityView. See [implementation and validation
+notes](docs/maps-window-transitions.md) for the API findings and remaining limits.
+
+Requirements: Android 10, its matching platform signature/system UID, and
+freeform windows enabled in Developer options followed by an Android restart.
+The build helper also needs Android SDK build-tools 36.0.0. Build the decoration
+overlay against the **exact target device's** framework, preserving its private
+resource IDs. The launcher refuses to enable an overlay with a different
+framework hash.
+
+For the dedicated AOSP Android 10 emulator:
+
+```sh
+mkdir -p build
+adb -s emulator-5558 pull /system/framework/framework-res.apk build/framework-res.apk
+python scripts/build-window-decoration.py build/framework-res.apk --target aosp29
+./gradlew :app:assembleWindowed :app:testWindowedUnitTest :app:lintWindowed
+python scripts/sign-px6.py --target aosp29 \
+  app/build/outputs/apk/windowed/app-windowed-unsigned.apk \
+  app/build/outputs/apk/windowed/road-home-windowed.apk
+adb -s emulator-5558 install -r build/window-overlay/window-decor.apk
+adb -s emulator-5558 install -r app/build/outputs/apk/windowed/road-home-windowed.apk
+```
+
+This replaces Road Home's APK while retaining its data. The overlay removes
+**all freeform window titlebars** while enabled. The experimental layout keeps
+Android's status bar visible. Fullscreen expansion animates position and crop
+of Maps' live surface after its buffers are ready; Home uses an unscaled
+crossfade. A cold transition can exceed the readiness deadline and complete
+without motion. Active navigation and vehicle suspend/audio remain unverified
+in this variant.
+
+To roll back, build and sign the regular release with the same target key,
+install it over the windowed APK, then uninstall `dev.augie.roadhome.windowdecor`
+to restore freeform titlebars. Installing the regular launcher alone does not
+disable the decoration overlay. Rebuild the overlay after a ROM change; never
+reuse the emulator's overlay on the head unit or disable signature checks.
+
 ## Trial checks
 
 - Verify APK signing and ensure compile-only framework stubs are absent from DEX.

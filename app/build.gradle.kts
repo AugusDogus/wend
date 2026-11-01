@@ -9,10 +9,15 @@ android {
         targetSdk = 29
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("boolean", "WINDOWED_MAPS", "false")
         buildConfigField("String", "MAPS_PACKAGE", "\"com.google.android.apps.maps\"")
         buildConfigField("String", "VIDEO_PACKAGE", "\"com.google.android.youtube\"")
     }
     buildTypes {
+        create("windowed") {
+            initWith(getByName("release"))
+            buildConfigField("boolean", "WINDOWED_MAPS", "true")
+        }
         create("emulator") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".emulator"

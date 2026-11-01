@@ -180,6 +180,9 @@ final class AppDrawer {
     }
 
     private void showSheet() {
+        if (BuildConfig.WINDOWED_MAPS && dialog.getWindow() != null) {
+            dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
+        }
         dialog.show();
         Window window = dialog.getWindow();
         if (window != null) {

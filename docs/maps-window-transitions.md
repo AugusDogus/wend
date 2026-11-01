@@ -1,4 +1,4 @@
-# Live Maps window transition investigation
+# Live Maps window transitions
 
 Tested November 1, 2026 on the Android 10 (API 29) Google-apps emulator,
 1280 × 720, with platform-signed Road Home and real Google Maps. No head-unit
@@ -44,15 +44,73 @@ show that replacing the bitmap animation with per-frame display resizing is not
 yet a satisfactory fix. The experimental code was removed and the existing
 unscaled crossfade restored.
 
-## Next experiment
+## Implemented experiment: main-display Maps
 
-Test a bounded Maps task on the main display, with the launcher arranged around
-it. First verify that its bounds changes produce a remote animation target and
-that Home, touch routing, navigation continuity and background apps still work.
-Then animate position and crop using a surface transaction, coordinating the
-final layout change with the app's new buffers. Avoid nonuniform scaling.
-This architecture is a candidate, not a validated implementation. A live crop
-animation is also different from asking Maps to reflow its UI on every frame.
+The opt-in `windowed` build keeps the real Maps task in a bounded freeform window
+on display 0. The standard release still uses ActivityView. No head-unit install
+has been performed for this experiment.
+
+Changing that task to fullscreen produces an Android 10 remote animation target
+for `TASK_CHANGE_WINDOWING_MODE` (27), including a live SurfaceControl leash and
+start bounds. Road Home animates the leash's position and crop over 280 ms with
+an ease-out curve. It does not scale Maps pixels or ask Maps to relayout every
+frame. Maps lays out once at the destination size; the compositor reveals that
+live content through a growing window. Controls can change layout at handoff.
+
+An unscaled, stationary screenshot covers preparation while Maps produces its
+new buffers. The cover disappears before live motion begins. Readiness requires
+both the Maps window and tile buffers at the destination width, accounting for
+freeform shadow insets. A 900 ms deadline completes the window change without
+motion if readiness fails. Home still uses the existing unscaled crossfade.
+Android's disabled-animation setting bypasses the custom animation.
+
+The display animation definition is registered only for expansion and removed
+when its callback arrives, when canceled, or after the missing-callback deadline.
+The runner finishes unexpected targets immediately. It never registers normal
+app-launch transitions. Cleanup removes screenshot and corner overlay windows.
+
+Freeform titlebars are removed by a separate reversible framework resource
+overlay. It must be compiled against the device's exact `framework-res.apk`,
+not the SDK framework: private resource IDs differ. A mismatched prototype
+caused Maps' decor inflation to crash. The build now embeds the framework hash;
+the launcher checks it before enabling the overlay. The overlay affects all
+freeform titlebars while enabled. Standard fullscreen windows are unaffected.
+
+The freeform task stays below Android's status bar, so this variant reserves the
+status-bar height and omits the duplicate dock clock. App drawer and settings
+use application-overlay windows to appear above the freeform Maps task. Only
+the sidebar-facing Maps corners are masked.
+
+## Validation and limits
+
+Release, fixture, and windowed unit tests passed (32 each), along with release
+and windowed builds and lint. Geometry tests cover both panel sides and exact
+final bounds. Buffer tests accept real freeform shadow insets and reject stale
+tile widths.
+
+Emulator trials preserved Maps task 93 and its ActivityRecord across fullscreen,
+Home, panel-side changes, launcher APK replacement, and a YouTube round trip.
+Live expansion was recorded on both sides. Cold trials sometimes hit the buffer
+deadline and completed without motion; subsequent trials animated. This remains an
+experimental architecture, not a claim of consistently smooth hardware behavior.
+
+A rapid fullscreen/Home trial exposed duplicate restoration requests from Home
+lifecycle callbacks. A retained old Maps tile surface then protruded into the
+freeform shadow area. Restoration now skips an already foregrounded task at the
+same bounds, and Home cancels any expansion even when delivered through
+`onNewIntent`. After relaunching Maps to clear the already leaked surface, three
+rapid trials and a YouTube round trip retained task 103 without the leak or
+repeated bounds commands. A SurfaceFlinger dump showed one tile layer at the
+correct panel bounds. Both panel sides and both configured sizes were checked;
+no transition cover remained afterward. This does not establish long-duration
+stability.
+
+Active navigation continuity has not been verified in this variant: Maps returned
+“Something went wrong” when calculating the test route. Keeping the same task is
+verified separately from maintaining an active route. Vehicle suspend/audio,
+head-unit performance, and reverse live animation are not validated.
+
+See the [setup and rollback instructions](../README.md#experimental-live-maps-window).
 
 ## Android source references
 
@@ -60,6 +118,6 @@ animation is also different from asking Maps to reflow its UI on every frame.
 - [ActivityTaskManagerService: resizeStack and resizeTask](https://android.googlesource.com/platform/frameworks/base/+/android-10.0.0_r47/services/core/java/com/android/server/wm/ActivityTaskManagerService.java)
 - [ActivityView: surfaceChanged resizes its virtual display](https://android.googlesource.com/platform/frameworks/base/+/android-10.0.0_r47/core/java/android/app/ActivityView.java)
 
-Local recordings and dumps are in ignored `build/motion/maps-live-resize-*` and
-`build/live-transition/`. They demonstrate experimental failures, not a shipped
-visual improvement.
+Local recordings and dumps live in ignored `build/motion/` and
+`build/live-transition/`. `maps-live-verified.mp4` captures the final expansion, Home return, and drawer;
+`maps-live-resize-*` captures the earlier failed per-frame resize approach.
