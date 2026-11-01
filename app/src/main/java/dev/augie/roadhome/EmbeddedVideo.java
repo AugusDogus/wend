@@ -27,7 +27,7 @@ final class EmbeddedVideo extends FrameLayout {
     private ActivityView player;
     private ActivityViewSurface playerSurface;
     private final Activity host;
-    private final SurfaceExpansion expansion;
+    private final LiveVideoWindow expansion;
     private final TextView status;
     private final ImageView thumbnail;
     private final Point displaySize = new Point();
@@ -42,7 +42,7 @@ final class EmbeddedVideo extends FrameLayout {
     EmbeddedVideo(Activity context) {
         super(context);
         host = context;
-        expansion = new SurfaceExpansion(context);
+        expansion = new LiveVideoWindow(context);
         context.getSystemService(WindowManager.class).getDefaultDisplay().getRealSize(displaySize);
         setBackgroundColor(android.graphics.Color.BLACK);
         setClipChildren(true);
@@ -89,13 +89,8 @@ final class EmbeddedVideo extends FrameLayout {
     void resume() {
         hostActive = true;
         if (expansion.active()) {
-            expansion.cancel();
-            state = State.READY;
-            if (presentation != VideoCardState.PLAYING) {
-                coverPlayer();
-                status.setVisibility(GONE);
-                setVisibility(presentation == VideoCardState.HIDDEN ? GONE : VISIBLE);
-            }
+            expansion.collapse();
+            return;
         }
         maybeLaunch();
     }
@@ -105,7 +100,7 @@ final class EmbeddedVideo extends FrameLayout {
         expansion.cancel();
         cancelPreparation();
         if (state == State.SHOWN) state = State.READY;
-        if (!expansion.handingOff()) coverPlayer();
+        coverPlayer();
     }
 
     boolean openFullscreen(Runnable open) {
@@ -115,12 +110,17 @@ final class EmbeddedVideo extends FrameLayout {
         cancelPreparation();
         RectF source = new RectF(previousBounds.left, previousBounds.top,
                 previousBounds.left + previousBounds.width, previousBounds.top + previousBounds.height);
-        expansion.open(this, playerSurface, source, displaySize.x, displaySize.y, () -> {
-            state = State.READY;
-            open.run();
-            // If Android rejects the launch, restore the preview instead of leaving a hidden surface.
-            post(() -> { if (hostActive) maybeLaunch(); });
+        expansion.open(this, playerSurface, source, displaySize.x, displaySize.y, open, () -> {
+            cancelPreparation();
+            if (hostActive && presentation == VideoCardState.PLAYING) inspectSurface();
+            else {
+                if (state == State.SHOWN) state = State.READY;
+                coverPlayer();
+                status.setVisibility(GONE);
+                setVisibility(presentation == VideoCardState.HIDDEN ? GONE : VISIBLE);
+            }
         });
+        if (expansion.active()) postDelayed(inspect, 300);
         return true;
     }
 
@@ -171,8 +171,18 @@ final class EmbeddedVideo extends FrameLayout {
                         try {
                             playerSurface = new ActivityViewSurface(view);
                             playerSurface.hide();
-                            state = State.READY;
-                            maybeLaunch();
+                            geometryReader.execute(() -> {
+                                try {
+                                    VideoDisplayPolicy.fixOrientation(view.getVirtualDisplayId());
+                                    post(() -> {
+                                        if (player != view || state != State.WAITING) return;
+                                        state = State.READY;
+                                        maybeLaunch();
+                                    });
+                                } catch (IOException | RuntimeException error) {
+                                    post(() -> { if (player == view && state == State.WAITING) fail(error); });
+                                }
+                            });
                         } catch (ReflectiveOperationException | RuntimeException error) { fail(error); }
                     }
                     @Override public void onActivityViewDestroyed(ActivityView view) {
@@ -202,11 +212,21 @@ final class EmbeddedVideo extends FrameLayout {
     private void inspectSurface() {
         if (!hostActive || (state != State.PREPARING && state != State.SHOWN)) return;
         int requestGeneration = generation;
+        boolean presenting = expansion.active();
         geometryReader.execute(() -> {
             try {
-                VideoSurface.Bounds bounds = VideoSurface.read(displaySize.x, displaySize.y);
+                VideoSurface.Bounds bounds = VideoSurface.read(displaySize.x, displaySize.y, presenting);
                 post(() -> {
                     if (requestGeneration != generation || !hostActive) return;
+                    if (expansion.active()) {
+                        if (bounds != null) {
+                            previousBounds = bounds;
+                            expansion.updateSource(new RectF(bounds.left, bounds.top,
+                                    bounds.left + bounds.width, bounds.top + bounds.height));
+                        }
+                        postDelayed(inspect, 300);
+                        return;
+                    }
                     applyBounds(bounds);
                 });
             } catch (IOException | ReflectiveOperationException | RuntimeException | LinkageError error) {
@@ -226,7 +246,9 @@ final class EmbeddedVideo extends FrameLayout {
             float y = (getHeight() - bounds.height * scale) / 2 - bounds.top * scale;
             Rect crop = new Rect(Math.round(bounds.left), Math.round(bounds.top),
                     Math.round(bounds.left + bounds.width), Math.round(bounds.top + bounds.height));
-            player.setClipBounds(crop);
+            // The View remains unscaled. Its clip is in card coordinates; the
+            // source-video crop belongs only to the transformed compositor root.
+            player.setClipBounds(new Rect(0, 0, getWidth(), getHeight()));
             try {
                 // Scaling the View and revealing the surface use different frame schedules.
                 // Commit scale, crop, position, input, and visibility atomically on the root.
@@ -264,6 +286,7 @@ final class EmbeddedVideo extends FrameLayout {
     private void fail(Throwable error) {
         cancelPreparation();
         state = State.FAILED;
+        expansion.cancel();
         coverPlayer();
         status.setText(PLAYER_UNAVAILABLE);
         Log.e("RoadHome", "Could not embed the playing YouTube video surface", error);

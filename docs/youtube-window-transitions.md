@@ -1,93 +1,81 @@
-# YouTube preview expansion
+# Live YouTube window transitions
 
-The media action and app drawer share the same opening path. A visible, playing
-preview expands over 260 ms using the launcher's window ease-out curve. Paused
-thumbnails, missing geometry, disabled animations, and previews that are still
-preparing use the existing direct task-opening path. Nothing sends Play.
+A playing preview now stays on the same virtual display when opened fullscreen.
+`LiveVideoWindow` reparents the launcher's own ActivityView root into a transparent
+overlay, then animates its uniform scale, position, and crop over 280 ms. Home
+animates the live surface back and atomically restores its preview parent,
+geometry, and input portal. There is no screenshot, frozen-frame cover, task
+transfer, display resize, or decoder restart in this round trip.
 
-## Live surface ownership
+## Android integration
 
-`SurfaceExpansion` temporarily reparents our ActivityView container under a
-transparent application-overlay window. It waits for that window's first
-committed frame before starting motion. An extra SurfaceView introduced missing
-early frames in testing, so the live container attaches directly to the owned
-window surface.
+- Native YouTube touches pass through the owned input portal at fullscreen size.
+  The portal is disabled during motion; the overlay blocks touches to Maps below.
+- Android 10 routes Home to the last touched virtual display, which cannot host
+  the primary launcher. While presenting video, the launcher receives Android's
+  `CLOSE_SYSTEM_DIALOGS` notification with reason `homekey` and explicitly launches
+  its existing Home task on display 0. Its Home intent starts the return animation
+  after the synchronous launch call completes.
+- Android's fixed-to-user rotation policy is enabled only for the owned video
+  display through `cmd window set-fix-to-user-rotation`. This runs off the main
+  thread with a two-second timeout using the launcher's existing platform UID.
+  It prevents YouTube's portrait request from rotating the virtual display and
+  exposing Maps on half the fullscreen presentation. YouTube can still letterbox
+  its portrait watch-page UI inside that fixed display.
+- SurfaceFlinger metadata is polled while fullscreen to track the decoder's
+  current position, including its watch page. The return targets those bounds.
+  The View clip uses card coordinates; the video-source crop belongs only to the
+  transformed compositor root. Mixing these coordinate spaces hid offset videos.
 
-The scale is uniform on both axes. The initial crop and transform exactly match
-the video card, including videos with a different aspect ratio. At the end the
-transform is identity and the crop covers the full virtual display. If YouTube
-is showing its watch page, the crop reveals that interface around the video.
-The task and virtual display are never resized on animation frames. This path
-does not capture pixels, read stream URLs, or use a bitmap transition.
+No Xposed installation or persistent framework-file replacement is needed for
+these Android 10 hooks. The implementation still requires the existing platform
+signature/system permissions and Android 10 hidden APIs.
 
-The same existing task moves to display 0 after the animation. Its live surface
-stays visible until the move completes; removing it first exposed Home for a
-frame. Cleanup restores our container's original parent and removes the overlay.
-Home or backgrounding cancels a pending expansion without a delayed app launch.
-Repeated opening requests are coalesced, and missing window readiness falls back
-to a direct open after 700 ms.
+## Lifecycle and fallback
 
-## Input and lifecycle
+An unavailable or paused preview uses the existing direct task-opening path.
+Opening never sends Play. Cold embedding still waits for stable, advancing
+frames, so the first acquisition of an externally opened task can take time.
+Continuous presentation applies once the playing preview is ready.
 
-The embedded input portal is disabled during motion. After a successful task
-transfer, the now-empty ActivityView is released. Keeping it alive left duplicate
-YouTube input-window entries on the virtual and physical displays in the Android
-10 emulator, making fullscreen controls unresponsive. Releasing the empty host
-cleared the old assignment. Returning Home hosts the existing task in a new
-full-resolution ActivityView; it does not relaunch the video.
-
-Opening an external app explicitly suspends embedding and hides native Maps
-corner masks. Android can keep Home started while its virtual display exists,
-so `onStop` alone is insufficient. A Home intent restores these hosts even when
-there is no new `onStart`; failed launches restore them immediately.
+Repeated opening requests are coalesced. Missing overlay readiness falls back
+after 700 ms. Backgrounding cancels the window without a delayed app launch.
+Pausing fullscreen and returning Home preserves the paused media state and allows
+subsequent playback to prepare the preview again. Thumbnail artwork still depends
+on the app supplying it; without artwork the existing play placeholder is shown.
 
 ## Validation
 
-- Release and windowed builds, unit tests, and lint pass. Tests cover exact card
-  and display endpoints, offset watch-page geometry, portrait-video proportions,
-  crop containment, cancellation, repeated requests, and disabled animations.
-- Real YouTube on the Android 10 emulator expanded beside real Maps. Final
-  recordings show live video throughout expansion without the earlier blank
-  startup or Home flash at handoff. The final repeat retained YouTube task 131.
-- Fullscreen Pause worked after transfer, with one YouTube input-window entry
-  on display 0 and no remaining virtual display. Opening a paused video did not
-  start playback. Maps corner masks did not remain over fullscreen YouTube.
-- Local recording: `build/motion/youtube-expansion-final.mp4`. Earlier recordings
-  are diagnostic prototypes. Software-rendered emulator frame rate does not
-  establish head-unit performance.
+Release build, lint, and 52 unit tests pass. Tests cover geometry/proportions,
+source ownership, offset watch-page geometry, advancing frames, cancellation,
+window-readiness timeout, duplicate requests, and system Home routing.
 
-Hardware animation, ignition/audio behavior, non-fullscreen watch-page playback,
-and portrait-video playback still require device validation. Geometry for those
-layouts is unit-tested. The return-to-Home video path is not animated by this change.
+Real YouTube and Maps on the Android 10 emulator exercised fullscreen controls,
+repeated live fullscreen/Home cycles, pause/Home/resume, and watch-page playback.
+One measured round trip preserved decoder layer 4451, with frame counters advancing
+from 908 to 1064 while the return was still in progress. The task remained on its
+virtual display. Earlier recorded cycles similarly retained one decoder layer
+through both endpoints. The recording frame rate does not establish hardware
+smoothness. Initial external-app acquisition, APK replacement, vehicle sleep/audio,
+and arbitrary YouTube UI changes are separate lifecycle paths.
 
-Build `f5c5c34` and its matching decoration overlay were installed on the PX6 on
-2026-11-01, preserving app data. The installed APK hash matched the signed artifact.
-Maps fullscreen/Home ran on hardware; an initial stale map surface extending into
-the sidebar cleared after restarting Maps. The final Home screenshot showed the
-correct panel bounds. This deployment did not measure YouTube animation performance.
+Previous revisions transferred YouTube to display 0 and released the empty host.
+They fixed an oversized preview reveal, but measured 0.95 to 1.98 seconds of black
+while creating the returning host. The persistent live window removes that transfer
+from the warm round trip. Historical recordings under `build/preview-handoff`
+show that superseded behavior.
 
+## PX6 deployment, 2026-11-01
 
-## Return artifact correction
+The release APK was signed with the matching PX6 platform certificate and
+installed with `adb install -r`, preserving app data. The previous installed APK
+was saved locally at `build/live-video/px6-backup/road-home-before.apk`. The obsolete
+`dev.augie.roadhome.windowdecor` experiment was uninstalled. The device tool confirmed
+Road Home opened.
 
-A later fullscreen-layout recording exposed a large video frame over Maps when
-returning Home. The View transform was queued for rendering while a separate
-SurfaceControl transaction immediately revealed the root. Preview placement now
-commits scale, position, crop, input geometry, and alpha in one compositor
-transaction. The ActivityView itself remains unscaled. The new recording shows
-no oversized video during the return, and Maps' layer button remained usable
-beside playback.
-
-SurfaceFlinger also retained an older decoder surface after creating its
-replacement. Equal-area candidates now prefer the newer layer, and initial
-reveal requires frame-number advancement on that same layer, in addition to
-stable geometry. A retained buffer alone is not proof of current playback.
-Once shown, a temporarily unchanged frame does not hide the preview.
-
-Release build, lint, and 48 tests pass. Two added tests cover retained frames
-and replacement decoder selection. The final real-app recording is locally at
-`build/preview-handoff/ready-frames.mp4`. No oversized frame or second black flash
-was observed after reveal in its two Home returns. The initial black preview
-remains: cropped-frame analysis measured 1.98 seconds on the first return and
-0.95 seconds on the repeat. This correction does not provide a seamless video
-return animation. Emulator recording does not establish hardware frame rate.
-The signed PX6 APK is prepared, but these changes have not been deployed there.
+Hardware screenshots then failed twice with `Could not communicate with device
+support. Try refreshing devices.`, including after the prescribed device-list
+refresh. Hardware interaction testing stopped there. Do not treat deployment as
+validation of head-unit animation smoothness. The emulator recordings are locally
+at `build/live-video/fullscreen-home.mp4` and
+`build/live-video/watch-page-home.mp4`; the latter includes the final View-clip fix.

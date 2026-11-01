@@ -41,6 +41,10 @@ final class VideoSurface {
     private VideoSurface() { }
 
     static Bounds read(int displayWidth, int displayHeight) throws IOException, ReflectiveOperationException {
+        return read(displayWidth, displayHeight, false);
+    }
+
+    static Bounds read(int displayWidth, int displayHeight, boolean presenting) throws IOException, ReflectiveOperationException {
         Object service = Class.forName("android.os.ServiceManager").getMethod("getService", String.class)
                 .invoke(null, "SurfaceFlinger");
         if (!(service instanceof IBinder)) throw new IOException("SurfaceFlinger service unavailable");
@@ -49,7 +53,7 @@ final class VideoSurface {
             ((IBinder) service).dumpAsync(output.getFileDescriptor(), new String[]{"--proto"});
             output.close();
             try (ParcelFileDescriptor.AutoCloseInputStream stream = new ParcelFileDescriptor.AutoCloseInputStream(input)) {
-                return find(readLayers(new ProtoInputStream(stream)), displayWidth, displayHeight);
+                return find(readLayers(new ProtoInputStream(stream)), displayWidth, displayHeight, presenting);
             }
         } catch (android.os.RemoteException error) {
             throw new IOException("SurfaceFlinger layer query failed", error);
@@ -121,6 +125,10 @@ final class VideoSurface {
     }
 
     static Bounds find(Map<Integer, Layer> layers, int displayWidth, int displayHeight) {
+        return find(layers, displayWidth, displayHeight, false);
+    }
+
+    static Bounds find(Map<Integer, Layer> layers, int displayWidth, int displayHeight, boolean presenting) {
         Bounds largest = null;
         for (Layer video : layers.values()) {
             if (!video.name.startsWith("SurfaceView - " + EmbeddedVideo.PACKAGE + "/")
@@ -134,7 +142,8 @@ final class VideoSurface {
             if (root == null || !usable(root) || !root.name.startsWith("ActivityViewVirtualDisplay#")) continue;
             // Require this virtual display to be hosted by Road Home, not some other app.
             Layer host = layers.get(root.parent);
-            if (host == null || !host.name.startsWith("SurfaceView - " + BuildConfig.APPLICATION_ID + "/")) continue;
+            if (host == null || (!host.name.startsWith("SurfaceView - " + BuildConfig.APPLICATION_ID + "/")
+                    && !(presenting && host.name.startsWith(LiveVideoWindow.TITLE + "#")))) continue;
             Bounds bounds = new Bounds((video.x - root.x) / root.sx, (video.y - root.y) / root.sy,
                     video.width * video.sx / root.sx, video.height * video.sy / root.sy, video.id, video.frame);
             if (!Float.isFinite(bounds.left) || !Float.isFinite(bounds.top)

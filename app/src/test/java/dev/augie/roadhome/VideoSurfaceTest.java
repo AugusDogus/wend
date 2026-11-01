@@ -55,6 +55,23 @@ public class VideoSurfaceTest {
         assertNull(scene.find());
     }
 
+    @Test public void tracksWatchPageGeometryOnlyInsideOurActivePresentation() {
+        Scene scene = new Scene();
+        scene.host.name = LiveVideoWindow.TITLE + "#0";
+        scene.root.x = 0; scene.root.y = 0;
+        scene.video.x = 438; scene.video.y = 0;
+        scene.video.sx = 405f / 1280; scene.video.sy = 228f / 720;
+        scene.video.width = 1280; scene.video.height = 720;
+        assertNull(scene.find());
+        VideoSurface.Bounds bounds = VideoSurface.find(scene.layers, 1280, 720, true);
+        assertNotNull(bounds);
+        assertEquals(438, bounds.left, .01);
+        assertEquals(405, bounds.width, .01);
+        assertEquals(228, bounds.height, .01);
+        scene.host.name = "another.app live video#0";
+        assertNull(VideoSurface.find(scene.layers, 1280, 720, true));
+    }
+
     @Test public void rejectsHiddenSecureAndProtectedVideoOrAncestors() {
         Scene scene = new Scene();
         scene.video.flags = 1;

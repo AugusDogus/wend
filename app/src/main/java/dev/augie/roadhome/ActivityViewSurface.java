@@ -107,6 +107,25 @@ final class ActivityViewSurface {
         }
     }
 
+    void restorePreview(float scale, float x, float y, Rect bounds) throws ReflectiveOperationException {
+        try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+            reparent(transaction, parent);
+            transaction.setLayer(surface, 0);
+            transform(transaction, scale, x, y, bounds);
+            touchableRegion.set(bounds);
+            updateInput(transaction);
+            transaction.setAlpha(surface, 1).apply();
+        }
+    }
+
+    void input(Rect bounds) {
+        try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+            touchableRegion.set(bounds);
+            updateInput(transaction);
+            transaction.apply();
+        }
+    }
+
     private void reparent(SurfaceControl.Transaction transaction, SurfaceView destination)
             throws ReflectiveOperationException {
         Object target = surfaceControl.invoke(destination);
