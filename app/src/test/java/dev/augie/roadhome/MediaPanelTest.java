@@ -1,6 +1,9 @@
 package dev.augie.roadhome;
 
 import android.app.Activity;
+import android.app.ActivityManager;
+import android.content.ComponentName;
+import java.util.Collections;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSession;
@@ -80,6 +83,54 @@ public class MediaPanelTest {
                 assertEquals(0, Shadows.shadowOf(videoController).getCallbacks().size());
             } finally {
                 panel.stop(); panel.release(); video.release(); music.release();
+            }
+        }
+    }
+
+    @Test public void inactivePausedVideoSurvivesHomeUntilItsSelectionIsCleared() {
+        try (ActivityController<Activity> host = Robolectric.buildActivity(Activity.class).setup()) {
+            Activity activity = host.get();
+            MediaSession session = new MediaSession(activity, "video");
+            MediaController controller = paused(session, EmbeddedVideo.PACKAGE);
+            Shadows.shadowOf(controller).setMetadata(new MediaMetadata.Builder()
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, "Selected video").build());
+            ActivityManager.RunningTaskInfo task = new ActivityManager.RunningTaskInfo();
+            task.baseActivity = new ComponentName(EmbeddedVideo.PACKAGE, "PlayerActivity");
+            Shadows.shadowOf(activity.getSystemService(ActivityManager.class)).setTasks(Collections.singletonList(task));
+            ShadowMediaSessionManager sessions = Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class));
+            sessions.addController(controller);
+            MediaPanel panel = new MediaPanel(activity, () -> { });
+            try {
+                panel.start();
+                panel.stop();
+                sessions.clearControllers();
+                panel.start();
+                assertEquals(EmbeddedVideo.PACKAGE, panel.musicPackage());
+                assertEquals(View.VISIBLE, panel.getChildAt(0).getVisibility());
+                Shadows.shadowOf(controller).executeOnMetadataChanged(null);
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                assertEquals(View.GONE, panel.getChildAt(0).getVisibility());
+                panel.stop();
+                Shadows.shadowOf(controller).setMetadata(new MediaMetadata.Builder()
+                        .putString(MediaMetadata.METADATA_KEY_TITLE, "Another selected video").build());
+                sessions.addController(controller);
+                panel.start();
+                sessions.clearControllers();
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                assertEquals(View.VISIBLE, panel.getChildAt(0).getVisibility());
+                Shadows.shadowOf(controller).executeOnSessionDestroyed();
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                assertEquals(View.GONE, panel.getChildAt(0).getVisibility());
+                panel.stop();
+                sessions.addController(controller);
+                panel.start();
+                panel.stop();
+                sessions.clearControllers();
+                Shadows.shadowOf(activity.getSystemService(ActivityManager.class)).setTasks(Collections.emptyList());
+                panel.start();
+                assertEquals(View.GONE, panel.getChildAt(0).getVisibility());
+            } finally {
+                panel.stop(); panel.release(); session.release();
             }
         }
     }

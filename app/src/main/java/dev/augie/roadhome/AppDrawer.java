@@ -130,6 +130,16 @@ final class AppDrawer {
             ((MainActivity) activity).openMapsFullscreen();
             return;
         }
+        if (EmbeddedVideo.PACKAGE.equals(packageName)) {
+            try {
+                if (VideoTask.openFullscreen(activity)) return;
+            } catch (ReflectiveOperationException | RuntimeException error) {
+                android.util.Log.e("RoadHome", "Could not restore the existing video task", error);
+                Toast.makeText(activity, "The video could not be restored. Open it from Recents; existing tasks were left intact.",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+        }
         Intent launch = activity.getPackageManager().getLaunchIntentForPackage(packageName);
         if (launch == null) {
             Toast.makeText(activity, "This app is not installed or cannot be opened.", Toast.LENGTH_LONG).show();

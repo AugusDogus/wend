@@ -42,14 +42,20 @@ final class MediaSessionSubscriptions {
         observed.clear();
     }
 
+    boolean isDestroyed(MediaController controller) {
+        Subscription subscription = observed.get(controller.getSessionToken());
+        return subscription != null && subscription.destroyed;
+    }
+
     private final class Subscription {
         private final MediaController controller;
+        private boolean destroyed;
         // Callback owns its Android Handler state. Sharing one across controllers would
         // disable the remaining observers when any controller unregisters it.
         private final MediaController.Callback callback = new MediaController.Callback() {
             @Override public void onMetadataChanged(MediaMetadata metadata) { changed.run(); }
             @Override public void onPlaybackStateChanged(PlaybackState state) { changed.run(); }
-            @Override public void onSessionDestroyed() { changed.run(); }
+            @Override public void onSessionDestroyed() { destroyed = true; changed.run(); }
         };
 
         Subscription(MediaController controller) {

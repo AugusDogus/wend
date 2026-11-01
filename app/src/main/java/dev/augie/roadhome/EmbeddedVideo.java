@@ -1,7 +1,7 @@
 package dev.augie.roadhome;
 
 import android.app.ActivityView;
-import android.content.Context;
+import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Point;
 import android.graphics.Rect;
@@ -25,6 +25,7 @@ final class EmbeddedVideo extends FrameLayout {
     private State state = State.EMPTY;
     private ActivityView player;
     private ActivityViewSurface playerSurface;
+    private final Activity host;
     private final TextView status;
     private final ImageView thumbnail;
     private final Point displaySize = new Point();
@@ -36,8 +37,9 @@ final class EmbeddedVideo extends FrameLayout {
     private long preparationStarted;
     private VideoSurface.Bounds previousBounds;
 
-    EmbeddedVideo(Context context) {
+    EmbeddedVideo(Activity context) {
         super(context);
+        host = context;
         context.getSystemService(WindowManager.class).getDefaultDisplay().getRealSize(displaySize);
         setBackgroundColor(android.graphics.Color.BLACK);
         setClipChildren(true);
@@ -136,7 +138,7 @@ final class EmbeddedVideo extends FrameLayout {
             preparationStarted = SystemClock.uptimeMillis();
             previousBounds = null;
             generation++;
-            if (!VideoTask.embed(player.getVirtualDisplayId())) {
+            if (!VideoTask.embed(host, player.getVirtualDisplayId())) {
                 fail(new IllegalStateException("Playing YouTube task was not found on the main display"));
                 return;
             }

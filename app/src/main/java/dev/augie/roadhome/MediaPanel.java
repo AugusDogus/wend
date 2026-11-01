@@ -1,6 +1,7 @@
 package dev.augie.roadhome;
 
-import android.content.Context;
+import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.media.MediaDescription;
@@ -18,6 +19,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.util.List;
+import java.util.ArrayList;
 
 // Created in code with its required navigation action, never inflated from XML.
 @android.annotation.SuppressLint("ViewConstructor")
@@ -37,7 +39,7 @@ final class MediaPanel extends LinearLayout {
     private final MediaSessionSubscriptions subscriptions = new MediaSessionSubscriptions(handler, this::refresh);
     private final MediaSessionManager.OnActiveSessionsChangedListener sessionListener = this::select;
 
-    MediaPanel(Context context, Runnable openMusic) {
+    MediaPanel(Activity context, Runnable openMusic) {
         super(context);
         sessions = context.getSystemService(MediaSessionManager.class);
         setOrientation(VERTICAL);
@@ -114,11 +116,10 @@ final class MediaPanel extends LinearLayout {
         video.suspend();
         if (sessions != null) sessions.removeOnActiveSessionsChangedListener(sessionListener);
         subscriptions.clear();
-        videoController = null;
         bind(null);
     }
 
-    void release() { video.release(); }
+    void release() { videoController = null; video.release(); }
 
     private void refresh() {
         if (sessions == null) return;
@@ -131,12 +132,21 @@ final class MediaPanel extends LinearLayout {
     }
 
     private void select(List<MediaController> active) {
-        subscriptions.update(active);
+        List<MediaController> observed = active == null ? new ArrayList<>() : new ArrayList<>(active);
+        // YouTube deactivates a paused session when backgrounded, although its
+        // task still owns the selected video. Keep reading that session's live
+        // metadata until its title clears, it is destroyed, or its task closes.
+        if (videoController != null && !subscriptions.isDestroyed(videoController)
+                && hasVideoTask() && observed.stream().noneMatch(candidate ->
+                        EmbeddedVideo.PACKAGE.equals(candidate.getPackageName()))) {
+            observed.add(videoController);
+        }
+        subscriptions.update(observed);
         MediaController selected = null;
         MediaController selectedVideo = null;
         MediaController playing = null;
-        if (active != null) {
-            for (MediaController candidate : active) {
+        if (!observed.isEmpty()) {
+            for (MediaController candidate : observed) {
                 if (playing == null && isPlaying(candidate.getPlaybackState())) playing = candidate;
                 MediaMetadata metadata = candidate.getMetadata();
                 CharSequence videoTitle = metadata == null ? null : metadata.getDescription().getTitle();
@@ -151,6 +161,16 @@ final class MediaPanel extends LinearLayout {
         else if (selectedVideo != null) selected = selectedVideo;
         videoController = selectedVideo;
         bind(selected);
+    }
+
+    @SuppressWarnings("deprecation")
+    private boolean hasVideoTask() {
+        ActivityManager manager = getContext().getSystemService(ActivityManager.class);
+        if (manager == null) return false;
+        for (ActivityManager.RunningTaskInfo task : manager.getRunningTasks(Integer.MAX_VALUE)) {
+            if (task.baseActivity != null && EmbeddedVideo.PACKAGE.equals(task.baseActivity.getPackageName())) return true;
+        }
+        return false;
     }
 
     private void bind(MediaController selected) {
