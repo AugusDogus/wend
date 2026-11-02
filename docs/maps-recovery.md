@@ -41,6 +41,19 @@ symptom. Long-duration and vehicle sleep/wake behavior remain unverified.
   Post-install visual checks could not be completed. Installation success is not
   evidence of post-install transition correctness.
 
-The next hardware check should cover dock fullscreen, Home, embedded map input,
-another app followed by Home, and vehicle sleep/wake. Preserve the existing Maps
-task and route while checking these flows.
+## Reconnection check, 19:06 device time
+
+The installed APK SHA-256 matched the recovery artifact. Maps still had PID 1729
+and task 676. Opening Road Home displayed Maps content normally. Tapping the
+embedded Maps close control dismissed its place sheet, verifying input delivery.
+The dock button then moved the same task from display 6 to display 0, confirmed
+by a screenshot and the launcher log.
+
+The fullscreen screenshot showed a black strip along the map's left edge. It
+does not establish whether this was a transient redraw or a persistent defect.
+The subsequent screenshot failed, and failed again after the advised device
+refresh. Device interaction stopped at that point. Post-install Home return,
+another app followed by Home, and transition quality remain unverified.
+
+The next hardware check should cover those remaining flows and vehicle
+sleep/wake. Preserve the existing Maps task and route while checking them.
