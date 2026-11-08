@@ -285,7 +285,7 @@ public class EmbeddedMapsTest {
         hostSurfaceCreated(maps);
         floatAboveTheVideoApp(maps);
         maps.openFullscreenFromFloating(takeover());
-        untilCovered();
+        whileLayingOut(maps);
         // Wend stops only now, as the takeover lays Maps out.
         hostSurfaceDestroyed(maps);
         maps.suspend();
@@ -316,7 +316,7 @@ public class EmbeddedMapsTest {
         maps.resume();
         floatAboveTheVideoApp(maps);
         maps.openFullscreenFromFloating(takeover());
-        untilCovered();
+        whileLayingOut(maps);
         maps.suspend();
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
         assertMapsFullscreen(maps, tasks);
@@ -347,7 +347,7 @@ public class EmbeddedMapsTest {
         maps.resume();
         floatAboveTheVideoApp(maps);
         maps.openFullscreenFromFloating(takeover());
-        untilCovered();
+        whileLayingOut(maps);
         appSwitches(maps).onTaskCreated(42, new ComponentName("com.android.camera", "Camera"));
         shadowOf(Looper.getMainLooper()).idle();
         assertEquals("No frozen frame stays over that app", 0, frozenFrames());
@@ -379,7 +379,7 @@ public class EmbeddedMapsTest {
         maps.resume();
         floatAboveTheVideoApp(maps);
         maps.openFullscreenFromFloating(takeover());
-        untilCovered();
+        whileLayingOut(maps);
         maps.resume();
         hostSurfaceCreated(maps);
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
@@ -394,7 +394,7 @@ public class EmbeddedMapsTest {
         maps.resume();
         floatAboveTheVideoApp(maps);
         maps.openFullscreenFromFloating(takeover());
-        untilCovered();
+        whileLayingOut(maps);
         maps.resume();
         maps.home(maps::returnFromFloating);
         hostSurfaceCreated(maps);
@@ -416,7 +416,7 @@ public class EmbeddedMapsTest {
         maps.leavePanel();
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400));
         maps.openFullscreenFromFloating(takeover());
-        untilCovered();
+        whileLayingOut(maps);
         hostSurfaceDestroyed(maps);
         maps.suspend();
         assertEquals("No frozen frame stays over that app", 0, frozenFrames());
@@ -435,11 +435,38 @@ public class EmbeddedMapsTest {
 
     /** Until the frozen frame covers the screen and Maps lays out, as Takeover.covered says. */
     private void untilCovered() {
-        for (int i = 0; i < 100 && !events.contains("covered"); i++) {
+        // Maps lays out at full size behind its held window (up to 900 ms), then grows (280 ms).
+        for (int i = 0; i < 300 && !events.contains("covered"); i++) {
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(10));
         }
         assertEquals(List.of("covered"), events);
         assertEquals(1, frozenFrames());
+    }
+
+    /** Partway through Maps' layout at full size, held in its floating window before it grows. */
+    private void whileLayingOut(EmbeddedMaps maps) throws ReflectiveOperationException {
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(300));
+        assertEquals("Nothing is covered yet", List.of(), events);
+        assertTrue("Maps holds in its corner", floating(maps).floating());
+    }
+
+    /** Feedback: floating Maps grew to its panel's size, centered, and only later to full screen. */
+    @Config(qualifiers = SCREEN, shadows = {Screenshots.class, CompositedWindows.class})
+    @Test public void aTapLaysMapsOutAtFullSizeBeforeItGrowsThere() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        floatAboveTheVideoApp(maps);
+        maps.openFullscreenFromFloating(takeover());
+        android.graphics.Point size = new android.graphics.Point();
+        host.getSystemService(DisplayManager.class).getDisplay(panelDisplay(maps)).getRealSize(size);
+        assertEquals("Its display takes the screen's size at the tap", new android.graphics.Point(1280, 720), size);
+        assertTrue("and it holds in its corner meanwhile", floating(maps).floating());
+        untilCovered();
+        assertFalse("It has grown to the whole display", floating(maps).floating());
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+        assertMapsFullscreen(maps, tasks);
     }
 
     private void assertMapsFullscreen(EmbeddedMaps maps, FakeTasks tasks) throws ReflectiveOperationException {

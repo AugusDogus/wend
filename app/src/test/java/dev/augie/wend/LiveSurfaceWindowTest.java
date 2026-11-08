@@ -359,6 +359,40 @@ public class LiveSurfaceWindowTest {
         window.cancel();
     }
 
+    /** Feedback: tapped, floating Maps grew to a small area first and snapped to fullscreen later. */
+    @Config(qualifiers = "w1280dp-h720dp-land-mdpi")
+    @Test public void aHeldWindowGrowsStraightToItsResizedDisplay() throws Exception {
+        DrawnSurface surface = DrawnSurface.of(host);
+        card.layout(0, 0, 320, 180);
+        window.openFloating(card, surface, new RectF(0, 0, 833, 720), new RectF(236.5f, 150, 596.5f, 600),
+                new Point(833, 720), new FloatingPlacement(new Rect(0, 0, 1280, 720), 290, 362, 24),
+                FloatingPlacement.Corner.BOTTOM_RIGHT, LiveSurfaceWindow.Entry.FROM_CARD, listener(),
+                () -> events.add("restored"));
+        commitFrame();
+        settle();
+        waitFor(LiveSurfaceWindow.ENTRY_TAP_GRACE_MS);
+        window.freeze(android.graphics.Bitmap.createBitmap(360, 450, android.graphics.Bitmap.Config.ARGB_8888));
+        tap(1100, 500);
+        tap(1100, 500);
+        waitFor(1000);
+        assertEquals("Held, it takes no gestures", List.of(), events);
+        int before = surface.drawn.size();
+        // Maps has laid out at the screen's size behind it.
+        window.focus(new RectF(460, 150, 820, 600), new Point(1280, 720), () -> events.add("reached"));
+        settle();
+        assertEquals(List.of("reached"), events);
+        List<RectF> growth = surface.drawn.subList(before, surface.drawn.size());
+        Rect last = new Rect();
+        growth.get(growth.size() - 1).round(last);
+        assertEquals("It ends as the whole screen", new Rect(0, 0, 1280, 720), last);
+        for (int i = 1; i < growth.size(); i++) {
+            assertTrue("It only grows, frame " + i, growth.get(i).width() >= growth.get(i - 1).width()
+                    && growth.get(i).height() >= growth.get(i - 1).height());
+        }
+        assertEquals("No touches reach it until it is moved", new Rect(), touchRegion());
+        window.cancel();
+    }
+
     /** Below the fullscreen control, as Android 10 puts a PiP's media action. */
     private static final Rect PLAY_PAUSE = new Rect(CORNER.centerX() - 24, CORNER.bottom - 48,
             CORNER.centerX() + 24, CORNER.bottom);

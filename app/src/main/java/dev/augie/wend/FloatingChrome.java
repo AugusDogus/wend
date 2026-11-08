@@ -1,10 +1,14 @@
 package dev.augie.wend;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.view.View;
@@ -21,6 +25,8 @@ final class FloatingChrome extends View {
     private static final int SCRIM = 0x4D000000;
     private static final int TARGET = 0x99000000;
     private static final int FADE_MS = 125;
+    /** A held still gives way to the live display early in the window's growth. */
+    private static final int STILL_FADE_MS = 120;
     private final float density;
     private final Paint scrim = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint target = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -35,6 +41,14 @@ final class FloatingChrome extends View {
     private FloatingMenu.Playback playback = FloatingMenu.Playback.NONE;
     private boolean menuShown;
     private boolean targetShown;
+    private final Paint stillPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private final Path stillClip = new Path();
+    private final Rect stillSource = new Rect();
+    private final Rect stillAt = new Rect();
+    private final ValueAnimator stillFade = ValueAnimator.ofFloat(1, 0);
+    /** A frozen frame of the display held over the window, or null. */
+    private Bitmap still;
+    private float stillAlpha;
 
     FloatingChrome(Context context) {
         super(context);
@@ -46,6 +60,12 @@ final class FloatingChrome extends View {
         menuFade.addUpdateListener(value -> { menuAlpha = (float) value.getAnimatedValue(); invalidate(); });
         targetFade.setDuration(FADE_MS);
         targetFade.addUpdateListener(value -> { targetAlpha = (float) value.getAnimatedValue(); invalidate(); });
+        stillFade.setDuration(STILL_FADE_MS);
+        stillFade.addUpdateListener(value -> { stillAlpha = (float) value.getAnimatedValue(); invalidate(); });
+        stillFade.addListener(new AnimatorListenerAdapter() {
+            // Dropped, not recycled: RenderThread may still draw it this frame.
+            @Override public void onAnimationEnd(Animator animation) { if (stillAlpha == 0) still = null; }
+        });
     }
 
     boolean menuShown() { return menuShown; }
@@ -80,7 +100,44 @@ final class FloatingChrome extends View {
         fade.start();
     }
 
+    /**
+     * Holds {@code still} over the window at {@code at}, filling it with rounded corners, so the live
+     * display behind can change unseen; null removes it.
+     */
+    void still(Bitmap bitmap, Rect at, float cornerRadius) {
+        stillFade.cancel();
+        still = bitmap;
+        stillAlpha = 1;
+        stillClip.reset();
+        if (bitmap != null) {
+            stillAt.set(at);
+            stillClip.addRoundRect(new RectF(at), cornerRadius, cornerRadius, Path.Direction.CW);
+            // Fill the window, cropping the still's overflow evenly, as the display was shown.
+            float scale = Math.max(at.width() / (float) bitmap.getWidth(), at.height() / (float) bitmap.getHeight());
+            int width = Math.round(at.width() / scale), height = Math.round(at.height() / scale);
+            int left = (bitmap.getWidth() - width) / 2, top = (bitmap.getHeight() - height) / 2;
+            stillSource.set(left, top, left + width, top + height);
+        }
+        invalidate();
+    }
+
+    boolean holdsStill() { return still != null; }
+
+    /** Fades a held still away, revealing the live display. */
+    void fadeStill() {
+        if (still == null || stillFade.isRunning()) return;
+        stillFade.setFloatValues(stillAlpha, 0);
+        stillFade.start();
+    }
+
     @Override protected void onDraw(Canvas canvas) {
+        if (still != null && stillAlpha > 0) {
+            canvas.save();
+            canvas.clipPath(stillClip);
+            stillPaint.setAlpha(Math.round(255 * stillAlpha));
+            canvas.drawBitmap(still, stillSource, stillAt, stillPaint);
+            canvas.restore();
+        }
         float menu = menuAlpha;
         if (menu > 0 && !window.isEmpty()) {
             rounded.set(window);
@@ -124,5 +181,7 @@ final class FloatingChrome extends View {
     void release() {
         menuFade.cancel();
         targetFade.cancel();
+        stillFade.cancel();
+        still = null;
     }
 }

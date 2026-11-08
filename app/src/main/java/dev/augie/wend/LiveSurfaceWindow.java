@@ -10,7 +10,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.graphics.Color;
+import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
 import android.graphics.Rect;
@@ -212,6 +212,23 @@ final class LiveSurfaceWindow {
     void focus(Runnable reached) { if (running != null) running.whole(reached, false); }
 
     /**
+     * Holds a floating window on {@code still}, a frame of what it shows now, while its display
+     * changes behind it, until it grows with {@link #focus(RectF, Point, Runnable)} or leaves its corner.
+     * It takes no gestures meanwhile.
+     */
+    void freeze(Bitmap still) { if (running != null) running.freeze(still); }
+
+    /**
+     * Its display has been resized to {@code display}, unseen behind {@link #freeze}: the floating
+     * window shows {@code floatingSource} of it, then grows straight to the whole display, centered,
+     * still without touches.
+     * @param reached runs once the whole display shows
+     */
+    void focus(RectF floatingSource, Point display, Runnable reached) {
+        if (running != null) running.growResized(floatingSource, display, reached);
+    }
+
+    /**
      * Something else now covers the whole display: hide it, ready to {@link #emerge} in a
      * floating corner window above the app replacing Wend.
      * @return false if it is not showing whole, or cannot float
@@ -267,8 +284,9 @@ final class LiveSurfaceWindow {
         final Runnable hideMenu = () -> menu(false);
         final View card;
         final ActivityViewSurface surface;
-        final SurfacePlacement whole;
-        final Rect wholeInput;
+        /** The whole display centered on screen, and its input; a resized display changes both. */
+        SurfacePlacement whole;
+        Rect wholeInput;
         final Entry entry;
         final Runnable fallback, restored;
         final float radius;
@@ -399,6 +417,9 @@ final class LiveSurfaceWindow {
                 menu(false);
                 if (drag != null) drag.cancelTap();
             }
+            // A held still only gives way to the display growing behind it.
+            if (next == Target.WHOLE) overlay.fadeStill();
+            else overlay.still(null, null, 0);
             // Reversing a motion part way only travels back the distance already covered.
             float covered = phase == Phase.MOVING && origin == next ? animator.getAnimatedFraction() : 1;
             stopAnimator();
@@ -493,6 +514,24 @@ final class LiveSurfaceWindow {
             });
         }
 
+        void freeze(Bitmap still) {
+            if (!resting()) return;
+            menu(false);
+            overlay.still(still, placement.rest(corner), radius);
+        }
+
+        void growResized(RectF nextSource, Point display, Runnable reached) {
+            if (phase == Phase.CLOSED || phase == Phase.WAITING || placement == null || target != Target.CORNER) return;
+            floatingSource = new RectF(nextSource);
+            whole = SurfacePlacement.centered(display.x, display.y, screen.x, screen.y);
+            wholeInput = new Rect(0, 0, display.x, display.y);
+            // The resized display fills the corner first, under the still, then grows from there.
+            stopAnimator();
+            phase = Phase.RESTING;
+            show(placementFor(Target.CORNER), radius, 1, 1);
+            whole(reached, false);
+        }
+
         boolean hideForCorner(FloatingPlacement next, FloatingPlacement.Corner nextCorner, Listener nextListener) {
             if (phase == Phase.CLOSED || phase == Phase.WAITING || target != Target.WHOLE) return false;
             try {
@@ -523,6 +562,8 @@ final class LiveSurfaceWindow {
 
         boolean touch(MotionEvent event) {
             if (target != Target.CORNER || phase == Phase.WAITING || phase == Phase.CLOSED) return false;
+            // Held still while it is about to grow: its gestures are over.
+            if (overlay.holdsStill()) return true;
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN && phase == Phase.MOVING) {
                 // Catch the window mid-snap; the drag starts where it is drawn now.
                 stopAnimator();
