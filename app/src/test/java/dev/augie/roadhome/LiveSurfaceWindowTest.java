@@ -193,6 +193,22 @@ public class LiveSurfaceWindowTest {
         assertEquals(1, events.size());
     }
 
+    @Test public void aPresentationThatFloatedStaysOverAnotherAppWhileItGrowsWhole() throws Exception {
+        openWhole(DrawnSurface.of(host));
+        assertFalse("A whole video opened from its card is above Road Home", window.overAnotherApp());
+        window.cancel();
+        openFloating(DrawnSurface.of(host), LiveSurfaceWindow.Entry.FROM_CARD);
+        commitFrame();
+        settle();
+        assertTrue(window.overAnotherApp());
+        // Tapped: it grows above Maps, and Road Home only comes forward once it is whole.
+        window.expand(() -> events.add("reached"));
+        assertFalse(window.floating());
+        assertTrue("An app coming to the front now must still end it", window.overAnotherApp());
+        window.cancel();
+        assertFalse(window.overAnotherApp());
+    }
+
     @Test public void aWholeDisplayNotYetDrawnCannotHideForACorner() {
         open();
         assertFalse(window.hideForCorner(PLACEMENT, FloatingPlacement.Corner.BOTTOM_RIGHT, null));

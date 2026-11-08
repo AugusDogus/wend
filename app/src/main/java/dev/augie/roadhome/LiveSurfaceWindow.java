@@ -101,6 +101,12 @@ final class LiveSurfaceWindow {
      */
     boolean floating() { return running != null && running.placement != null && running.target != Target.WHOLE; }
 
+    /**
+     * Presented over another app rather than opened above Road Home: floating, or growing whole
+     * after a tap while Road Home is still hidden. An unrelated app coming to the front ends it.
+     */
+    boolean overAnotherApp() { return running != null && running.placement != null; }
+
     /** Road Home is visible again. Android's own Home routing applies unless a display is whole. */
     void hostShown() { if (running == null || running.target != Target.WHOLE) stopRoutingHome(); }
 

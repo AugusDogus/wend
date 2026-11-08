@@ -262,7 +262,9 @@ final class EmbeddedVideo extends FrameLayout {
     }
 
     private void appMovedToFront(String packageName, int displayId) {
-        if (!window.floating()) return;
+        // Also while a tapped floating video grows whole, so Road Home is not then brought
+        // forward over the app that just came to the front.
+        if (!window.overAnotherApp()) return;
         if (packageName.equals(host.getPackageName()) || packageName.equals(EmbeddedMaps.PACKAGE)) return;
         if (packageName.equals(PACKAGE) && player != null && displayId == player.getVirtualDisplayId()) return;
         window.dismiss(packageName + " came to the front on display " + displayId);

@@ -20,6 +20,7 @@ public final class MainActivity extends Activity {
     private FrostedBackdrop backdrop;
     private AppDrawer drawer;
     private SettingsSheet settingsSheet;
+    private boolean resumed;
     private final LiveSurfaceWindow.Listener floatingVideo = new LiveSurfaceWindow.Listener() {
         @Override public void settled(FloatingPlacement.Corner corner) {
             settings.setFloatingVideoCorner(corner);
@@ -107,7 +108,9 @@ public final class MainActivity extends Activity {
     void openMapsFullscreen() {
         maps.openFullscreen(new MapPanel.Covering() {
             @Override public Rect starting() {
-                FloatingPlacement.Corner corner = videoCorner();
+                // An app that came to the front while Maps prepared has paused Road Home, before
+                // the video could watch for it: nothing floats above that app.
+                FloatingPlacement.Corner corner = resumed ? videoCorner() : null;
                 return corner == null ? null : media.floatVideo(corner, floatingVideo);
             }
             // Road Home still shows: a video that floated for Maps returns to its card.
@@ -179,6 +182,8 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onStart() { super.onStart(); overridePendingTransition(0, 0); maps.resume(); media.start(); }
+    @Override protected void onResume() { super.onResume(); resumed = true; }
+    @Override protected void onPause() { resumed = false; super.onPause(); }
     @Override protected void onStop() {
         if (drawer != null) drawer.dismiss();
         if (settingsSheet != null) settingsSheet.dismiss();
