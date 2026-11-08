@@ -388,7 +388,9 @@ public class LiveSurfaceWindowTest {
         final List<RectF> drawn = new ArrayList<>();
         boolean failing;
 
-        private DrawnSurface(ActivityView view) throws ReflectiveOperationException { super(view); }
+        private DrawnSurface(ActivityView view) throws ReflectiveOperationException {
+            super(view, PreviewInput.FORWARDED);
+        }
 
         static DrawnSurface of(Activity host) throws ReflectiveOperationException {
             ActivityView view = new ActivityView(host);

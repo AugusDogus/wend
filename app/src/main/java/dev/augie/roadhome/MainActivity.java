@@ -63,7 +63,7 @@ public final class MainActivity extends Activity {
         body.leftMargin = 0;
         root.addView(content, body);
         maps = BuildConfig.WINDOWED_MAPS ? new WindowedMaps(this) : new EmbeddedMaps(this);
-        media = new MediaPanel(this, this::openMusic, () -> maps.returnFromFloating());
+        media = new MediaPanel(this, this::openMusic, this::openVideo, () -> maps.returnFromFloating());
         // The dock and the map side are places in the car, not reading order, so the row of
         // panels never mirrors; each panel still lays out its own content for the locale.
         root.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
@@ -95,6 +95,9 @@ public final class MainActivity extends Activity {
     }
 
     private void openMusic() { AppLaunch.open(this, media.musicPackage()); }
+
+    /** The video card's app, even while another app owns the media controls. */
+    private void openVideo() { AppLaunch.open(this, EmbeddedVideo.PACKAGE); }
 
     /**
      * The floating video grows over fullscreen Maps. Hidden beneath it, Maps returns to its

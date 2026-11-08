@@ -18,7 +18,20 @@ import java.lang.reflect.Method;
  * so JVM tests can attach it to a window that has no compositor surface.
  */
 class ActivityViewSurface {
+    /** Where touches on the display's preview in Road Home's window go. */
+    enum PreviewInput {
+        /**
+         * To the display's app through the bounded input portal, as for Maps in its panel. Only
+         * right for an unscaled preview: Android 10 scales a portal's touch region and then offsets
+         * it by its scaled frame, so a scaled preview's region misses it.
+         */
+        FORWARDED,
+        /** None reach the app; a view of Road Home's above the preview takes them, as on the video card. */
+        KEPT
+    }
+
     private final SurfaceControl surface;
+    private final PreviewInput previewInput;
     private final SurfaceView parent;
     private final Method crop;
     private final Method matrix;
@@ -32,7 +45,8 @@ class ActivityViewSurface {
     private final Region touchableRegion;
     private final Rect cropped = new Rect();
 
-    ActivityViewSurface(ActivityView view) throws ReflectiveOperationException {
+    ActivityViewSurface(ActivityView view, PreviewInput previewInput) throws ReflectiveOperationException {
+        this.previewInput = previewInput;
         Field field = ActivityView.class.getDeclaredField("mRootSurfaceControl");
         field.setAccessible(true);
         Object value = field.get(view);
@@ -165,7 +179,7 @@ class ActivityViewSurface {
             transaction.setLayer(surface, 0);
             transform(transaction, scale, x, y, bounds);
             round(transaction, 0);
-            touchableRegion.set(bounds);
+            previewInput(bounds);
             updateInput(transaction);
             transaction.setAlpha(surface, 1).apply();
         }
@@ -226,10 +240,16 @@ class ActivityViewSurface {
     void show(float scale, float x, float y, Rect bounds) throws ReflectiveOperationException {
         try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
             transform(transaction, scale, x, y, bounds);
-            touchableRegion.set(bounds);
+            previewInput(bounds);
             updateInput(transaction);
             transaction.setAlpha(surface, 1).apply();
         }
+    }
+
+    /** @param bounds the shown part of the display, in the display's own coordinates */
+    private void previewInput(Rect bounds) {
+        if (previewInput == PreviewInput.FORWARDED) touchableRegion.set(bounds);
+        else touchableRegion.setEmpty();
     }
 
     private void updateInput(SurfaceControl.Transaction transaction) {

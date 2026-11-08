@@ -65,7 +65,7 @@ final class EmbeddedMapMotion {
         stopWaiting();
         phase = Phase.EXPANDING;
         try {
-            ActivityViewSurface surface = new ActivityViewSurface(view);
+            ActivityViewSurface surface = new ActivityViewSurface(view, ActivityViewSurface.PreviewInput.FORWARDED);
             // Source matches the card dimensions, giving scale=1 throughout the animation.
             expanding.open(panel, surface, new RectF(0, 0, panel.getWidth(), panel.getHeight()),
                     screen.x, screen.y, () -> {

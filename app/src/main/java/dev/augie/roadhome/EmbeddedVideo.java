@@ -44,8 +44,11 @@ final class EmbeddedVideo extends FrameLayout {
     private long preparationStarted;
     private VideoSurface.Bounds previousBounds;
 
-    /** @param presentationEnded runs whenever a fullscreen or floating presentation has finished */
-    EmbeddedVideo(Activity context, Runnable presentationEnded) {
+    /**
+     * @param open opens the video app, as a tap anywhere on the card does
+     * @param presentationEnded runs whenever a fullscreen or floating presentation has finished
+     */
+    EmbeddedVideo(Activity context, Runnable open, Runnable presentationEnded) {
         super(context);
         host = context;
         this.presentationEnded = presentationEnded;
@@ -61,6 +64,13 @@ final class EmbeddedVideo extends FrameLayout {
         status.setGravity(Gravity.CENTER);
         status.setBackgroundColor(android.graphics.Color.BLACK);
         addView(status, new LayoutParams(-1, -1));
+        // One large target over everything the card shows. Being visible above the player, it also
+        // takes the card out of ActivityView's tap-exclude region, so Road Home keeps these touches.
+        View tapTarget = new View(context);
+        tapTarget.setBackground(Ui.ripple(context, 0));
+        tapTarget.setContentDescription("Open video");
+        tapTarget.setOnClickListener(view -> open.run());
+        addView(tapTarget, new LayoutParams(-1, -1));
         setVisibility(GONE);
     }
 
@@ -325,7 +335,8 @@ final class EmbeddedVideo extends FrameLayout {
                 player.setCallback(new ActivityView.StateCallback() {
                     @Override public void onActivityViewReady(ActivityView view) {
                         try {
-                            playerSurface = new ActivityViewSurface(view);
+                            // The card keeps its own touches: the preview is scaled, and a tap opens the video.
+                            playerSurface = new ActivityViewSurface(view, ActivityViewSurface.PreviewInput.KEPT);
                             playerSurface.hide();
                             geometryReader.execute(() -> {
                                 try {

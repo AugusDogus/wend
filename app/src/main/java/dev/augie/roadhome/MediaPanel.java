@@ -41,8 +41,11 @@ final class MediaPanel extends LinearLayout {
     private final MediaSessionSubscriptions subscriptions = new MediaSessionSubscriptions(handler, this::refresh);
     private final MediaSessionManager.OnActiveSessionsChangedListener sessionListener = this::select;
 
-    /** @param videoPresentationEnded runs when a fullscreen or floating video has finished */
-    MediaPanel(Activity context, Runnable openMusic, Runnable videoPresentationEnded) {
+    /**
+     * @param openVideo opens the video app, as a tap on the video card does
+     * @param videoPresentationEnded runs when a fullscreen or floating video has finished
+     */
+    MediaPanel(Activity context, Runnable openMusic, Runnable openVideo, Runnable videoPresentationEnded) {
         super(context);
         sessions = context.getSystemService(MediaSessionManager.class);
         setOrientation(VERTICAL);
@@ -50,7 +53,7 @@ final class MediaPanel extends LinearLayout {
         setBackgroundColor(android.graphics.Color.TRANSPARENT);
         int padding = Ui.dp(context, 12);
         setPadding(padding, padding, padding, padding);
-        video = new EmbeddedVideo(context, () -> {
+        video = new EmbeddedVideo(context, openVideo, () -> {
             if (!started) unsubscribe();
             videoPresentationEnded.run();
         });

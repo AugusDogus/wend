@@ -10,7 +10,12 @@ import android.media.session.MediaSession;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
 import android.os.Looper;
+import android.os.SystemClock;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
@@ -40,7 +45,7 @@ public class MediaPanelTest {
             ShadowMediaSessionManager sessions = Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class));
             sessions.addController(musicController);
             sessions.addController(videoController);
-            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { });
+            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { }, () -> { });
             try {
                 panel.start();
                 assertEquals("com.spotify.music", panel.musicPackage());
@@ -62,7 +67,7 @@ public class MediaPanelTest {
             ShadowMediaSessionManager sessions = Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class));
             sessions.addController(musicController);
             sessions.addController(videoController);
-            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { });
+            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { }, () -> { });
             try {
                 panel.start();
                 assertEquals("com.spotify.music", panel.musicPackage());
@@ -101,7 +106,7 @@ public class MediaPanelTest {
             Shadows.shadowOf(activity.getSystemService(ActivityManager.class)).setTasks(Collections.singletonList(task));
             ShadowMediaSessionManager sessions = Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class));
             sessions.addController(controller);
-            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { });
+            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { }, () -> { });
             try {
                 panel.start();
                 panel.stop();
@@ -149,7 +154,7 @@ public class MediaPanelTest {
             Shadows.shadowOf(controller).setMetadata(new MediaMetadata.Builder()
                     .putString(MediaMetadata.METADATA_KEY_TITLE, "Playing video").build());
             Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class)).addController(controller);
-            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { });
+            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { }, () -> { });
             try {
                 panel.start();
                 panel.stop();
@@ -158,6 +163,62 @@ public class MediaPanelTest {
                 session.release();
             }
         }
+    }
+
+    /**
+     * Device report RH-5: the whole card opens the video app, as its Open action does, whether the
+     * video is paused or playing. None of the card's touches go to YouTube's scaled-down player.
+     */
+    @Test public void aTapAnywhereOnTheVideoCardOpensTheVideo() {
+        try (ActivityController<Activity> host = Robolectric.buildActivity(Activity.class).setup()) {
+            Activity activity = host.get();
+            MediaSession session = new MediaSession(activity, "video");
+            MediaController controller = paused(session, EmbeddedVideo.PACKAGE);
+            Shadows.shadowOf(controller).setMetadata(new MediaMetadata.Builder()
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, "Selected video").build());
+            Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class)).addController(controller);
+            List<String> opened = new ArrayList<>();
+            MediaPanel panel = new MediaPanel(activity, () -> opened.add("music"), () -> opened.add("video"), () -> { });
+            activity.setContentView(panel, new ViewGroup.LayoutParams(357, 720));
+            try {
+                panel.start();
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                View card = panel.getChildAt(0);
+                assertEquals(View.VISIBLE, card.getVisibility());
+                tapCorners(card);
+                assertEquals(List.of("video", "video", "video"), opened);
+                // Live, the card holds the embedded player beneath; the tap is still the card's.
+                Shadows.shadowOf(controller).executeOnPlaybackStateChanged(new PlaybackState.Builder()
+                        .setState(PlaybackState.STATE_PLAYING, 0, 1).build());
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                opened.clear();
+                tapCorners(card);
+                assertEquals(List.of("video", "video", "video"), opened);
+            } finally {
+                panel.stop(); panel.release(); session.release();
+            }
+        }
+    }
+
+    private static void tapCorners(View card) {
+        assertTrue("The card is laid out", card.getWidth() > 0 && card.getHeight() > 0);
+        tap(card, 2, 2);
+        tap(card, card.getWidth() / 2f, card.getHeight() / 2f);
+        tap(card, card.getWidth() - 2, card.getHeight() - 2);
+    }
+
+    private static void tap(View view, float x, float y) {
+        long down = SystemClock.uptimeMillis();
+        MotionEvent press = MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, x, y, 0);
+        MotionEvent release = MotionEvent.obtain(down, down + 50, MotionEvent.ACTION_UP, x, y, 0);
+        try {
+            view.dispatchTouchEvent(press);
+            view.dispatchTouchEvent(release);
+        } finally {
+            press.recycle();
+            release.recycle();
+        }
+        Shadows.shadowOf(Looper.getMainLooper()).idle();
     }
 
     @Test public void onlyStoppedFailedOrResetPlaybackEndsAFloatingVideo() {

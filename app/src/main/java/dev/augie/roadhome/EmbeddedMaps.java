@@ -244,7 +244,8 @@ final class EmbeddedMaps extends MapPanel {
         try {
             MapsTask.Task existing = tasks.find();
             if (existing == null || existing.displayId != activityView.getVirtualDisplayId()) return false;
-            ActivityViewSurface surface = new ActivityViewSurface(activityView);
+            ActivityViewSurface surface = new ActivityViewSurface(activityView,
+                    ActivityViewSurface.PreviewInput.FORWARDED);
             // Before anything can hide Road Home: its surface changes must not move this root.
             displayLifecycle.presentElsewhere();
             floating.openFloating(this, surface, new RectF(0, 0, getWidth(), getHeight()),
@@ -554,7 +555,7 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     private void revealSurface() throws ReflectiveOperationException {
-        if (activityView != null) new ActivityViewSurface(activityView).show(
+        if (activityView != null) new ActivityViewSurface(activityView, ActivityViewSurface.PreviewInput.FORWARDED).show(
                 new Rect(0, 0, getWidth(), getHeight()));
     }
 
