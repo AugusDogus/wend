@@ -330,7 +330,7 @@ final class SettingsSheet implements AppCatalog.Listener {
         LinearLayout card = Ui.card(activity);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        int padding = Ui.dp(activity, 12);
+        int padding = Ui.dp(activity, 8);
         // The drawing starts at the same 16 dp inset as the section label and the dock icons.
         card.setPaddingRelative(Ui.dp(activity, 16), padding, Ui.dp(activity, 16), padding);
         // A 16:9 drawing of the 853 x 480 dp screen.
@@ -342,7 +342,9 @@ final class SettingsSheet implements AppCatalog.Listener {
         choices.addView(rows.divider(), new LinearLayout.LayoutParams(-1, 1));
         choices.addView(rows.choiceRow(R.string.settings_map_width, widthControl, CONTROL_DP),
                 new LinearLayout.LayoutParams(-1, 0, 1));
-        LinearLayout.LayoutParams choicesLayout = new LinearLayout.LayoutParams(0, Ui.dp(activity, 120), 1);
+        // Two 64 dp rows beside the drawing.
+        LinearLayout.LayoutParams choicesLayout = new LinearLayout.LayoutParams(0,
+                Ui.dp(activity, 2 * SettingsRows.ROW_DP), 1);
         choicesLayout.setMarginStart(Ui.dp(activity, 20));
         card.addView(choices, choicesLayout);
         return card;
