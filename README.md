@@ -1,6 +1,15 @@
-# Road Home
+# Wend
 
 A small native launcher for the PX6 running Hal9k Android 10. The real Google Maps app occupies the main panel; active Android media sessions supply the music controls. No map SDK, WebView, network backend, analytics, or copied Mini AA code.
+
+Wend was called Road Home until November 2026. The rename changed the app ID from `dev.augie.roadhome` to `dev.augie.wend`, so Android treats Wend as a new app. Validation notes written before the rename may quote artifacts named `road-home-*`; logs now use the `Wend*` tag prefix where they used `RoadHome*`.
+
+### Moving the PX6 from Road Home to Wend
+
+1. Build and sign Wend (see [Build](#build)), then `adb install wend-px6.apk`. Road Home stays installed and remains Home for now.
+2. Press Home and choose Wend as the default home app (or Android Settings › Apps › Default apps › Home app). Wend adopts the running Maps task and its route.
+3. Remove the old launcher with `adb uninstall dev.augie.roadhome`. Maps keeps its task; any video still embedded in Road Home stops, as on any launcher reinstall.
+4. Set the dock pins, map side and map width again in Wend's settings. Road Home's choices are not carried over. Maps' system picture-in-picture stays off; Wend turns it off again whenever it starts managing Maps.
 
 ## Current development status
 
@@ -38,7 +47,7 @@ Playing video floats over fullscreen Maps, live Maps floats over fullscreen vide
 
 The current source replaces the earlier PiP approach. It was installed during the Maps task-lifecycle investigation, but live video cropping is not yet hardware-validated. When YouTube is already playing, it moves the existing task into an ActivityView kept at the main display's full pixel size. It reads SurfaceFlinger's Android 10 layer proto to locate the actual YouTube video SurfaceView, crops to that region, and scales only the presentation into the media panel. There is no PiP request or repeated task resize. The head unit disconnected before a live-video trial could be completed.
 
-Geometry queries run off the UI thread and read layer metadata, not pixels or stream URLs. The parser requires YouTube's layer to descend from a Road Home ActivityView and rejects hidden, secure, protected, rotated, and out-of-display content. The panel remains covered until two queries agree on video bounds; missing geometry produces an explicit failure message after three seconds. `VideoSurfaceTest` covers the geometry and ownership checks. The proto reader and visible surface crop passed an Android 10 emulator fixture trial. SurfaceControl now crops the owned ActivityView container because View clipping alone leaked surrounding app UI. The card no longer forwards touches to YouTube: the whole card is one tap target that opens the video, and map taps beside it reach Maps (see [the video card](docs/floating-windows.md#the-video-card)). All of these paths still need hardware validation.
+Geometry queries run off the UI thread and read layer metadata, not pixels or stream URLs. The parser requires YouTube's layer to descend from a Wend ActivityView and rejects hidden, secure, protected, rotated, and out-of-display content. The panel remains covered until two queries agree on video bounds; missing geometry produces an explicit failure message after three seconds. `VideoSurfaceTest` covers the geometry and ownership checks. The proto reader and visible surface crop passed an Android 10 emulator fixture trial. SurfaceControl now crops the owned ActivityView container because View clipping alone leaked surrounding app UI. The card no longer forwards touches to YouTube: the whole card is one tap target that opens the video, and map taps beside it reach Maps (see [the video card](docs/floating-windows.md#the-video-card)). All of these paths still need hardware validation.
 
 Embedding never sends Play. A YouTube media session with a nonblank title keeps a 16:9 video card visible even while paused or stopped. Whenever live video is not shown in the card, it shows a recent still of the live video, then session artwork, then a placeholder with the app's icon, so it never reads as an empty black box; a play control is drawn over it only while the session can play. Only STATE_PLAYING can start live embedding. Clearing the title or destroying the YouTube session hides the card. An observed session that becomes inactive retains its thumbnail while the YouTube task exists; its metadata is read live, not copied into a permanent cache. An idle Spotify session does not displace a selected paused YouTube video; active playback in another app controls the audio buttons while the selected video card stays visible. The action button uses the selected app label and opens the app on the main display. Reinstalling the launcher destroys its virtual displays and can stop embedded playback.
 
@@ -53,7 +62,7 @@ export ANDROID_HOME=/path/to/Android/Sdk
 ./gradlew :app:assembleRelease :app:lintRelease
 ```
 
-The unsigned release APK cannot be installed as-is. Sign it with the device's matching platform key using `scripts/sign-px6.py app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/road-home-px6.apk`. That helper is specifically pinned to this PX6's verified public Rockchip development certificate. Do not disable Android signature verification. The release build is not debuggable.
+The unsigned release APK cannot be installed as-is. Sign it with the device's matching platform key using `scripts/sign-px6.py app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/wend-px6.apk`. That helper is specifically pinned to this PX6's verified public Rockchip development certificate. Do not disable Android signature verification. The release build is not debuggable.
 
 ## Experimental live Maps window
 
@@ -81,12 +90,12 @@ python scripts/build-window-decoration.py build/framework-res.apk --target aosp2
 ./gradlew :app:assembleWindowed :app:testWindowedUnitTest :app:lintWindowed
 python scripts/sign-px6.py --target aosp29 \
   app/build/outputs/apk/windowed/app-windowed-unsigned.apk \
-  app/build/outputs/apk/windowed/road-home-windowed.apk
+  app/build/outputs/apk/windowed/wend-windowed.apk
 adb -s emulator-5558 install -r build/window-overlay/window-decor.apk
-adb -s emulator-5558 install -r app/build/outputs/apk/windowed/road-home-windowed.apk
+adb -s emulator-5558 install -r app/build/outputs/apk/windowed/wend-windowed.apk
 ```
 
-This replaces Road Home's APK while retaining its data. The overlay removes
+This replaces Wend's APK while retaining its data. The overlay removes
 **all freeform window titlebars** while enabled. The experimental layout keeps
 Android's status bar visible. Fullscreen expansion animates position and crop
 of Maps' live surface after its buffers are ready. Home moves and crops the
@@ -97,7 +106,7 @@ without motion; a missing Home callback also falls back to a direct handoff. Act
 in this variant.
 
 To roll back, build and sign the regular release with the same target key,
-install it over the windowed APK, then uninstall `dev.augie.roadhome.windowdecor`
+install it over the windowed APK, then uninstall `dev.augie.wend.windowdecor`
 to restore freeform titlebars. Installing the regular launcher alone does not
 disable the decoration overlay. Rebuild the overlay after a ROM change; never
 reuse the emulator's overlay on the head unit or disable signature checks.
@@ -108,7 +117,7 @@ reuse the emulator's overlay on the head unit or disable signature checks.
 - Confirm Maps runs on the launcher's virtual display and remains interactive.
 - Verify active media metadata and play/pause controls.
 - Switch map side/size without crashing or clearing navigation.
-- Road Home is now the default launcher. Mini AA and AutoZen were uninstalled at the user's request.
+- Wend is now the default launcher. Mini AA and AutoZen were uninstalled at the user's request.
 - Reboot and suspend/resume need a separate hardware trial.
 
 ## Earlier installed builds: hardware validation, 2026-10-31
@@ -117,9 +126,9 @@ The initial build successfully embedded real Google Maps, including live navigat
 
 The latest revision has passed release build and lint, is signed with the verified PX6 platform certificate, and is installed. It removes adjacent rounded panels, reduces excess padding, and tones down the drawer blur/tint. A hardware screenshot showed that parent outline clipping did not round ActivityView's Maps surface and that media without artwork left excessive empty space. The next revision adds small corner masks over the inner Maps corners, hides absent artwork, and groups media metadata and controls vertically.
 
-Installation of that revision succeeded and the device command confirmed Road Home opened. Screenshot capture then failed twice with "Could not communicate with device support. Try refreshing devices.", including after refreshing the device list. Closing and reopening this thread's Device panel subsequently restored capture. Hardware screenshots verified the inner Maps corner masks, flush outer map edge, and grouped media layout without the empty artwork gap. The full-width, five-column drawer was then installed and visually checked; searching for Spotify filtered correctly while the keyboard remained below the drawer instead of opening fullscreen extracted text. Maps touch behavior around the masks, playback buttons, and repeated app switching still need hardware checks. No reboot or long-duration stability claim is made.
+Installation of that revision succeeded and the device command confirmed Wend opened. Screenshot capture then failed twice with "Could not communicate with device support. Try refreshing devices.", including after refreshing the device list. Closing and reopening this thread's Device panel subsequently restored capture. Hardware screenshots verified the inner Maps corner masks, flush outer map edge, and grouped media layout without the empty artwork gap. The full-width, five-column drawer was then installed and visually checked; searching for Spotify filtered correctly while the keyboard remained below the drawer instead of opening fullscreen extracted text. Maps touch behavior around the masks, playback buttons, and repeated app switching still need hardware checks. No reboot or long-duration stability claim is made.
 
-Capture investigation: T3's local screenshot endpoint returned HTTP 400 after 8006 ms and 8007 ms. Its installed capture implementation gives the ADB screenshot subprocess an 8000 ms deadline, separate from the scrcpy video stream. A previous capture succeeded in 1493 ms. The head unit remained reachable (106 ms direct Tailscale ping), and a 1 MiB non-screen ADB transfer completed in 2.3 seconds. Road Home's process remained alive and logged successful Maps embedding. These findings localize the failure to the screenshot operation; they do not establish whether Android capture, PNG encoding, or intermittent transport delay caused the timeout. The scrcpy stream remained healthy at about 23 fps during investigation. Resetting only this thread's Device panel restored successive screenshots without rebooting the head unit; the precise internal cause remains unproven. No capture-tool code was changed.
+Capture investigation: T3's local screenshot endpoint returned HTTP 400 after 8006 ms and 8007 ms. Its installed capture implementation gives the ADB screenshot subprocess an 8000 ms deadline, separate from the scrcpy video stream. A previous capture succeeded in 1493 ms. The head unit remained reachable (106 ms direct Tailscale ping), and a 1 MiB non-screen ADB transfer completed in 2.3 seconds. Wend's process remained alive and logged successful Maps embedding. These findings localize the failure to the screenshot operation; they do not establish whether Android capture, PNG encoding, or intermittent transport delay caused the timeout. The scrcpy stream remained healthy at about 23 fps during investigation. Resetting only this thread's Device panel restored successive screenshots without rebooting the head unit; the precise internal cause remains unproven. No capture-tool code was changed.
 
 Spotify's new crash was traced separately to WebView updating to 156.0.8078.49 and bypassing the old thermal-service patch. The updated root patch was applied; see `../thermal-webview-patch/docs/WEBVIEW-49-REPAIR.md` for evidence and pending playback validation.
 
@@ -157,13 +166,13 @@ The dock previously called the embedded launch function. Both the dock and app d
 
 Android 10's `startActivityFromRecents` accepts the exact task ID and target display. Explicit fullscreen window mode exits Maps' automatic PiP mode. The host task is brought forward after embedding because this API otherwise foregrounds the system Home stack. Ordinary backgrounding retains the ActivityView; graceful host destruction attempts to move Maps to display 0 before releasing it. Abrupt process death, force-stop, APK replacement, and vehicle sleep are not covered by that graceful cleanup. Before replacing the APK during testing, Maps was moved to display 0.
 
-A separate app-icon entry activity redirects to the explicit HOME intent. This avoids creating a standard Road Home task alongside its Home task, which was observed during direct app launches. `MainActivity` remains the Home component, preserving the existing default-home selection.
+A separate app-icon entry activity redirects to the explicit HOME intent. This avoids creating a standard Wend task alongside its Home task, which was observed during direct app launches. `MainActivity` remains the Home component, preserving the existing default-home selection.
 
 Hardware observations:
 
 - Maps task 656, ActivityRecord e49665b, and process 8959 survived repeated fullscreen/panel transitions and the launcher updates. The active route continued to arrival. One running Maps task was present throughout the captured trials.
 - A direct-stack-move experiment retained Maps' pinned mode and distorted the panel. It was replaced with task-specific restoration and explicit fullscreen mode.
-- Before the entry-point fix, there were two Road Home tasks and two virtual displays. The installed final build showed one Home MainActivity (task 666), Maps task 656 on display 44, and no extra standard MainActivity.
+- Before the entry-point fix, there were two Wend tasks and two virtual displays. The installed final build showed one Home MainActivity (task 666), Maps task 656 on display 44, and no extra standard MainActivity.
 - A final fullscreen/Home/YouTube cycle and visual check of the last build remain pending. Earlier transition screenshots showed black or clipped regions, so smooth rendering is not yet established. The rear camera activated, then the head unit became unreachable before final validation.
 - YouTube task 641 and its selected video survived the updates. Captures showed STATE_PAUSED, an unmuted music stream at 10/30, no muted or ducked players, and initially retained YouTube audio focus. This does not diagnose the reported silent playback after vehicle resume. No volume, focus, or MCU-mute workaround was applied.
 
@@ -188,7 +197,7 @@ remain available. These changes have not been installed on the head unit.
 
 ### Maps display preservation
 
-The current emulator build keeps the map display awake while Road Home is hidden.
+The current emulator build keeps the map display awake while Wend is hidden.
 It also preserves Maps tasks when the launcher's virtual display is removed during
 APK replacement, then adopts the existing task on Home. Fullscreen uses display 0
 so the system Home key continues to work. A late task-removal callback now checks

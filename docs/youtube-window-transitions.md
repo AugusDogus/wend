@@ -76,8 +76,8 @@ show that superseded behavior.
 The release APK was signed with the matching PX6 platform certificate and
 installed with `adb install -r`, preserving app data. The previous installed APK
 was saved locally at `build/live-video/px6-backup/road-home-before.apk`. The obsolete
-`dev.augie.roadhome.windowdecor` experiment was uninstalled. The device tool confirmed
-Road Home opened.
+`dev.augie.wend.windowdecor` experiment was uninstalled. The device tool confirmed
+Wend opened.
 
 Hardware screenshots then failed twice with `Could not communicate with device
 support. Try refreshing devices.`, including after the prescribed device-list

@@ -2,7 +2,7 @@
 
 Use the dedicated `road-home-api29` Android 10 AOSP emulator whenever the PX6 is unavailable. It uses 1280 x 720 pixels at 240 dpi. Android 16 emulators can run the decoder probe, but cannot validate Android 10's ActivityView implementation.
 
-The `app:emulator` build shares the production launcher code and uses a separate package, `dev.augie.roadhome.emulator`. Its Maps/video package constants differ: they point to these local fixtures. Release builds continue to target Google Maps and YouTube. Fixtures have no network permission or Google account dependency, and are never installed on the head unit.
+The `app:emulator` build shares the production launcher code and uses a separate package, `dev.augie.wend.emulator`. Its Maps/video package constants differ: they point to these local fixtures. Release builds continue to target Google Maps and YouTube. Fixtures have no network permission or Google account dependency, and are never installed on the head unit.
 
 ## Build and install
 
@@ -11,12 +11,12 @@ export ANDROID_HOME=/path/to/Android/Sdk
 ./gradlew :app:assembleEmulator :task-fixture:assembleMapsDebug :task-fixture:assembleVideoDebug
 python scripts/sign-px6.py --target aosp29 \
   app/build/outputs/apk/emulator/app-emulator.apk \
-  app/build/outputs/apk/emulator/road-home-aosp29.apk
+  app/build/outputs/apk/emulator/wend-aosp29.apk
 ```
 
 The AOSP emulator certificate was compared with its actual `framework-res.apk`. The signer pins that public development certificate and deletes temporary key material. It does not change signature enforcement. The separate focus repair below modifies a private emulator image copy. The `aosp29` APK cannot replace the PX6 build.
 
-Open the emulator using T3's device tools and use its returned device command for UI actions. Install the signed launcher and both fixture APKs with ADB against that emulator's serial. Set Road Home as Home through Android's chooser when testing the hardware Home action. Do not assume an emulator's serial remains the same across restarts.
+Open the emulator using T3's device tools and use its returned device command for UI actions. Install the signed launcher and both fixture APKs with ADB against that emulator's serial. Set Wend as Home through Android's chooser when testing the hardware Home action. Do not assume an emulator's serial remains the same across restarts.
 
 ## Android 10 accessibility repair
 
@@ -58,7 +58,7 @@ The platform-signed launcher runs on Android 10's actual ActivityView implementa
 
 The original snapshot failed with `Android snapshot helper returned insufficient foreground app content`, followed by `Daemon request timed out`. After the boot-time focus repair, both display 0 and the embedded display retained a current focused window. Repeated snapshots completed in about 0.1 to 0.4 seconds, and snapshot-directed taps and device screenshots worked. Rebuilding the private image with the preparation script and cold-booting again retained this repair; the first snapshot completed in 0.4 seconds. The original device-tool installation was not modified.
 
-The working emulator reproduced a real black Maps panel: fullscreen map -> Return to Road Home delivered `onNewIntent` without `onStart`, leaving the existing map task on display 0. MainActivity now restores Maps on that return intent as well. The same sequence then moved map task 28 from display 2 to 0 and back to 2, preserving Activity instance `323037e792` and the active route marker. The panel rendered correctly afterward.
+The working emulator reproduced a real black Maps panel: fullscreen map -> Return to Wend delivered `onNewIntent` without `onStart`, leaving the existing map task on display 0. MainActivity now restores Maps on that return intent as well. The same sequence then moved map task 28 from display 2 to 0 and back to 2, preserving Activity instance `323037e792` and the active route marker. The panel rendered correctly afterward.
 
 Selecting a paused video and returning Home showed its thumbnail and title. Android reported `STATE_PAUSED`, position 0, speed 0. No Play command was sent. A map/video/Home app-switch cycle preserved map task 23 and Activity instance `537dcf58c` before the subsequent fixture APK update.
 

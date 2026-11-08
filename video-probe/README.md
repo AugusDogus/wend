@@ -6,7 +6,7 @@ This is a mechanism prototype, not a YouTube patch. It cannot access another app
 
 ## Build and local checks
 
-From `road-home/`:
+From `wend/`:
 
 ```sh
 ANDROID_HOME=/path/to/sdk ./gradlew \

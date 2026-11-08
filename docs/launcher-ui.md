@@ -25,7 +25,7 @@ and finally rebuilt every grid view on each keystroke.
 - It loads once on a background thread when `MainActivity` starts, through
   `LauncherApps.getActivityList(null, user)` for each profile.
 - `AppList` keeps one entry per package and profile: the package's first launcher
-  activity, which is the one Android's launch intent opens. Road Home itself is
+  activity, which is the one Android's launch intent opens. Wend itself is
   excluded. Apps sort by label with the current locale's `Collator`, then by package.
 - A `LauncherApps.Callback` on the catalog's worker thread reloads only the affected
   package. Added, changed and available packages are re-queried; removed packages,
@@ -38,7 +38,7 @@ and finally rebuilt every grid view on each keystroke.
 API for the configurable dock and the settings app picker: `AppCatalog.get(context)`
 on the main thread, `status()` (`LOADING`, `READY`, `FAILED`), `apps()`,
 `pinnedApp(packageName)`, `canPin(app)`, `addListener` / `removeListener`, and
-`retryIfFailed()`. Pins name packages in Road Home's own profile; `pinnedApp` is the
+`retryIfFailed()`. Pins name packages in Wend's own profile; `pinnedApp` is the
 one place that rule is applied for the dock, the dock editor and the layout preview.
 Never recycle a `LauncherApp.icon`.
 
@@ -111,7 +111,7 @@ tint. Blurring continues off the main thread and fades in. The shared
 ## Drawer validation (before the merge)
 
 On `road-home-google-api29` with the release build of the drawer lane, November 7,
-2026. Timings come from `RoadHome` log lines, three or more openings each.
+2026. Timings come from `Wend` log lines, three or more openings each.
 
 | Build | First opening after launcher start | Later openings |
 | --- | --- | --- |
@@ -222,7 +222,7 @@ languages.
   while the app list is still loading it says "Loading…" instead. A row pinned just
   before another edit is shown at full opacity rather than left mid-fade.
 - Add app opens a picker page inside the sheet: the same `AppBrowser` grid, offering
-  only apps in Road Home's own profile and hiding apps already pinned, with search.
+  only apps in Wend's own profile and hiding apps already pinned, with search.
   Opening it retries a failed app list. Choosing an app pins it at the bottom and
   returns. Back, or the back arrow, returns without pinning. Empty searches say what
   happened: "No apps match “Waze”. Try another name.", "YouTube is already in the
@@ -237,7 +237,7 @@ languages.
 - System: Android settings and Default home app open the existing intents through
   `AppLaunch.openSystemScreen`, which suspends the Maps and video overlays like any
   external app and restores them if Android cannot open the screen.
-- Footer: "Road Home" and the version name.
+- Footer: "Wend" and the version name.
 - Dragging, the close button, a backdrop tap, Back (after leaving the picker) and Home
   all dismiss it, as with the drawer. Dismissal returns to the main page, clears the
   picker search and scrolls to the top.

@@ -7,14 +7,18 @@ The separate `road-home-api29` AVD retains the offline fixtures.
 ## Image setup
 
 Google APIs API 29 revision 13 uses a different platform certificate from the
-public AOSP development certificate used by Road Home. The local integration
+public AOSP development certificate used by Wend. The local integration
 image combines the AOSP API 29 revision 8 OS with Google's original signed APKs
 and their package-specific permissions. It includes the Google image's
 `LicenseChecker.apk` (`com.android.vending`) in its original system-app location.
 This is a compatibility stub, not the full Play Store UI. No Google account was
-used. Road Home is platform-signed and installed as a privileged system app,
-with DUMP and MEDIA_CONTENT_CONTROL allowlisted. The per-display-focus overlay
-from the fixture emulator is included.
+used. The image's privileged system app is the launcher under its old name,
+Road Home (`dev.augie.roadhome`), with DUMP and MEDIA_CONTENT_CONTROL
+allowlisted. Wend (`dev.augie.wend`) installs over ADB as a regular
+platform-signed app that runs with the system UID, as on the PX6; Road Home is
+uninstalled for user 0 so only Wend handles Home (`pm install-existing
+dev.augie.roadhome` brings it back). The per-display-focus overlay from the
+fixture emulator is included.
 
 The image lives at
 `~/.android/avd/road-home-google-api29.avd/gapps-system-image/`.
@@ -58,7 +62,7 @@ API-29/x86_64 split packages installed through normal Android package updates.
 Real YouTube exposed an Android 10 system_server crash when its automatically
 pinned stack moved directly onto an otherwise empty virtual display:
 `IllegalStateException: Failed to find a stack behind ... mode=pinned` in
-`ActivityMetricsLogger.logWindowState`. Road Home now restores the exact task
+`ActivityMetricsLogger.logWindowState`. Wend now restores the exact task
 with `startActivityFromRecents` and explicit fullscreen mode. The same operation
 returns the remembered task to the main display for Open YouTube, avoiding the
 second task created by a package launch intent.
@@ -87,7 +91,7 @@ cycles, with working tiles. Disabling HWUI buffer-age caching was inconclusive;
 the default was restored and no emulator graphics workaround is required by this
 build. These trials do not establish long-duration renderer stability.
 
-YouTube also deactivates its paused session when backgrounded. Road Home retains
+YouTube also deactivates its paused session when backgrounded. Wend retains
 that session's live metadata while its task exists, continues observing it when
 Home is visible, and drops the selection when its title clears or session is
 destroyed. It does not autoplay an inactive selected video.

@@ -10,17 +10,17 @@ and YouTube emulator (`road-home-google-api29`) with the `release` variant; see
 ## Maps no longer shrinks into system PiP on Home
 
 **Symptom.** With Maps fullscreen (dock button) and navigating, Home showed
-Android's small PiP window before Road Home moved Maps back into its panel.
+Android's small PiP window before Wend moved Maps back into its panel.
 
 **Cause.** Home calls the navigation app's `onUserLeaveHint`, and Maps (or the
 fixture's automatic PiP toggle) then calls `enterPictureInPictureMode`. Android
-pins the task on display 0 before Road Home's Home intent arrives, so
+pins the task on display 0 before Wend's Home intent arrives, so
 `MapsHomeAnimation` finds no closing Maps target and falls back after 700 ms.
 Reproduced before the fix: a `mode=pinned` stack for the Maps task, `PiP=true`
 from the fixture, `No Maps Home animation target; using the panel handoff`, and
 SystemUI's PiP menu activity pulled into the Maps task.
 
-**Fix.** Road Home owns the Maps window, so `MapsPictureInPicture` sets the
+**Fix.** Wend owns the Maps window, so `MapsPictureInPicture` sets the
 `PICTURE_IN_PICTURE` app-op to `MODE_IGNORED` for the Maps package the first
 time each launcher activity manages Maps. This is the same switch as Settings > Apps >
 Special app access > Picture-in-picture. In AOSP android-10.0.0_r47,
@@ -28,13 +28,13 @@ Special app access > Picture-in-picture. In AOSP android-10.0.0_r47,
 `ActivityRecord.checkEnterPictureInPictureState`, which returns false unless
 `checkEnterPictureInPictureAppOpsState` sees exactly `MODE_ALLOWED`. The app gets
 `false` back, no exception, and stays fullscreen. Each change is logged with the
-package and uid. Only "off" is left alone: Road Home cannot tell a driver's
+package and uid. Only "off" is left alone: Wend cannot tell a driver's
 "allowed" in Settings from the untouched default, so if PiP is turned back on
-there, Road Home turns it off again the next time the launcher starts managing
+there, Wend turns it off again the next time the launcher starts managing
 Maps. If the call fails, the error says Maps and its route are unaffected and
 how to turn PiP off manually; Maps still opens and returns as before.
 
-The app-op persists outside Road Home. After removing Road Home, re-enable PiP
+The app-op persists outside Wend. After removing Wend, re-enable PiP
 for Maps in Settings, or with `adb shell appops set <maps package> PICTURE_IN_PICTURE allow`.
 The archived `windowed` variant does not set it.
 
@@ -67,7 +67,7 @@ it off; `floatingVideoCorner` remembers the last corner.
   `s2n-01-nav-full-video-float.png`, and `s2n-05-search-closed.png` under
   `build/validation/real-apps-api29/` in the main checkout). A corner the driver
   drags it to is remembered and wins over the default. Check it on the PX6.
-- **Home** returns it to the card once Road Home's window has a surface again,
+- **Home** returns it to the card once Wend's window has a surface again,
   concurrently with the Maps return animation. Playback never stops.
 - **Tap** swaps: the video takes the screen and Maps floats above it (see
   [swapping](#swapping)). A floating window takes no touches while it enters, and
@@ -82,14 +82,14 @@ it off; `floatingVideoCorner` remembers the last corner.
   its playback state (`STOPPED`, `ERROR`, `NONE`, not `PAUSED`), because YouTube
   then draws its stopped, up-next, or ad screen into the window (device report
   RH-7); or when another app's task is created or brought to the front, also
-  while a tapped floating video is still growing to fullscreen. Maps, Road Home,
+  while a tapped floating video is still growing to fullscreen. Maps, Wend,
   and the video's own display are allowed. Home afterwards works as usual: Maps
   returns to its panel, and the card shows the stopped video's still.
-- **Not floated** when another app paused Road Home while Maps was preparing to
+- **Not floated** when another app paused Wend while Maps was preparing to
   go fullscreen: the video then stays in its card rather than floating above
   that app.
 - **Maps fails to go fullscreen** (its task move is refused after the video has
-  started floating): Road Home stays visible with the panel's error, and the
+  started floating): Wend stays visible with the panel's error, and the
   video returns to its card.
 
 ### How it works
@@ -106,12 +106,12 @@ rectangle through Android 10's internal-insets listener, so Maps keeps every
 other touch; the video's input portal stays empty until fullscreen.
 
 `EmbeddedDisplayLifecycle` (formerly `MapDisplayLifecycle`) now covers both
-displays. Maps keeps its display awake and hidden while Road Home is stopped.
+displays. Maps keeps its display awake and hidden while Wend is stopped.
 The video keeps the stock power-off, except while presented elsewhere: host
 surface changes then neither power it off nor reparent it, and the missed state is
-applied when the presentation returns to Road Home.
+applied when the presentation returns to Wend.
 
-Maps signals `MapPanel.Covering` once, as it starts covering Road Home. On a
+Maps signals `MapPanel.Covering` once, as it starts covering Wend. On a
 slow expansion (Maps' buffers miss the 900 ms readiness deadline) the frozen
 cover is still up, so the cover blanks the card the video left; otherwise the
 cover would show a second, frozen copy. That path signals after the blocking task
@@ -123,7 +123,7 @@ then fails, `Covering.abandoned` returns the video to its card
 Once the video is fullscreen and receives touches, Android 10 sends Home to the
 video's virtual display. `LiveSurfaceWindow` therefore routes the Home key to Road
 Home while a display is shown whole and,
-after a dismissal, until Road Home is shown again. Found on the emulator: without
+after a dismissal, until Wend is shown again. Found on the emulator: without
 this, Home did nothing after the title was cleared from fullscreen.
 
 ## Live Maps floats above fullscreen video
@@ -153,16 +153,16 @@ corner, default bottom right (the passenger side).
   surface showing, and returning Maps' root first hid it under the fullscreen
   video for about 100 ms (both seen in recordings).
 - **Removed** without motion, as the fullscreen video is, when another app comes
-  to the front (Road Home stops) or the video presentation ends.
+  to the front (Wend stops) or the video presentation ends.
 - **Maps closed while floating** (its task removed): the panel's "Maps was
   closed" message and its Open Maps button stay after Home returns Maps' empty
   display to the panel. The same message appears when Maps is gone as a tapped
-  floating video becomes fullscreen, instead of Maps floating. Road Home does
+  floating video becomes fullscreen, instead of Maps floating. Wend does
   not relaunch Maps on its own in either case.
 
-## Live Maps floats above the video app Road Home opens
+## Live Maps floats above the video app Wend opens
 
-When Road Home opens the video app itself on the main display (a paused,
+When Wend opens the video app itself on the main display (a paused,
 stopped, or unavailable preview; the dock or drawer icon without a live video;
 or the launch-intent fallback when no video task exists), Maps floats above it
 the same way, with the same window, `floatingMapsCorner`, and `floatingMaps`
@@ -171,7 +171,7 @@ switch. Before November 8 navigation disappeared whenever the video was paused
 
 - **Enter.** Maps moves from its panel to its corner (280 ms) as the video app
   opens (`MainActivity.videoAppOpening`, then `EmbeddedMaps.floatAboveVideoApp`).
-- **While Road Home is stopped.** Maps' display stays powered and hidden behind
+- **While Wend is stopped.** Maps' display stays powered and hidden behind
   its window (`EmbeddedDisplayLifecycle`, presented elsewhere), its input portal
   is empty, and the overlay takes only the floating rectangle; the video app
   keeps every other touch.
@@ -179,28 +179,28 @@ switch. Before November 8 navigation disappeared whenever the video was paused
   front, including Recents (`TaskFrontWatcher`, as for the floating video); the
   video app and Maps themselves do not count. If app switches cannot be watched,
   Maps does not float, so it can never stay above an unrelated app.
-- **Home**, or Road Home showing again because the video app left or failed to
-  open, returns Maps to its panel once Road Home's window can show it.
+- **Home**, or Wend showing again because the video app left or failed to
+  open, returns Maps to its panel once Wend's window can show it.
 - **Tap** brings Maps fullscreen as for any floating Maps. The video is a task
-  on the main display, not a Road Home presentation, so it does not float; it
+  on the main display, not a Wend presentation, so it does not float; it
   stays beneath, and Home embeds it in the card again if it plays. Maps stays in
   its floating window, under the frozen frame, until it moves: a display shown
   in no window is missing from SurfaceFlinger's layer dump, so `MapFrame` could
   not see it lay out. Its display and its view both take the full screen size
-  (`EmbeddedDisplayLifecycle.resize`), because Road Home may be stopped and lay
+  (`EmbeddedDisplayLifecycle.resize`), because Wend may be stopped and lay
   out nothing, or still have its window. Without these, Maps moved at its panel
   size, the frozen frame held about 1.6 s and then showed panel-sized Maps for
   0.8 s before its relayout.
-- **Road Home's own state does not matter during that tap.** Android 10 can
-  leave Road Home resumed under the video app (when the video moved there from
-  Road Home's own display) and stop it only as the tap's frozen frame goes up,
+- **Wend's own state does not matter during that tap.** Android 10 can
+  leave Wend resumed under the video app (when the video moved there from
+  Wend's own display) and stop it only as the tap's frozen frame goes up,
   or stop it whenever the video app idles. Before November 8 that stop called
-  the takeover off: Maps was left on Road Home's unshown panel display with no
+  the takeover off: Maps was left on Wend's unshown panel display with no
   window, so navigation disappeared (fixture report BUG-1, reproduced again on
-  the old build), or, with a stopped Road Home, floating Maps stayed whole,
-  centered, and untouchable (review R1). Road Home's stop is now expected for
+  the old build), or, with a stopped Wend, floating Maps stayed whole,
+  centered, and untouchable (review R1). Wend's stop is now expected for
   the whole takeover above the video app.
-- **Called off** only by Home, by Road Home showing again (the video app left),
+- **Called off** only by Home, by Wend showing again (the video app left),
   or by another app coming to the front during the takeover (review R2). Each
   removes the frozen frame at once, never moves Maps, and returns Maps to its
   panel: in view after Home, or hidden behind the other app.
@@ -214,14 +214,14 @@ display, and decoder stay the same.
 
 - **Floating video over fullscreen Maps (tap the video).** The video grows from
   its corner to fullscreen above Maps (the existing tap motion). Fully hidden
-  under it, Road Home comes forward first and, after its next frame, the Maps
+  under it, Wend comes forward first and, after its next frame, the Maps
   task returns from behind it to its panel's virtual display, the same order as
   Home. Once Maps has laid out at the panel's size (`MapFrame`, 500 ms at most;
   after that it emerges as it is and finishes its layout inside the window),
   it emerges at its corner: 90% to 100% size and 0 to 1 opacity over 220 ms
   with `window_ease_out`. About 0.8 s from tap to floating Maps on the fixture. With `floatingMaps` off,
   Maps just waits in its panel and Home shows it there. The video is now above
-  Road Home rather than Maps, so the status bar fullscreen Maps kept disappears.
+  Wend rather than Maps, so the status bar fullscreen Maps kept disappears.
 - **Floating Maps over fullscreen video (tap Maps).** Maps grows from its corner
   until its whole panel display shows at pixel scale one, centered (never
   enlarged, so no stretched frames). A frozen frame then holds while, beneath
@@ -235,7 +235,7 @@ display, and decoder stay the same.
   growth one frame short of its end, so a 4 to 22 px strip of the frozen video
   showed at Maps' top and left edges for over a second (fixture report BUG-2).
   If Maps' layers cannot be read, the screenshot stands in, black outside Maps'
-  place, as before. If another app stops Road Home during this tap, the takeover
+  place, as before. If another app stops Wend during this tap, the takeover
   ends with its frozen frame at once instead of holding it 1.5 s over that app.
   When Maps' buffers show
   the new width, which they usually already do after the move (300 ms at most),
@@ -243,12 +243,12 @@ display, and decoder stay the same.
   corner. A paused video, or `floatingVideo` off,
   returns the video to its card instead. Without a frozen frame (animations
   off, or the screenshot failed), the video still emerges only once the task
-  has moved; before November 8 it emerged over Road Home first.
+  has moved; before November 8 it emerged over Wend first.
 
 Why the Maps direction differs: Maps' display is panel-sized, so fullscreen Maps
 needs one new layout, which must happen out of sight. The video direction hides
 it under the live video. In the Maps direction, Maps is the one growing, and the
-dock's live expansion cannot be reused as is: it reveals Road Home around Maps,
+dock's live expansion cannot be reused as is: it reveals Wend around Maps,
 whereas here the video's overlay must stay visible below Maps until Maps covers
 the screen, and yet end above Maps. The swap therefore uses the same
 frozen-frame-and-crossfade handoff as Maps' other transitions (`MapTransition`),
@@ -258,11 +258,11 @@ fullscreen Maps puts it, so the crossfade barely ghosts.
 Also found on the emulator: when Maps moved to its panel display while still
 visible, the fixture's map SurfaceView sometimes kept its fullscreen-sized buffer
 in the panel (seen twice in about 15 swaps, once inside floating Maps). Moving it from
-behind Road Home, as Home does, fixed it: 8 of 8 swaps then showed the panel-size
+behind Wend, as Home does, fixed it: 8 of 8 swaps then showed the panel-size
 surface with no readiness timeout (`swap-surface/run-*.png`).
 
 Found on the emulator: moving Maps to display 0 straight from its panel-sized
-display left Road Home resumed and visible behind fullscreen Maps (no pause or
+display left Wend resumed and visible behind fullscreen Maps (no pause or
 stop in the activity event log), so Home had no opening Home window for
 `MapsHomeAnimation` and fell back to the panel handoff. Laying Maps out at the
 full screen size first, as the dock expansion does, restored the normal stop and
@@ -304,7 +304,7 @@ does match there, but late, and that it could also match too early:
   was still panel-sized under the full-screen window (captured). It now uses the
   newest map surface inside a Maps window, with that window. Tests use the
   captured layers for guidance and for the fixture
-  (`app/src/test/resources/dev/augie/roadhome/mapframe/`).
+  (`app/src/test/resources/dev/augie/wend/mapframe/`).
 
 The hold limits: the swap to Maps waits up to 900 ms for the full-size layout
 before the move. A 700 ms limit was tried and made swaps slower at this load:
@@ -323,10 +323,10 @@ same script (`build/evidence/rh3/ab-old/`, `ab-new2/`):
 | Move to Maps ready again (log) | 3 queries, not logged | 1 query, 8 to 65 ms |
 | Maps returned beneath the video to floating (log) | 0.74, 0.95, 1.08 s (two at 900 ms) | 0.56, 0.57, 0.63 s (500 ms limit) |
 
-On this host the frozen frame is dominated by Maps' own layout and Road Home's
+On this host the frozen frame is dominated by Maps' own layout and Wend's
 starved main thread, so it is not yet well under 0.5 s: on the map fixture the
 same swap holds about 0.85 s, of which 0.44 s is the logged wait. Overlapping
-Maps' layout with the growth motion is the next step: capture Road Home's own
+Maps' layout with the growth motion is the next step: capture Wend's own
 Maps display layer at the tap (`SurfaceControl.captureLayers`), grow that still
 image, and resize the display at once. Not done here.
 
@@ -347,7 +347,7 @@ names the three moments of the Maps direction (covered, revealed, failed), and
 `MapTransition.holdThenCrossfade` holds its frame, a `MapTransition.Still` of
 Maps' own layers, until the task has moved. `EmbeddedMaps.ScreenTakeover`
 remembers whether the tapped Maps floated above the live video or above the
-video app, which decides what Road Home's stop means: above the live video it
+video app, which decides what Wend's stop means: above the live video it
 means another app came forward and ends the takeover; above the video app it is
 expected. `MainActivity` routes both directions and Home.
 
@@ -366,7 +366,7 @@ left a black box (device reports RH-4, RH-5, BUG-3, and design feedback).
   screen.
 - **Cover.** Whenever the live video is not shown in the card, the card shows,
   in this order: a recent still of the live video, the session's artwork, or a
-  placeholder (Road Home's panel color and the video app's 24 dp icon at the top
+  placeholder (Wend's panel color and the video app's 24 dp icon at the top
   left). A paused or stopped video adds a 48 dp play control when its session
   can play (its `PlaybackState` actions include `ACTION_PLAY` or
   `ACTION_PLAY_PAUSE`); a playing video on its way back shows none. YouTube
@@ -395,8 +395,8 @@ scaled frame, so with the card at `[109,93][429,273]` the portal took
 59 px took nothing, and a 41 px strip of the Maps panel beside the card went to
 YouTube, whose window only covers the card. `EmbeddedVideo`'s tap target is a
 visible view above the player, so ActivityView's tap-exclude region (the area of
-Road Home's window that lets touches through to the display, computed by
-subtracting the views drawn above it) no longer contains the card, and Road Home
+Wend's window that lets touches through to the display, computed by
+subtracting the views drawn above it) no longer contains the card, and Wend
 receives those touches itself.
 
 `VideoStills` takes the stills. While the card plays live and nothing of Road
@@ -412,10 +412,10 @@ the session reported the pause 65 ms after the media key. A capture at the
 moment playback stops would race that overlay under load; a confirmed capture
 never contains it. The kept still is therefore 0.5 to 2 s older than the pause.
 
-Road Home's own drawing over the card is excluded: `MainActivity` marks the card
+Wend's own drawing over the card is excluded: `MainActivity` marks the card
 covered as a sheet opens and as Maps starts going fullscreen (its live expansion
-sweeps over the card before Road Home stops), and shown again when its window
-regains focus or Road Home restarts. A pressed card, a card with its cover up,
+sweeps over the card before Wend stops), and shown again when its window
+regains focus or Wend restarts. A pressed card, a card with its cover up,
 and any presentation elsewhere also take no captures.
 
 `VideoCardCover` draws the cover and owns the stills. Memory is bounded to at
@@ -449,7 +449,7 @@ On the emulator (evidence under `build/evidence/`, git-ignored):
   playing (`04-*`), tap to fullscreen and Home (`06`, `07`).
 - Two recorded cycles (`20-cycle-1.mp4`, `21-cycle-2.mp4`) including the
   remembered corner. Tasks (Maps 49, video 72, Home 71), process IDs, and the two
-  Road Home virtual displays stayed constant; no floating layers or overlay
+  Wend virtual displays stayed constant; no floating layers or overlay
   windows remained (`cycles-*.txt`).
 - Paused while floating keeps its last frame (`10-*`), Home shows the thumbnail
   (`11`), a paused card does not float (`12`), another app dismisses it (`14-*`),
@@ -499,7 +499,7 @@ On the emulator (`build/evidence/floating-maps/` and `build/evidence/matrix/`):
   swap is covered by code paths only.
 - Leak checks before and after the cycles (`D-before.txt`, `D-after.txt`,
   `E3-before.txt`, `E3-after.txt`): Maps task 75 (instance `5330feab4f0`),
-  video task 95 (instance `716c39772b0`), Home task 94, the same two Road Home
+  video task 95 (instance `716c39772b0`), Home task 94, the same two Wend
   virtual displays, the same process IDs including system_server, and no overlay
   windows or live, outline, or transition layers left.
 
@@ -511,7 +511,7 @@ On the emulator (`build/evidence/floating-maps/` and `build/evidence/matrix/`):
   in the animator's frame log, with or without floating Maps). Motion was judged
   from repeated recordings plus the animator's frame log. Motion still runs on
   the main thread (`ValueAnimator`); a dedicated animation thread would make it
-  immune to binder calls and Road Home's own drawing on the head unit.
+  immune to binder calls and Wend's own drawing on the head unit.
 - The Maps swap holds a frozen frame while Maps lays out at the full size and
   moves: about 0.85 s on the fixture and 0.9 to 1.4 s with real Maps in
   guidance on this loaded host (see [readiness](#maps-readiness-in-live-guidance-device-report-rh-3)),
@@ -525,7 +525,7 @@ On the emulator (`build/evidence/floating-maps/` and `build/evidence/matrix/`):
   full-screen map surface per return to the panel; readiness now ignores them.
 - With the video's live dock expansion, Maps visibly re-lays out inside its panel
   at the reveal before widening; that is the existing expansion, not the swap.
-- Software rendering stalls the main thread as Road Home stops, so recordings show
+- Software rendering stalls the main thread as Wend stops, so recordings show
   entry motion skipping its first frames. Not a head-unit performance claim.
 - On Home from fullscreen Maps, Maps' existing settle cover freezes the screen,
   including the card, until Maps' panel buffers settle.
@@ -587,7 +587,7 @@ git-ignored `build/evidence/`):
 - Regression: Home, dock Maps with the video floating, drag to top right, both
   swaps, Home, Open YouTube with Maps floating, and Home again
   (`regression/matrix-3c1f943/`, `matrix-sheet.png`, `matrix.mp4`). Maps task
-  190, YouTube task 265, and Road Home task 264 stayed the same throughout, no
+  190, YouTube task 265, and Wend task 264 stayed the same throughout, no
   pinned stack appeared, and no floating window remained after either Home.
 - Not reproduced on a device: Home cancelling a covered move (needs the live map
   motion to be unavailable), a failed task move, Maps closing while it floats,
@@ -607,8 +607,8 @@ captured real-Maps guidance and fixture layers, including the stale full-screen
 map surface; ready on the first matching query; the 300 ms limit after a held
 move; blanking everything but Maps in the frozen frame; floating Maps within
 500 ms of returning beneath the video; and Maps floating above the video app:
-it stays while Road Home stops, another app ends it, Road Home showing again
-returns it, and its display grows directly only while Road Home is hidden.
+it stays while Wend stops, another app ends it, Wend showing again
+returns it, and its display grows directly only while Wend is hidden.
 
 On `road-home-google-api29` (real Maps in guidance, YouTube), release build;
 every APK was installed with YouTube moved to the main display first, so its
@@ -634,7 +634,7 @@ task (265) survived each install:
   dock-then-Home for BUG-1 (`bug1/`), and the full matrix of dock Maps, three
   swap pairs, Home, Open YouTube live, Home, paused Open YouTube with Maps
   floating, tap, and Home (`matrix-cf69d90/`, the build before the final one,
-  which differs only in its 700 ms limit; `state.txt` shows Road Home 269,
+  which differs only in its 700 ms limit; `state.txt` shows Wend 269,
   Maps 190, and YouTube 265 throughout, no pinned stack, no floating window or
   layer after each Home, and Maps' PiP app-op still `ignore`).
 
@@ -668,7 +668,7 @@ build of this code (evidence under this worktree's git-ignored
   in its middle showed YouTube's inline controls (`taps-before.png`), and the
   shifted portal region above.
 - RH-5 (`rh5/`): with the video live in the card, the video portal's touch
-  region is empty and Road Home's window owns the card area
+  region is empty and Wend's window owns the card area
   (`03-dumpsys-input-live.txt`); a tap at the card's top left corner (130, 110)
   opened the video fullscreen with Maps floating, as the Open action does
   (`04-card-tap.mp4`, `04-after-card-tap.png`).
@@ -684,7 +684,7 @@ build of this code (evidence under this worktree's git-ignored
   display was off, and the card showed the still with the play control from
   the first frame after Home until YouTube played again, never black
   (`after/05-home-nofloat-card.png`). At load average 35, YouTube took about
-  11 s to resume on its own; Road Home embeds only once it plays.
+  11 s to resume on its own; Wend embeds only once it plays.
 
 Not verified on a device: stop in the card, Home from the tapped fullscreen
 video, the fixture emulator, and the closing floating-window matrix. The device
@@ -702,11 +702,11 @@ failing first against the code before its fix:
 
 - `EmbeddedMapsTest`, a floating window that really reaches its corner and
   grows whole (Robolectric windows given a compositor surface): a tap above the
-  video app with Road Home's window still there and Road Home stopping
-  mid-takeover; Road Home never stopping; Road Home stopping mid-takeover, and
+  video app with Wend's window still there and Wend stopping
+  mid-takeover; Wend never stopping; Wend stopping mid-takeover, and
   between the growth and the frozen frame's first frame; another app coming
-  forward mid-takeover and before the frozen frame starts; Road Home showing
-  again; Home; and another app stopping Road Home during a tap above the live
+  forward mid-takeover and before the frozen frame starts; Wend showing
+  again; Home; and another app stopping Wend during a tap above the live
   video. Each ends with Maps moved once, nothing floating and no frozen frame,
   or with Maps unmoved in its panel at the panel's size and no frozen frame.
 - `MapTransitionTest`: with the screen one frame short of the growth's end, the
@@ -723,16 +723,16 @@ On `road-home-api29` (fixtures, emulator build; evidence under this worktree's
 git-ignored `build/evidence/`):
 
 - Before (`bug1-before/`): the original repro (playing card, pause, tap the
-  card, tap floating Maps after the grace) lost Maps on the first try: Road Home
+  card, tap floating Maps after the grace) lost Maps on the first try: Wend
   was resumed under the video app, Maps' display grew to 1280 px through Road
-  Home's layout, Road Home stopped 140 ms later, the display shrank back, the
-  frozen frame timed out, and the Maps task stayed on Road Home's display with
+  Home's layout, Wend stopped 140 ms later, the display shrank back, the
+  frozen frame timed out, and the Maps task stayed on Wend's display with
   no window (`r1-repro.mp4`, `r1-after-tap-maps-lost.png`,
   `r1-stacks-after.txt`).
 - After (`bug1-after/`, `final-fixture/`): eight runs. In seven, the same
-  repro, Road Home was resumed at the tap (once after an 11 s wait) and stopped
+  repro, Wend was resumed at the tap (once after an 11 s wait) and stopped
   30 to 250 ms after Maps' display grew, the moment that lost Maps before; in
-  one (`run6-stopped`) Road Home stopped as the video app opened, before the
+  one (`run6-stopped`) Wend stopped as the video app opened, before the
   tap. Every run moved task 101 to the main display, fullscreen, with Maps
   reported laid out at 1280 px first and no overlay window left
   (`logcat-5556.txt`, `roadhome-log-runs.txt`). Runs 1 to 6 used the first
@@ -749,10 +749,10 @@ On `road-home-google-api29` (real Maps in guidance and YouTube, release build;
 `real-before/`, `real-after/`):
 
 - The previous build did not lose Maps in the one run tried here: Android
-  stopped Road Home 5 s after YouTube opened, before the tap
+  stopped Wend 5 s after YouTube opened, before the tap
   (`real-before/r1-*`).
 - Final build: three runs of paused card, tap the card, tap floating Maps. In
-  two, Road Home was resumed under YouTube at the tap and stopped 80 and 110 ms
+  two, Wend was resumed under YouTube at the tap and stopped 80 and 110 ms
   after Maps' display grew, the case that lost Maps on the fixture; in the third
   (from the stopped card) it stopped 1.2 s after YouTube opened. Each moved Maps
   task 190 to the main display in guidance (`item1-run*`,
@@ -792,16 +792,16 @@ What the evidence shows:
 - WindowManager disagrees with Maps: display 0's `mCurrentFocus` is Maps'
   window, and the input dispatcher's focused window for display 0 is Maps
   (`03-dumpsys-window-after-back.txt`, `02-dumpsys-input-after-back.txt`).
-- The dispatcher still lists Maps' window as focused on the empty Road Home
+- The dispatcher still lists Maps' window as focused on the empty Wend
   Maps display and on many earlier, removed virtual displays (2, 4, 8, ... 58).
   Those entries only produce the "Found window ... but it should belong to
   display 0" log lines; they do not drop the key.
 - Both emulators enable per-display focus with the boot overlay
-  `dev.augie.roadhome.emulator.bootfocus` (`task-fixture/README.md`); the PX6
+  `dev.augie.wend.emulator.bootfocus` (`task-fixture/README.md`); the PX6
   does not.
 
 The likely cause, not confirmed in AOSP source here: with per-display focus,
-the Road Home Maps display keeps Maps as its focused window while Maps is in the
+the Wend Maps display keeps Maps as its focused window while Maps is in the
 panel. When the task moves to display 0, Android 10 reports focus per display,
 so Maps' window first gains focus on display 0 and then loses it again from the
 display it left, and the last report wins. Without per-display focus only the

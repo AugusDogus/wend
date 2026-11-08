@@ -1,7 +1,7 @@
 # Live Maps window transitions
 
 Tested November 1, 2026 on the Android 10 (API 29) Google-apps emulator,
-1280 × 720, with platform-signed Road Home and real Google Maps. The initial
+1280 × 720, with platform-signed Wend and real Google Maps. The initial
 experiment was later deployed to the PX6; the correction below supersedes it. The emulator uses software rendering, so these observations do not
 establish head-unit performance.
 
@@ -12,7 +12,7 @@ A remote animation receives a window-manager-owned surface handle (a leash),
 which can control live app surfaces rather than a bitmap preview.
 
 A control launch of Android Settings using `ActivityOptions.makeRemoteAnimation`
-produced opening and closing targets for Settings and Road Home, including
+produced opening and closing targets for Settings and Wend, including
 valid leashes and 1280 × 720 bounds. This confirms the runner implementation
 and emulator permissions worked.
 
@@ -52,7 +52,7 @@ has been performed for this experiment.
 
 Changing that task to fullscreen produces an Android 10 remote animation target
 for `TASK_CHANGE_WINDOWING_MODE` (27), including a live SurfaceControl leash and
-start bounds. Road Home animates the leash's position and crop over 280 ms with
+start bounds. Wend animates the leash's position and crop over 280 ms with
 an ease-out curve. It does not scale Maps pixels or ask Maps to relayout every
 frame. Maps lays out once at the destination size; the compositor reveals that
 live content through a growing window. Controls can change layout at handoff.
@@ -72,9 +72,9 @@ app-launch transitions. Cleanup removes screenshot and corner overlay windows.
 ### Returning Home
 
 An activity-local remote animation definition handles Home's task-open,
-front/back, and wallpaper transitions. It requires both an opening Road Home
+front/back, and wallpaper transitions. It requires both an opening Wend
 target and the requested closing Maps task. Other transitions finish immediately;
-the registration cannot intercept app switches that do not involve Road Home.
+the registration cannot intercept app switches that do not involve Wend.
 
 The original fullscreen Maps surface moves and crops into the panel over 240 ms
 with the same ease-out curve as expansion. Its pixel scale stays at one. The Home
@@ -170,7 +170,7 @@ Use the standard `release` build, which retains the embedded ActivityView.
 Its dock clock and full-height layout remain intact; the dock now has an opaque
 background to distinguish it from the media sidebar. No ROM patch or global
 immersive override is needed. Uninstall our experimental
-`dev.augie.roadhome.windowdecor` overlay when migrating from `windowed`.
+`dev.augie.wend.windowdecor` overlay when migrating from `windowed`.
 
 `EmbeddedMapMotion` resizes the embedded display once beneath a stationary
 cover, waits for Maps' window and tile buffers, then expands the owned live

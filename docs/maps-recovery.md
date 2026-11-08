@@ -6,7 +6,7 @@ nothing. No current Maps crash or ANR was found in the collected logs. A Maps
 thread dump showed its main and render threads waiting, rather than a Java
 application deadlock.
 
-Restarting only Road Home restored Maps rendering and dock fullscreen behavior.
+Restarting only Wend restored Maps rendering and dock fullscreen behavior.
 Maps retained PID 1729, task 676, and its existing activity. No Maps force-stop,
 data reset, launcher rollback, or vehicle reboot was performed.
 
@@ -36,7 +36,7 @@ symptom. Long-duration and vehicle sleep/wake behavior remain unverified.
 - All 53 release unit tests, release assembly, and release lint passed.
 - The matching PX6 platform-signed `road-home-px6-recovery.apk` installed with
   `adb install -r` successfully. Maps was on display 0 during replacement.
-- The device UI tool reported Road Home opened after installation, but subsequent
+- The device UI tool reported Wend opened after installation, but subsequent
   screenshot capture failed. Refreshing devices then reported the PX6 missing.
   Post-install visual checks could not be completed. Installation success is not
   evidence of post-install transition correctness.
@@ -44,7 +44,7 @@ symptom. Long-duration and vehicle sleep/wake behavior remain unverified.
 ## Reconnection check, 19:06 device time
 
 The installed APK SHA-256 matched the recovery artifact. Maps still had PID 1729
-and task 676. Opening Road Home displayed Maps content normally. Tapping the
+and task 676. Opening Wend displayed Maps content normally. Tapping the
 embedded Maps close control dismissed its place sheet, verifying input delivery.
 The dock button then moved the same task from display 6 to display 0, confirmed
 by a screenshot and the launcher log.
