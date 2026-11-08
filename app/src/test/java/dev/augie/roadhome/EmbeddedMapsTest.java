@@ -245,6 +245,24 @@ public class EmbeddedMapsTest {
         maps.release();
     }
 
+    /**
+     * Above the video app Road Home is stopped and lays out nothing, so a tap on floating Maps
+     * grows its display directly; once Road Home's window is back, its layout sizes it again.
+     */
+    @Test public void mapsDisplayGrowsDirectlyOnlyWhileRoadHomeIsHidden() throws Exception {
+        EmbeddedMaps maps = readyMaps(new FakeTasks(host));
+        EmbeddedDisplayLifecycle lifecycle = lifecycle(maps);
+        assertTrue(lifecycle.resizeWhileHidden(1280, 720));
+        android.graphics.Point size = new android.graphics.Point();
+        host.getSystemService(DisplayManager.class).getDisplay(panelDisplay(maps)).getRealSize(size);
+        assertEquals(new android.graphics.Point(1280, 720), size);
+        hostSurfaceCreated(maps);
+        assertFalse(lifecycle.resizeWhileHidden(833, 720));
+        host.getSystemService(DisplayManager.class).getDisplay(panelDisplay(maps)).getRealSize(size);
+        assertEquals(new android.graphics.Point(1280, 720), size);
+        maps.release();
+    }
+
     @Test public void aVideoThatFloatedAsMapsStartedReturnsIfMapsThenFailsToMove() {
         EmbeddedMaps.CoverOnce once = new EmbeddedMaps.CoverOnce(covering());
         assertEquals(new Rect(1, 2, 3, 4), once.starting());
@@ -356,13 +374,18 @@ public class EmbeddedMapsTest {
 
     /** Road Home's window has a surface again, so its panel can show Maps. */
     private static void hostSurfaceCreated(EmbeddedMaps maps) throws ReflectiveOperationException {
+        EmbeddedDisplayLifecycle lifecycle = lifecycle(maps);
+        Field holder = EmbeddedDisplayLifecycle.class.getDeclaredField("holder");
+        holder.setAccessible(true);
+        lifecycle.surfaceCreated((SurfaceHolder) holder.get(lifecycle));
+    }
+
+    private static EmbeddedDisplayLifecycle lifecycle(EmbeddedMaps maps) throws ReflectiveOperationException {
         Field field = EmbeddedMaps.class.getDeclaredField("displayLifecycle");
         field.setAccessible(true);
         Object lifecycle = field.get(maps);
         assertTrue(lifecycle instanceof EmbeddedDisplayLifecycle);
-        Field holder = EmbeddedDisplayLifecycle.class.getDeclaredField("holder");
-        holder.setAccessible(true);
-        ((EmbeddedDisplayLifecycle) lifecycle).surfaceCreated((SurfaceHolder) holder.get(lifecycle));
+        return (EmbeddedDisplayLifecycle) lifecycle;
     }
 
     /** As when the live map motion cannot be created, so Maps moves under a frozen frame. */

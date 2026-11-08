@@ -342,13 +342,7 @@ final class EmbeddedMaps extends MapPanel {
                 floating.cancel();
                 takeover = next;
                 next.covered();
-                if (!hostActive) {
-                    // Above the video app, Road Home is stopped and lays out nothing, so its
-                    // display cannot grow first. Moved as it is, Maps lays out on the main display.
-                    moveTakeover();
-                    return;
-                }
-                activityView.setLayoutParams(new LayoutParams(screen.x, screen.y));
+                if (!growHiddenDisplay()) activityView.setLayoutParams(new LayoutParams(screen.x, screen.y));
                 takeoverFrame = new MapFrame(screen.x, () -> post(this::moveTakeover));
                 postDelayed(takeoverDeadline, TAKEOVER_LAYOUT_MS);
             }, next::revealed);
@@ -357,6 +351,21 @@ final class EmbeddedMaps extends MapPanel {
             transition.concealOutside(new Rect(Math.round(centered.left), Math.round(centered.top),
                     Math.round(centered.right), Math.round(centered.bottom)));
         });
+    }
+
+    /**
+     * Above the video app Road Home is stopped and lays out nothing, so Maps' display grows to the
+     * full screen size directly.
+     * @return false when Road Home's own layout has to size it
+     */
+    private boolean growHiddenDisplay() {
+        if (hostActive || displayLifecycle == null) return false;
+        try { return displayLifecycle.resizeWhileHidden(screen.x, screen.y); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("RoadHomeMap", "Could not grow Maps' hidden display to " + screen.x + "x" + screen.y
+                    + "; Maps moves at its panel size once its deadline passes and lays out fullscreen after", error);
+            return false;
+        }
     }
 
     private void moveTakeover() {
@@ -395,6 +404,12 @@ final class EmbeddedMaps extends MapPanel {
     private void restorePanelSize() {
         if (activityView != null && (activityView.getLayoutParams().width != -1 || activityView.getLayoutParams().height != -1)) {
             activityView.setLayoutParams(new LayoutParams(-1, -1));
+        }
+        if (displayLifecycle == null) return;
+        try { displayLifecycle.resizeWhileHidden(getWidth(), getHeight()); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("RoadHomeMap", "Could not return Maps' hidden display to its panel size " + getWidth() + "x"
+                    + getHeight() + "; Road Home's layout does when it shows the panel again", error);
         }
     }
 
