@@ -26,6 +26,7 @@
     <string name="settings_add_app">Add app</string>
     <string name="settings_dock_full">The dock is full. Remove an app to add another.</string>
     <string name="settings_not_installed">Not installed</string>
+    <string name="settings_pin_loading">Loading…</string>
     <string name="settings_move_up">Move %1$s up</string>
     <string name="settings_move_down">Move %1$s down</string>
     <string name="settings_remove">Remove %1$s from the dock</string>

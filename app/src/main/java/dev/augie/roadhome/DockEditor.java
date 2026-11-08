@@ -25,7 +25,8 @@ import java.util.Map;
 
 /**
  * The settings' Dock section: the pinned apps in dock order, each with move up, move down and
- * remove, then Add app. A pin whose app is not installed stays listed as "Not installed".
+ * remove, then Add app. A pin whose app is not installed stays listed as "Not installed"; while
+ * the app list is still loading, a pin is listed as loading instead.
  * Changes animate in place: moved rows slide, removed rows fade, and the card resizes.
  */
 final class DockEditor implements AppCatalog.Listener {
@@ -203,6 +204,9 @@ final class DockEditor implements AppCatalog.Listener {
     @Override public void onAppsChanged(AppCatalog catalog) { bind(); }
 
     private void bind() {
+        // While the list loads, no pin can be found yet; that does not mean it is uninstalled.
+        int missing = catalog.status() == AppCatalog.Status.LOADING
+                ? R.string.settings_pin_loading : R.string.settings_not_installed;
         Map<String, Row> previous = new HashMap<>(rows);
         rows.clear();
         card.removeAllViews();
@@ -211,7 +215,7 @@ final class DockEditor implements AppCatalog.Listener {
             String packageName = packages.get(i);
             Row row = previous.remove(packageName);
             if (row == null) row = new Row(packageName);
-            row.bind(catalog.pinnedApp(packageName), i, packages.size());
+            row.bind(catalog.pinnedApp(packageName), missing, i, packages.size());
             rows.put(packageName, row);
             card.addView(row.view, new LinearLayout.LayoutParams(-1, -2));
         }
@@ -288,7 +292,7 @@ final class DockEditor implements AppCatalog.Listener {
             title.setEllipsize(TextUtils.TruncateAt.END);
             title.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_START);
             text.addView(title, new LinearLayout.LayoutParams(-1, -2));
-            status = Ui.text(context, context.getString(R.string.settings_not_installed), 14, Ui.MUTED);
+            status = Ui.text(context, "", 14, Ui.MUTED);
             status.setPadding(0, Ui.dp(context, 4), 0, 0);
             text.addView(status, new LinearLayout.LayoutParams(-1, -2));
             LinearLayout.LayoutParams textLayout = new LinearLayout.LayoutParams(0, -2, 1);
@@ -303,10 +307,12 @@ final class DockEditor implements AppCatalog.Listener {
             view.addView(remove, square());
         }
 
-        void bind(LauncherApp app, int index, int size) {
+        /** {@code missing} explains a null {@code app}: not installed, or not loaded yet. */
+        void bind(LauncherApp app, int missing, int index, int size) {
             String label = app == null ? packageName : app.label;
             title.setText(label);
             title.setTextColor(app == null ? Ui.MUTED : Ui.TEXT);
+            status.setText(missing);
             status.setVisibility(app == null ? View.VISIBLE : View.GONE);
             if (app == null) icon.setImageDrawable(placeholder());
             else icon.setImageDrawable(new BitmapDrawable(context.getResources(), app.icon));
