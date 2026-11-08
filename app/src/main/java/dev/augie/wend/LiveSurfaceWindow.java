@@ -86,6 +86,9 @@ final class LiveSurfaceWindow {
     };
     private boolean routingHome;
     private Running running;
+    /** What the presented display's media session does, and how its playback control acts. */
+    private FloatingMenu.Playback playback = FloatingMenu.Playback.NONE;
+    private Runnable togglePlayback = () -> { };
 
     /**
      * @param title the overlay window's title, which also names its compositor layer
@@ -228,6 +231,18 @@ final class LiveSurfaceWindow {
 
     /** Whether a floating window shows its controls. */
     boolean controlsShown() { return running != null && running.overlay.menuShown(); }
+
+    /**
+     * The presented display's media session changed: its controls offer play or pause, and a
+     * floating video that has ended keeps offering play until it plays again.
+     * @param toggle plays or pauses it, as the control shows
+     */
+    void playback(FloatingMenu.Playback state, Runnable toggle) {
+        FloatingMenu.Playback was = playback;
+        playback = state;
+        togglePlayback = toggle;
+        if (running != null) running.playbackChanged(was);
+    }
 
     void updateSource(RectF source) { if (running != null) running.updateSource(source); }
 
@@ -424,6 +439,7 @@ final class LiveSurfaceWindow {
         void rest() {
             snapping = false;
             touches.only(placement.rest(corner));
+            if (playback.keepsControls()) menu(true);
         }
 
         /** Its entry motion has settled: it takes touches, but not yet taps. */
@@ -510,19 +526,31 @@ final class LiveSurfaceWindow {
             overlay.removeCallbacks(hideMenu);
             if (!shown) { overlay.menu(false, null, radius, true); return; }
             overlay.menu(true, placement.rest(corner), radius, true);
-            overlay.postDelayed(hideMenu, MENU_MS);
+            overlay.playback(playback);
+            if (!playback.keepsControls()) overlay.postDelayed(hideMenu, MENU_MS);
+        }
+
+        void playbackChanged(FloatingMenu.Playback was) {
+            overlay.playback(playback);
+            if (!resting()) return;
+            // Shown, its fade restarts or stops; an ended video offers play until it plays again.
+            if (overlay.menuShown() || playback.keepsControls() && !was.keepsControls()) menu(true);
         }
 
         /** A tap on a shown control acts at once. */
         boolean press(float x, float y) {
             if (!resting() || !overlay.menuShown()) return false;
             FloatingMenu.Control control = FloatingMenu.at(x, y, placement.rest(corner),
-                    FloatingMenu.Playback.NONE, density);
+                    playback, density);
             if (control == null) return false;
             switch (control) {
                 case FULLSCREEN: fullscreen(); break;
                 case CLOSE: close(null); break;
-                default: break;
+                default:
+                    togglePlayback.run();
+                    // Its icon follows the session; the menu stays a while longer.
+                    menu(true);
+                    break;
             }
             return true;
         }

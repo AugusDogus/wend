@@ -253,10 +253,14 @@ final class MediaPanel extends LinearLayout {
                 && (videoActions & (PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PLAY_PAUSE)) != 0
                 ? VideoCardCover.Control.PLAY : VideoCardCover.Control.NONE;
         video.update(videoState, control, videoDescription == null ? null : videoDescription.getTitle(), videoArt);
-        if (videoState != VideoCardState.HIDDEN && videoPlaybackEnded(videoPlayback)) {
-            video.playbackEnded(videoPlayback == null ? "has no playback state"
-                    : "is in playback state " + videoPlayback.getState());
-        }
+        MediaController videoSession = videoController;
+        FloatingMenu.Playback floating = videoState == VideoCardState.HIDDEN ? FloatingMenu.Playback.NONE
+                : FloatingMenu.Playback.of(videoPlayback);
+        video.playback(floating, () -> {
+            if (videoSession == null) return;
+            if (floating == FloatingMenu.Playback.PLAYING) videoSession.getTransportControls().pause();
+            else videoSession.getTransportControls().play();
+        });
         if (bitmap == null || youTube || videoState != VideoCardState.HIDDEN) {
             artwork.setVisibility(GONE);
             artwork.setImageDrawable(null);
@@ -278,16 +282,6 @@ final class MediaPanel extends LinearLayout {
                 | (playing ? PlaybackState.ACTION_PAUSE : PlaybackState.ACTION_PLAY))) != 0);
         enable(previous, (actions & PlaybackState.ACTION_SKIP_TO_PREVIOUS) != 0);
         enable(next, (actions & PlaybackState.ACTION_SKIP_TO_NEXT) != 0);
-    }
-
-    /**
-     * Stopped, failed, or reset, not paused: the player now shows its own stopped, up-next, or ad
-     * screen instead of the video. No playback state at all also means nothing plays.
-     */
-    static boolean videoPlaybackEnded(PlaybackState state) {
-        return state == null || state.getState() == PlaybackState.STATE_STOPPED
-                || state.getState() == PlaybackState.STATE_NONE
-                || state.getState() == PlaybackState.STATE_ERROR;
     }
 
     private static boolean isPlaying(PlaybackState state) {

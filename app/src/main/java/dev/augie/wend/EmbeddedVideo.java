@@ -104,8 +104,8 @@ final class EmbeddedVideo extends FrameLayout {
         }
         cover.show(control, artwork);
         if (window.active()) {
-            // A paused floating video keeps its last frame. A cleared or ended session removes it,
-            // as does stopped playback (playbackEnded).
+            // A paused or stopped floating video stays, offering play. A cleared or ended session
+            // removes it: nothing is left to play.
             if (window.floating() && presentation == VideoCardState.HIDDEN) {
                 window.dismiss("its media session ended or cleared its title");
             }
@@ -125,13 +125,11 @@ final class EmbeddedVideo extends FrameLayout {
     }
 
     /**
-     * Playback stopped, failed, or was reset rather than paused. The player then draws its own
-     * stopped, up-next, or ad screen, which must not float over Maps; the card keeps the title.
-     * @param state completes "the video ..." in the log
+     * What the video's session does, for its floating window's play control. A stopped or ended
+     * video keeps floating, offering play, so it can be brought back fullscreen to choose another.
+     * @param toggle plays or pauses it, as that control shows
      */
-    void playbackEnded(String state) {
-        if (window.floating()) window.dismiss("the video " + state + ", not paused");
-    }
+    void playback(FloatingMenu.Playback state, Runnable toggle) { window.playback(state, toggle); }
 
     /** Wend is visible again, by Home or because the app covering it left. */
     void resume() {
