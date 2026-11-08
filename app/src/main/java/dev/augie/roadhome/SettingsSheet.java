@@ -41,6 +41,12 @@ final class SettingsSheet implements AppCatalog.Listener {
     private static final int PAGE_IN_MS = 220;
     private static final int PAGE_OUT_MS = 150;
     private static final TimeInterpolator EASE_OUT = new PathInterpolator(0.23f, 1, 0.32f, 1);
+    /**
+     * The windowed build's Maps corner masks are overlay windows that a relayout re-adds above
+     * every older window, this sheet included, so there the launcher rearranges only once the
+     * sheet's window is gone.
+     */
+    private static final boolean RELAYOUT_WHILE_OPEN = !BuildConfig.WINDOWED_MAPS;
 
     private final Activity activity;
     private final AppCatalog catalog;
@@ -154,7 +160,7 @@ final class SettingsSheet implements AppCatalog.Listener {
         body.addView(pickerPage, new FrameLayout.LayoutParams(-1, -1));
         sheet = new BottomSheet(activity, backdrop, SheetGlass.Density.DENSE,
                 activity.getString(R.string.settings_title), headers, body, new BottomSheet.Listener() {
-                    @Override public void onClosing() { flushLayout(); }
+                    @Override public void onClosing() { if (RELAYOUT_WHILE_OPEN) flushLayout(); }
                     @Override public void onDismissed() {
                         flushLayout();
                         reset();
@@ -213,7 +219,7 @@ final class SettingsSheet implements AppCatalog.Listener {
     private void scheduleLayout() {
         layoutPending = true;
         main.removeCallbacks(applyLayout);
-        main.postDelayed(applyLayout, LayoutPreview.MORPH_MS + 40);
+        if (RELAYOUT_WHILE_OPEN) main.postDelayed(applyLayout, LayoutPreview.MORPH_MS + 40);
     }
 
     private void flushLayout() {
