@@ -34,7 +34,7 @@ This intentionally targets Android 10's hidden `ActivityView` API. `platform-stu
 
 Opening an already playing YouTube preview expands its live surface into the full app over 280 ms. Home shrinks that same running surface back into the card. The task, virtual display, and decoder stay alive throughout, with native YouTube input at fullscreen size. Android Home routing and virtual-display orientation are handled through platform privileges. No screenshot is stretched, no static frame is held, and no Play command is sent. Paused thumbnails and unavailable previews open directly. See [transition behavior and validation](docs/youtube-window-transitions.md).
 
-Playing video keeps playing in a draggable floating window over fullscreen Maps, and Home no longer flashes Maps' system PiP: see [floating windows](docs/floating-windows.md).
+Playing video floats over fullscreen Maps, live Maps floats over fullscreen video, a tap swaps them, and Home no longer flashes Maps' system PiP: see [floating windows](docs/floating-windows.md).
 
 The current source replaces the earlier PiP approach. It was installed during the Maps task-lifecycle investigation, but live video cropping is not yet hardware-validated. When YouTube is already playing, it moves the existing task into an ActivityView kept at the main display's full pixel size. It reads SurfaceFlinger's Android 10 layer proto to locate the actual YouTube video SurfaceView, crops to that region, and scales only the presentation into the media panel. There is no PiP request or repeated task resize. The head unit disconnected before a live-video trial could be completed.
 

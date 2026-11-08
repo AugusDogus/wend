@@ -37,7 +37,7 @@ To undo: stop this AVD and restore `image.sysdir.1 = system-images/android-29/de
 
 ## Repeatable scenarios
 
-The map fixture exposes its task ID, Activity instance ID, display ID, and an in-memory route marker. Mark a route active, open it fullscreen with the dock, return Home, open the video fixture, and return Home again. Both IDs and the marker should remain unchanged. Toggle automatic PiP to exercise the navigation app's Home/PiP transition. A recreated Activity or duplicate task is visible directly in the fixture and `RoadFixture` logs.
+The map fixture exposes its task ID, Activity instance ID, display ID, and an in-memory route marker. Mark a route active, open it fullscreen with the dock, return Home, open the video fixture, and return Home again. Both IDs and the marker should remain unchanged. Toggle automatic PiP to exercise the navigation app's Home/PiP transition. A recreated Activity or duplicate task is visible directly in the fixture and `RoadFixture` logs. The map is drawn into a SurfaceView, as Google Maps draws its tiles, so the launcher's map-frame readiness checks behave as with real tiles; "Toggle map surface" hides it to exercise the slow path where Maps never reports ready.
 
 The video fixture supplies a local animated test pattern, a quiet 440 Hz tone, a real Android media session, and a distinct thumbnail. Select a paused video and return Home: the card should show the thumbnail without starting playback. Start it explicitly, return Home, and inspect live cropping. Pause, return fullscreen, and clear the title to exercise each card state. Logs report audio-focus changes; losing focus pauses the fixture and gaining focus never automatically restarts it.
 
