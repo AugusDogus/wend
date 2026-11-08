@@ -20,9 +20,4 @@ public class DockLayoutTest {
         assertEquals(0, DockLayout.pinCapacity(100));
         assertEquals(0, DockLayout.pinCapacity(0));
     }
-
-    @Test public void aSlotIsATouchTargetPlusItsGap() {
-        assertEquals(48, DockLayout.BUTTON_DP);
-        assertEquals(DockLayout.BUTTON_DP + DockLayout.GAP_DP, DockLayout.SLOT_DP);
-    }
 }

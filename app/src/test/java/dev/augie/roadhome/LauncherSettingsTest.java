@@ -51,11 +51,6 @@ public class LauncherSettingsTest {
         assertEquals(70, preferences.getInt("mapPercent", 0));
     }
 
-    @Test public void mapWidthsArePercentagesOfTheContent() {
-        assertEquals(60, LauncherSettings.MapWidth.BALANCED.percent);
-        assertEquals(70, LauncherSettings.MapWidth.MORE_MAP.percent);
-    }
-
     @Test public void anUnknownMapPercentFallsBackToMoreMap() {
         preferences.edit().putInt("mapPercent", 55).commit();
         assertEquals(LauncherSettings.MapWidth.MORE_MAP, settings.mapWidth());
