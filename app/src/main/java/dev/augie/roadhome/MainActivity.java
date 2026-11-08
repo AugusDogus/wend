@@ -90,6 +90,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showApps() {
+        media.videoCardCovered();
         if (drawer == null) drawer = new AppDrawer(this, AppCatalog.get(this), backdrop);
         drawer.show();
     }
@@ -109,6 +110,8 @@ public final class MainActivity extends Activity {
     }
 
     void openMapsFullscreen() {
+        // Maps sweeps over the card before Road Home stops.
+        media.videoCardCovered();
         maps.openFullscreen(new MapPanel.Covering() {
             @Override public Rect starting() {
                 // An app that came to the front while Maps prepared has paused Road Home, before
@@ -117,7 +120,7 @@ public final class MainActivity extends Activity {
                 return corner == null ? null : media.floatVideo(corner, floatingVideo);
             }
             // Road Home still shows: a video that floated for Maps returns to its card.
-            @Override public void abandoned() { media.homeVideo(); }
+            @Override public void abandoned() { media.homeVideo(); media.videoCardShown(); }
         });
     }
 
@@ -182,6 +185,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showSettings() {
+        media.videoCardCovered();
         if (settingsSheet == null) settingsSheet = createSettingsSheet();
         settingsSheet.show();
     }
@@ -231,7 +235,10 @@ public final class MainActivity extends Activity {
     }
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) hideSystemBars();
+        if (!hasFocus) return;
+        hideSystemBars();
+        // A sheet that covered the card has closed.
+        media.videoCardShown();
     }
     @Override public void onBackPressed() { hideSystemBars(); }
 

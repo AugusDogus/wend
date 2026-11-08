@@ -7,12 +7,12 @@ import android.graphics.Bitmap;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.os.SystemClock;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.TextView;
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
@@ -34,9 +34,16 @@ final class EmbeddedVideo extends FrameLayout {
     private final TaskFrontWatcher appSwitches = new TaskFrontWatcher("RoadHomeVideo", this::appMovedToFront);
     private final Runnable presentationEnded;
     private final TextView status;
-    private final ImageView thumbnail;
+    /** Covers the card whenever its live video is not shown there. */
+    private final VideoCardCover cover;
+    private final View tapTarget;
     private final Point displaySize = new Point();
     private final ExecutorService geometryReader = Executors.newSingleThreadExecutor();
+    private final VideoStills stills;
+    /** The video the cover's still belongs to. */
+    private String stillTitle;
+    /** A sheet or fullscreen Maps covers the card, so its pixels are not the video's. */
+    private boolean covered;
     private final Runnable inspect = this::inspectSurface;
     private boolean hostActive;
     private VideoCardState presentation = VideoCardState.HIDDEN;
@@ -56,21 +63,25 @@ final class EmbeddedVideo extends FrameLayout {
         context.getSystemService(WindowManager.class).getDefaultDisplay().getRealSize(displaySize);
         setBackgroundColor(android.graphics.Color.BLACK);
         setClipChildren(true);
-        thumbnail = new ImageView(context);
-        thumbnail.setBackgroundColor(android.graphics.Color.BLACK);
-        thumbnail.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-        addView(thumbnail, new LayoutParams(-1, -1));
+        cover = new VideoCardCover(context);
+        addView(cover, new LayoutParams(-1, -1));
         status = Ui.text(context, "", 14, Ui.MUTED);
         status.setGravity(Gravity.CENTER);
         status.setBackgroundColor(android.graphics.Color.BLACK);
+        status.setVisibility(GONE);
         addView(status, new LayoutParams(-1, -1));
         // One large target over everything the card shows. Being visible above the player, it also
         // takes the card out of ActivityView's tap-exclude region, so Road Home keeps these touches.
-        View tapTarget = new View(context);
+        tapTarget = new View(context);
         tapTarget.setBackground(Ui.ripple(context, 0));
         tapTarget.setContentDescription("Open video");
         tapTarget.setOnClickListener(view -> open.run());
         addView(tapTarget, new LayoutParams(-1, -1));
+        stills = new VideoStills(geometryReader, new VideoStills.Card() {
+            @Override public Rect liveArea() { return liveCard(); }
+            @Override public int rotation() { return host.getWindowManager().getDefaultDisplay().getRotation(); }
+            @Override public void kept(Bitmap still) { cover.keep(still); }
+        });
         setVisibility(GONE);
     }
 
@@ -79,16 +90,16 @@ final class EmbeddedVideo extends FrameLayout {
         super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
     }
 
-    void update(VideoCardState presentation, Bitmap artwork) {
+    /** @param title identifies the video; a still of another one is dropped */
+    void update(VideoCardState presentation, CharSequence title, Bitmap artwork) {
         this.presentation = presentation;
-        if (artwork != null) {
-            thumbnail.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            thumbnail.setImageBitmap(artwork);
-        } else {
-            thumbnail.setScaleType(ImageView.ScaleType.CENTER);
-            thumbnail.setImageDrawable(new Ui.Symbol(Ui.Icon.PLAY, Ui.MUTED));
+        String video = title == null ? null : title.toString();
+        if (!TextUtils.equals(video, stillTitle)) {
+            stillTitle = video;
+            stills.interrupt();
+            cover.keep(null);
         }
-        thumbnail.setVisibility(presentation == VideoCardState.THUMBNAIL ? VISIBLE : GONE);
+        cover.show(presentation, artwork);
         if (window.active()) {
             // A paused floating video keeps its last frame. A cleared or ended session removes it,
             // as does stopped playback (playbackEnded).
@@ -122,6 +133,7 @@ final class EmbeddedVideo extends FrameLayout {
     /** Road Home is visible again, by Home or because the app covering it left. */
     void resume() {
         hostActive = true;
+        covered = false;
         window.hostShown();
         if (window.active()) {
             // A video floating above Maps returns to its card. A whole video above Road Home
@@ -147,6 +159,27 @@ final class EmbeddedVideo extends FrameLayout {
     }
 
     boolean presenting() { return window.active(); }
+
+    /**
+     * Road Home is about to draw over the card, with a sheet, or to leave it for fullscreen Maps:
+     * no still is taken from it until {@link #cardShown}.
+     */
+    void cardCovered() {
+        covered = true;
+        stills.interrupt();
+    }
+
+    /** Nothing of Road Home's covers the card any more. */
+    void cardShown() { covered = false; }
+
+    /** The card's screen area while it shows live video that nothing of Road Home's covers, else null. */
+    private Rect liveCard() {
+        if (!hostActive || covered || window.active() || state != State.SHOWN || presentation != VideoCardState.PLAYING
+                || cover.getVisibility() == VISIBLE || tapTarget.isPressed() || !isShown()) return null;
+        int[] location = new int[2];
+        getLocationOnScreen(location);
+        return new Rect(location[0], location[1], location[0] + getWidth(), location[1] + getHeight());
+    }
 
     void suspend() {
         hostActive = false;
@@ -305,15 +338,22 @@ final class EmbeddedVideo extends FrameLayout {
 
     private void cancelPreparation() {
         generation++;
+        stills.interrupt();
         removeCallbacks(inspect);
         if (state == State.PREPARING) state = State.READY;
     }
 
     private void coverPlayer() {
-        status.setText("");
-        status.setVisibility(VISIBLE);
+        boolean wasLive = cover.getVisibility() != VISIBLE;
+        cover.setVisibility(VISIBLE);
         if (player != null) player.setClipBounds(new Rect());
-        if (playerSurface != null) playerSurface.hide();
+        if (playerSurface == null) return;
+        if (!wasLive || !hostActive) { playerSurface.hide(); return; }
+        // Hidden once the cover is drawn over it: hidden first, the card showed black in between.
+        ActivityViewSurface covering = playerSurface;
+        getViewTreeObserver().registerFrameCommitCallback(() -> {
+            if (covering == playerSurface && cover.getVisibility() == VISIBLE) covering.hide();
+        });
     }
 
     private void maybeLaunch() {
@@ -356,6 +396,8 @@ final class EmbeddedVideo extends FrameLayout {
                         window.cancel();
                         playerSurface = null;
                         state = State.CLOSED;
+                        stills.interrupt();
+                        cover.setVisibility(VISIBLE);
                     }
                 });
             } catch (RuntimeException | LinkageError error) { fail(error); }
@@ -426,6 +468,8 @@ final class EmbeddedVideo extends FrameLayout {
                 fail(error);
                 return;
             }
+            cover.setVisibility(GONE);
+            stills.start();
             if (state != State.SHOWN) {
                 state = State.SHOWN;
                 status.setVisibility(View.GONE);
@@ -458,6 +502,7 @@ final class EmbeddedVideo extends FrameLayout {
         window.cancel();
         coverPlayer();
         status.setText(PLAYER_UNAVAILABLE);
+        status.setVisibility(VISIBLE);
         Log.e("RoadHome", "Could not embed the playing YouTube video surface", error);
     }
 
@@ -476,6 +521,8 @@ final class EmbeddedVideo extends FrameLayout {
         window.release();
         appSwitches.stop();
         cancelPreparation();
+        stills.release();
+        cover.release();
         geometryReader.shutdownNow();
         if (player != null) {
             player.setCallback(null);

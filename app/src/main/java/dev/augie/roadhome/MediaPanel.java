@@ -111,6 +111,10 @@ final class MediaPanel extends LinearLayout {
     void homeVideo() { video.home(); }
     void suspendVideo() { video.suspend(); }
     void videoOpened() { video.fullscreenOpened(); }
+    /** A sheet or fullscreen Maps is about to cover the video card. */
+    void videoCardCovered() { video.cardCovered(); }
+    /** Nothing of Road Home's covers the video card any more. */
+    void videoCardShown() { video.cardShown(); }
 
     /** Keeps a playing video visible above fullscreen Maps; returns the card it left, or null. */
     Rect floatVideo(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener) {
@@ -240,7 +244,7 @@ final class MediaPanel extends LinearLayout {
                 videoPlayback != null && videoPlayback.getState() == PlaybackState.STATE_PLAYING);
         Bitmap videoArt = videoDescription == null ? null : videoDescription.getIconBitmap();
         if (videoArt == null && videoMetadata != null) videoArt = videoMetadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
-        video.update(videoState, videoArt);
+        video.update(videoState, videoDescription == null ? null : videoDescription.getTitle(), videoArt);
         if (videoState != VideoCardState.HIDDEN && videoPlaybackEnded(videoPlayback)) {
             video.playbackEnded(videoPlayback == null ? "has no playback state"
                     : "is in playback state " + videoPlayback.getState());

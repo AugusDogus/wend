@@ -3,6 +3,9 @@ package dev.augie.roadhome;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.content.ComponentName;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
 import java.util.Collections;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
@@ -22,10 +25,12 @@ import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.GraphicsMode;
 import org.robolectric.android.controller.ActivityController;
 import org.robolectric.shadows.ShadowMediaSessionManager;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
@@ -219,6 +224,35 @@ public class MediaPanelTest {
             release.recycle();
         }
         Shadows.shadowOf(Looper.getMainLooper()).idle();
+    }
+
+    /** Device reports RH-4 and BUG-3: YouTube 21.43 supplies no artwork, and the card was a black box. */
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Config(qualifiers = "w853dp-h480dp-land-hdpi")
+    @Test public void aPausedVideoWithoutArtworkNeverShowsABlackCard() {
+        try (ActivityController<Activity> host = Robolectric.buildActivity(Activity.class).setup()) {
+            Activity activity = host.get();
+            MediaSession session = new MediaSession(activity, "video");
+            MediaController controller = paused(session, EmbeddedVideo.PACKAGE);
+            Shadows.shadowOf(controller).setMetadata(new MediaMetadata.Builder()
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, "Paused video").build());
+            Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class)).addController(controller);
+            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { }, () -> { });
+            activity.setContentView(panel, new ViewGroup.LayoutParams(357, 720));
+            try {
+                panel.start();
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                View card = panel.getChildAt(0);
+                Bitmap drawn = Bitmap.createBitmap(card.getWidth(), card.getHeight(), Bitmap.Config.ARGB_8888);
+                card.draw(new Canvas(drawn));
+                assertNotEquals(Color.BLACK, drawn.getPixel(4, drawn.getHeight() - 4));
+                // A 48 dp control at the center, not a 16 px glyph: 30 px from center is still inside it.
+                assertNotEquals(drawn.getPixel(4, drawn.getHeight() - 4),
+                        drawn.getPixel(drawn.getWidth() / 2 + 30, drawn.getHeight() / 2));
+            } finally {
+                panel.stop(); panel.release(); session.release();
+            }
+        }
     }
 
     @Test public void onlyStoppedFailedOrResetPlaybackEndsAFloatingVideo() {
