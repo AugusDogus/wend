@@ -59,9 +59,11 @@ final class EmbeddedMaps extends MapPanel {
     private View topCorner;
     private View bottomCorner;
 
-    EmbeddedMaps(Activity context) {
+    EmbeddedMaps(Activity context) { this(context, new MapsTask(context)); }
+
+    EmbeddedMaps(Activity context, MapsTask tasks) {
         super(context);
-        tasks = new MapsTask(context);
+        this.tasks = tasks;
         transition = new MapTransition(context, this);
         floating = new LiveSurfaceWindow(context, BuildConfig.APPLICATION_ID + " live map", "RoadHomeMap");
         context.getWindowManager().getDefaultDisplay().getRealSize(screen);
@@ -163,9 +165,13 @@ final class EmbeddedMaps extends MapPanel {
 
     @Override void home(Runnable then) {
         cancelPendingFloat();
-        // Home wins over a takeover still behind its frozen frame.
+        // Home wins over a takeover still behind its frozen frame, and over a covered move that
+        // has not run yet; resume() then asks for Maps in its panel again.
         cancelTakeover();
-        transition.cancel();
+        if (transition.active()) {
+            transition.cancel();
+            launching = false;
+        }
         if (!floating.active()) { resume(); then.run(); return; }
         hostActive = true;
         // Lands over its panel, still above the fullscreen video, which then shrinks away below it.
@@ -228,7 +234,9 @@ final class EmbeddedMaps extends MapPanel {
         try {
             MapsTask.Task existing = tasks.find();
             if (existing == null) {
-                Log.w("RoadHomeMap", "No Maps task to return beneath the video; the panel offers to reopen Maps");
+                Log.w("RoadHomeMap", "No Maps task to return beneath the video; Maps does not float,"
+                        + " and the panel says Maps was closed and offers Open Maps");
+                showError("Maps was closed. Tap Open Maps to bring it back.");
                 cancelPendingFloat();
                 return;
             }
@@ -343,9 +351,10 @@ final class EmbeddedMaps extends MapPanel {
         if (displayLifecycle != null) displayLifecycle.returnToHost();
         if (hostActive) {
             try {
-                // The same panel geometry and input every return from fullscreen applies.
+                // The same panel geometry and input every return from fullscreen applies. Maps
+                // only floats without a message, so any message now, such as Maps having
+                // closed while it floated, stays with its Open Maps button.
                 revealSurface();
-                status.setVisibility(View.GONE);
             } catch (ReflectiveOperationException | RuntimeException error) {
                 Log.e("RoadHomeMap", "Could not return floating Maps to its panel input and geometry", error);
                 showError("Maps could not return to this panel. Tap Open Maps; your route is kept.");

@@ -10,8 +10,11 @@ import android.util.Log;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Reuses one Maps task, including when it moves between the panel and display zero. */
-final class MapsTask {
+/**
+ * Reuses one Maps task, including when it moves between the panel and display zero. Not final
+ * only so JVM tests can stand in for Android's task service.
+ */
+class MapsTask {
     static final class Task {
         final int id;
         final int displayId;
