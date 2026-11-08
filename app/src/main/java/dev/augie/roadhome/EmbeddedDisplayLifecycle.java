@@ -115,8 +115,6 @@ final class EmbeddedDisplayLifecycle implements SurfaceHolder.Callback {
      */
     void presentElsewhere() { elsewhere = true; }
 
-    boolean hostSurfaceReady() { return hostSurface; }
-
     /** Runs once Road Home's window has a surface again, immediately if it already has one. */
     void whenHostReady(Runnable ready) {
         hostReady = null;

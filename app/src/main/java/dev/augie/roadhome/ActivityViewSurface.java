@@ -75,7 +75,7 @@ class ActivityViewSurface {
                 Class.forName("android.view.IWindow"), int.class).newInstance(null, null, -1);
         // Match Android 10 DisplayContent.createPortalWindowHandle, but limit its
         // touch region to the visible video. Otherwise the full-size portal steals Maps taps.
-        handle.getField("name").set(portal, "Road Home video portal");
+        handle.getField("name").set(portal, "Road Home display portal");
         handle.getField("token").set(portal, new Binder());
         handle.getField("layoutParamsFlags").setInt(portal, WindowManager.LayoutParams.FLAG_SPLIT_TOUCH
                 | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
