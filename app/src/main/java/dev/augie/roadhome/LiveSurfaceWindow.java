@@ -124,6 +124,8 @@ final class LiveSurfaceWindow {
     /**
      * Expands the card until the whole display shows above Road Home, then gives it touches.
      * @param display the presented display's size; it is centered unscaled on the screen
+     * @param fallback opens the app another way if the whole display cannot be shown; never
+     *     runs once {@link #hideForCorner} has made it a floating window
      * @param reached runs once the whole display shows and receives touches
      */
     void open(View card, ActivityViewSurface surface, RectF source, Point display,
@@ -245,6 +247,8 @@ final class LiveSurfaceWindow {
         SurfacePlacement current;
         float currentRadius, currentOutline, currentAlpha = 1;
         boolean leaveWhenAttached;
+        /** A released window travels to its corner and takes touches where it is drawn. */
+        boolean snapping;
 
         Running(View card, ActivityViewSurface surface, RectF source, Point display, Entry entry,
                 Listener listener, Runnable fallback, Runnable restored) {
@@ -329,6 +333,8 @@ final class LiveSurfaceWindow {
         }
 
         void animateTo(Target next, int duration, TimeInterpolator interpolator, Runnable end) {
+            // A failed placement just before this closed the window; nothing is left to move.
+            if (phase == Phase.CLOSED) return;
             // Reversing a motion part way only travels back the distance already covered.
             float covered = phase == Phase.MOVING && origin == next ? animator.getAnimatedFraction() : 1;
             stopAnimator();
@@ -368,16 +374,28 @@ final class LiveSurfaceWindow {
                 surface.place(transaction, placed, cornerRadius, alpha);
                 if (outline != null) outline.place(transaction, placed.visible(), cornerRadius, outlineOpacity * alpha);
                 transaction.apply();
-            } catch (ReflectiveOperationException | RuntimeException error) { fail(error); }
+            } catch (ReflectiveOperationException | RuntimeException error) { fail(error); return; }
+            if (snapping) touches.only(drawn());
+        }
+
+        /** Where the window is drawn now, in screen pixels. */
+        Rect drawn() {
+            RectF visible = current.visible();
+            return new Rect(Math.round(visible.left), Math.round(visible.top),
+                    Math.round(visible.right), Math.round(visible.bottom));
         }
 
         void stopAnimator() {
+            snapping = false;
             animator.removeAllListeners();
             animator.removeAllUpdateListeners();
             animator.cancel();
         }
 
-        void rest() { touches.only(placement.rest(corner)); }
+        void rest() {
+            snapping = false;
+            touches.only(placement.rest(corner));
+        }
 
         /** Its entry motion has settled: it takes touches, but not yet taps. */
         void entered() {
@@ -417,7 +435,7 @@ final class LiveSurfaceWindow {
                 floatIn(next, nextCorner, nextListener);
                 createOutline();
             } catch (ReflectiveOperationException | RuntimeException error) {
-                Log.w(tag, "Cannot float this display; it stays whole until Road Home closes it", error);
+                Log.w(tag, "Cannot float this display; it is still shown whole", error);
                 return false;
             }
             stopAnimator();
@@ -429,7 +447,7 @@ final class LiveSurfaceWindow {
             target = Target.HIDDEN;
             phase = Phase.RESTING;
             show(current, currentRadius, 0, 0);
-            return true;
+            return phase != Phase.CLOSED;
         }
 
         void emerge() {
@@ -445,9 +463,7 @@ final class LiveSurfaceWindow {
                 stopAnimator();
                 phase = Phase.RESTING;
             }
-            RectF visible = current.visible();
-            return drag.handle(event, new Rect(Math.round(visible.left), Math.round(visible.top),
-                    Math.round(visible.right), Math.round(visible.bottom)));
+            return drag.handle(event, drawn());
         }
 
         void dragged(Rect bounds) {
@@ -457,8 +473,10 @@ final class LiveSurfaceWindow {
 
         void snap(FloatingPlacement.Corner next) {
             corner = next;
-            touches.only(placement.rest(next));
             animateTo(Target.CORNER, MOTION_MS, motion, this::rest);
+            // On its way, a touch where it is drawn catches it instead of reaching the app below.
+            snapping = true;
+            touches.only(drawn());
             listener.settled(next);
         }
 
@@ -512,7 +530,8 @@ final class LiveSurfaceWindow {
                     ? "Live whole-display presentation unavailable; opening the existing task"
                     : "Floating window unavailable; the display returns to its card when Road Home is shown", error);
             finish(false);
-            fallback.run();
+            // Once floated, opening the task directly would move it fullscreen over the other app.
+            if (placement == null) fallback.run();
         }
 
         void finish(boolean hidden) {

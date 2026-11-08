@@ -31,6 +31,7 @@ import org.robolectric.shadows.ShadowChoreographer;
 import org.robolectric.shadows.ShadowWindowManagerImpl;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.robolectric.Shadows.shadowOf;
@@ -245,6 +246,56 @@ public class LiveSurfaceWindowTest {
         window.cancel();
     }
 
+    @Test public void aSnappingWindowTakesTouchesWhereItIsDrawn() throws Exception {
+        DrawnSurface surface = DrawnSurface.of(host);
+        openFloating(surface, LiveSurfaceWindow.Entry.FROM_CARD);
+        commitFrame();
+        settle();
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(LiveSurfaceWindow.ENTRY_TAP_GRACE_MS));
+        // Thrown left from the bottom-right corner.
+        long down = SystemClock.uptimeMillis();
+        touch(MotionEvent.ACTION_DOWN, down, 1040, 574);
+        for (int x = 940; x >= 740; x -= 100) {
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16));
+            touch(MotionEvent.ACTION_MOVE, down, x, 574);
+        }
+        touch(MotionEvent.ACTION_UP, down, 740, 574);
+        assertEquals(List.of("settled BOTTOM_LEFT"), events);
+        Rect released = new Rect();
+        surface.last().round(released);
+        assertEquals("Released where it was dragged", released, touchRegion());
+        // One display frame at a time from here.
+        ShadowChoreographer.setPaused(true);
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(32));
+        Rect drawn = new Rect();
+        surface.last().round(drawn);
+        assertNotEquals("Still travelling", released, drawn);
+        assertNotEquals("Still travelling", PLACEMENT.rest(FloatingPlacement.Corner.BOTTOM_LEFT), drawn);
+        assertEquals(drawn, touchRegion());
+        // Caught where it is drawn: it stops there and the touch is its own.
+        touch(MotionEvent.ACTION_DOWN, SystemClock.uptimeMillis(), drawn.exactCenterX(), drawn.exactCenterY());
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400));
+        Rect caught = new Rect();
+        surface.last().round(caught);
+        assertEquals(drawn, caught);
+        assertEquals(drawn, touchRegion());
+        window.cancel();
+    }
+
+    @Test public void aWholeDisplayFloatedForMapsNeverOpensItsTaskDirectlyWhenItFails() throws Exception {
+        DrawnSurface surface = DrawnSurface.of(host);
+        openWhole(surface);
+        commitFrame();
+        settle();
+        assertTrue(window.hideForCorner(PLACEMENT, FloatingPlacement.Corner.BOTTOM_RIGHT, listener()));
+        surface.failing = true;
+        window.emerge();
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1));
+        // Opening the task directly would move it fullscreen over Maps.
+        assertEquals(List.of("reached", "restored"), events);
+        assertFalse(window.active());
+    }
+
     private static final FloatingPlacement PLACEMENT = new FloatingPlacement(new Rect(0, 36, 1280, 720), 432, 243, 24);
 
     private LiveSurfaceWindow.Listener listener() {
@@ -319,6 +370,7 @@ public class LiveSurfaceWindowTest {
      */
     private static final class DrawnSurface extends ActivityViewSurface {
         final List<RectF> drawn = new ArrayList<>();
+        boolean failing;
 
         private DrawnSurface(ActivityView view) throws ReflectiveOperationException { super(view); }
 
@@ -337,6 +389,7 @@ public class LiveSurfaceWindowTest {
 
         @Override void place(SurfaceControl.Transaction transaction, SurfacePlacement placement, float radius,
                 float alpha) throws ReflectiveOperationException {
+            if (failing) throw new IllegalStateException("The test compositor rejected the placement");
             drawn.add(placement.visible());
             super.place(transaction, placement, radius, alpha);
         }
