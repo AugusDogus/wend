@@ -6,12 +6,14 @@ Wend was called Road Home until November 2026. The rename changed the app ID fro
 
 ### Moving the PX6 from Road Home to Wend
 
-Uninstall Road Home, install Wend (see [Build](#build)), then press Home and choose Wend:
+Uninstall Road Home, install Wend (see [Build](#build)), then press Home, pick Wend and tap Always:
 
 ```sh
 adb uninstall dev.augie.roadhome
-adb install wend-px6.apk
+adb install app/build/outputs/apk/release/wend-px6.apk
 ```
+
+If `adb shell pm path dev.augie.roadhome` points under `/system` (as on the `road-home-google-api29` emulator image), `adb uninstall` only removes its update; use `adb shell pm uninstall --user 0 dev.augie.roadhome` instead.
 
 Maps keeps its task and route. Video embedded in Road Home stops, as on any launcher reinstall. Wend starts with default dock pins and map layout, so set them again in its settings.
 

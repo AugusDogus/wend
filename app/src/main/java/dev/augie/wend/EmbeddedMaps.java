@@ -402,8 +402,8 @@ final class EmbeddedMaps extends MapPanel {
     /**
      * Above the video app, Maps stays in its floating window, under the frozen frame, until it
      * moves. Returned to its panel, it would show nowhere while Wend is stopped, and a display
-     * shown nowhere is missing from SurfaceFlinger's layers, where Maps is seen laying out. Road
-     * Home may be stopped and lay out nothing, or still have its window (the video app moved off
+     * shown nowhere is missing from SurfaceFlinger's layers, where Maps is seen laying out. Wend
+     * may be stopped and lay out nothing, or still have its window (the video app moved off
      * Wend's display left it resumed), so the display and its view both take the full size.
      */
     private void growAboveVideoApp() {

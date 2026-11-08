@@ -121,8 +121,8 @@ then fails, `Covering.abandoned` returns the video to its card
 (`EmbeddedMaps.CoverOnce` keeps that order).
 
 Once the video is fullscreen and receives touches, Android 10 sends Home to the
-video's virtual display. `LiveSurfaceWindow` therefore routes the Home key to Road
-Home while a display is shown whole and,
+video's virtual display. `LiveSurfaceWindow` therefore routes the Home key to
+Wend while a display is shown whole and,
 after a dismissal, until Wend is shown again. Found on the emulator: without
 this, Home did nothing after the title was cleared from fullscreen.
 
@@ -376,8 +376,8 @@ left a black box (device reports RH-4, RH-5, BUG-3, and design feedback).
   nothing (real-app report BUG-5). Such a card shows its picture alone, and a
   tap on it still opens the video. YouTube 21.43 supplies no artwork, so the
   still is what the driver sees.
-- **When the cover shows.** As playback pauses or stops in the card, while Road
-  Home is stopped and as it re-acquires the video on Home (BUG-3), while the
+- **When the cover shows.** As playback pauses or stops in the card, while
+  Wend is stopped and as it re-acquires the video on Home (BUG-3), while the
   video floats or plays fullscreen, and while it travels back into the card. It
   is removed in the frame the live video shows again: when the surface is
   revealed after its geometry check, or at once when a floating or fullscreen
@@ -399,8 +399,8 @@ Wend's window that lets touches through to the display, computed by
 subtracting the views drawn above it) no longer contains the card, and Wend
 receives those touches itself.
 
-`VideoStills` takes the stills. While the card plays live and nothing of Road
-Home's covers it, it captures the card's own screen area once a second at the
+`VideoStills` takes the stills. While the card plays live and nothing of
+Wend's covers it, it captures the card's own screen area once a second at the
 card's size, with the same Android 10 `SurfaceControl.screenshot` overload as
 the drawer and the map transitions, which leaves out secure layers. Stills stay
 in memory and are never stored or sent. A capture is kept only after the card
@@ -724,8 +724,8 @@ git-ignored `build/evidence/`):
 
 - Before (`bug1-before/`): the original repro (playing card, pause, tap the
   card, tap floating Maps after the grace) lost Maps on the first try: Wend
-  was resumed under the video app, Maps' display grew to 1280 px through Road
-  Home's layout, Wend stopped 140 ms later, the display shrank back, the
+  was resumed under the video app, Maps' display grew to 1280 px through
+  Wend's layout, Wend stopped 140 ms later, the display shrank back, the
   frozen frame timed out, and the Maps task stayed on Wend's display with
   no window (`r1-repro.mp4`, `r1-after-tap-maps-lost.png`,
   `r1-stacks-after.txt`).
@@ -797,8 +797,9 @@ What the evidence shows:
   Those entries only produce the "Found window ... but it should belong to
   display 0" log lines; they do not drop the key.
 - Both emulators enable per-display focus with the boot overlay
-  `dev.augie.wend.emulator.bootfocus` (`task-fixture/README.md`); the PX6
-  does not.
+  `dev.augie.wend.emulator.bootfocus` (`task-fixture/README.md`; images
+  prepared before the rename carry it as `dev.augie.roadhome.emulator.bootfocus`);
+  the PX6 does not.
 
 The likely cause, not confirmed in AOSP source here: with per-display focus,
 the Wend Maps display keeps Maps as its focused window while Maps is in the
