@@ -1,0 +1,51 @@
+package dev.augie.roadhome;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.drawable.ColorDrawable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.Config;
+import static org.junit.Assert.assertEquals;
+
+@RunWith(RobolectricTestRunner.class)
+@Config(sdk = 29)
+public class AppCatalogTest {
+    private final Context context = RuntimeEnvironment.getApplication();
+
+    @Test public void anIconThatCannotBeDrawnKeepsItsAppAndTheRestOfTheList() {
+        TestApps.install(context, "com.broken.app", "Broken", new BrokenIcon());
+        TestApps.install(context, "com.google.android.apps.maps", "Maps");
+
+        AppCatalog catalog = TestApps.loadedCatalog(context);
+
+        assertEquals(AppCatalog.Status.READY, catalog.status());
+        assertEquals(Arrays.asList("Broken", "Maps"), labels(catalog.apps()));
+    }
+
+    @Test public void anAppWhoseLabelCannotBeReadIsLeftOutAlone() {
+        TestApps.installWithUnreadableLabel(context, "com.broken.app");
+        TestApps.install(context, "com.google.android.apps.maps", "Maps");
+
+        AppCatalog catalog = TestApps.loadedCatalog(context);
+
+        assertEquals(AppCatalog.Status.READY, catalog.status());
+        assertEquals(Arrays.asList("Maps"), labels(catalog.apps()));
+    }
+
+    private static List<String> labels(List<LauncherApp> apps) {
+        List<String> labels = new ArrayList<>();
+        for (LauncherApp app : apps) labels.add(app.label);
+        return labels;
+    }
+
+    /** Artwork whose drawing fails, as a corrupt or unsupported app drawable can. */
+    private static final class BrokenIcon extends ColorDrawable {
+        @Override public void draw(Canvas canvas) { throw new IllegalStateException("Unsupported artwork"); }
+    }
+}

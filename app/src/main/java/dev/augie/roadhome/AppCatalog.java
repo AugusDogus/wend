@@ -7,7 +7,7 @@ import android.content.IntentFilter;
 import android.content.pm.LauncherActivityInfo;
 import android.content.pm.LauncherApps;
 import android.content.pm.PackageManager;
-import android.graphics.drawable.Drawable;
+import android.graphics.Bitmap;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
@@ -54,20 +54,23 @@ final class AppCatalog {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             throw new IllegalStateException("AppCatalog.get must be called on the main thread");
         }
-        if (instance == null) instance = new AppCatalog(context.getApplicationContext());
+        if (instance == null) {
+            HandlerThread thread = new HandlerThread("RoadHome-apps", Process.THREAD_PRIORITY_BACKGROUND);
+            thread.start();
+            instance = new AppCatalog(context.getApplicationContext(), thread.getLooper());
+        }
         return instance;
     }
 
-    private AppCatalog(Context context) {
+    /** Loads apps and applies package changes on {@code workerLooper}; listeners hear about them on the main thread. */
+    AppCatalog(Context context, Looper workerLooper) {
         launcherApps = context.getSystemService(LauncherApps.class);
         packageManager = context.getPackageManager();
         DisplayMetrics metrics = context.getResources().getDisplayMetrics();
         iconSize = Math.round(ICON_DP * metrics.density);
         iconDensity = metrics.densityDpi;
         model = new AppList(context.getPackageName());
-        HandlerThread thread = new HandlerThread("RoadHome-apps", Process.THREAD_PRIORITY_BACKGROUND);
-        thread.start();
-        worker = new Handler(thread.getLooper());
+        worker = new Handler(workerLooper);
         worker.post(this::loadAll);
         if (launcherApps != null) launcherApps.registerCallback(packageChanges, worker);
         // Labels are localized; Launcher3 also reloads everything when the locale changes.
@@ -142,22 +145,29 @@ final class AppCatalog {
         publish(Status.READY, sorted);
     }
 
+    /** One app that cannot be read is left out; it never fails the rest of the list. */
     private List<LauncherApp> entries(List<LauncherActivityInfo> activities) {
         List<LauncherApp> entries = new ArrayList<>(activities.size());
         for (LauncherActivityInfo activity : activities) {
-            entries.add(new LauncherApp(activity.getComponentName(), activity.getUser(),
-                    activity.getLabel().toString().trim(), AppIcon.render(icon(activity), iconSize)));
+            try {
+                entries.add(new LauncherApp(activity.getComponentName(), activity.getUser(),
+                        activity.getLabel().toString().trim(), icon(activity)));
+            } catch (RuntimeException error) {
+                Log.e(TAG, "Left " + activity.getComponentName() + " for " + activity.getUser()
+                        + " out of the app list because its label or icon could not be read; it returns "
+                        + "when its package changes or the list reloads", error);
+            }
         }
         return entries;
     }
 
-    private Drawable icon(LauncherActivityInfo activity) {
+    private Bitmap icon(LauncherActivityInfo activity) {
         try {
-            return activity.getBadgedIcon(iconDensity);
+            return AppIcon.render(activity.getBadgedIcon(iconDensity), iconSize);
         } catch (RuntimeException error) {
             Log.w(TAG, "Using Android's default icon for " + activity.getComponentName()
-                    + " because its own icon could not be loaded", error);
-            return packageManager.getDefaultActivityIcon();
+                    + " because its own icon could not be loaded or drawn", error);
+            return AppIcon.render(packageManager.getDefaultActivityIcon(), iconSize);
         }
     }
 
