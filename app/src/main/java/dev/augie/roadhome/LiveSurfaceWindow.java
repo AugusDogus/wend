@@ -230,6 +230,8 @@ final class LiveSurfaceWindow {
                 "Live window was not ready within " + READY_MS + " ms"));
         RectF source;
         Runnable reached;
+        /** Runs once it is drawn over its card, or as it is handed back to the card. */
+        Runnable overCard;
         FloatingPlacement placement;
         FloatingPlacement.Corner corner;
         Listener listener;
@@ -464,9 +466,18 @@ final class LiveSurfaceWindow {
             // Not yet drawn elsewhere or hidden: nothing to keep above the card.
             if (phase == Phase.WAITING || target == Target.HIDDEN) { finish(false); arrived.run(); return; }
             if (target == Target.CARD && phase == Phase.RESTING) { arrived.run(); return; }
+            // A repeated request, such as Home delivered twice, joins the motion under way.
+            overCard = arrived;
+            if (target == Target.CARD) return;
             surface.input(new Rect());
             if (touches != null) touches.only(new Rect());
-            animateTo(Target.CARD, MOTION_MS, motion, arrived);
+            animateTo(Target.CARD, MOTION_MS, motion, this::arrivedOverCard);
+        }
+
+        void arrivedOverCard() {
+            Runnable then = overCard;
+            overCard = null;
+            if (then != null) then.run();
         }
 
         void dismiss(String reason) {
@@ -511,6 +522,7 @@ final class LiveSurfaceWindow {
             if (overlay.isAttachedToWindow()) windows.removeViewImmediate(overlay);
             running = null;
             restored.run();
+            arrivedOverCard();
         }
 
         void restoreSurface(boolean hidden) {

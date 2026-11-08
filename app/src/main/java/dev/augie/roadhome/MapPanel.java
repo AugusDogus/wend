@@ -39,4 +39,10 @@ abstract class MapPanel extends FrameLayout {
 
     /** The fullscreen video below floating Maps has gone: Maps returns to its panel. */
     void returnFromFloating() { }
+
+    /**
+     * A fullscreen video now hides fullscreen Maps: Maps returns to its panel's display beneath it.
+     * @param ready if not null, runs once Maps has laid out at the panel's size and Road Home shows
+     */
+    void returnBeneathVideo(Runnable ready) { }
 }

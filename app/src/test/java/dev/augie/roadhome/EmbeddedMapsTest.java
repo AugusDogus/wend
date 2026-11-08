@@ -70,4 +70,15 @@ public class EmbeddedMapsTest {
         assertEquals(List.of("video returns"), events);
         maps.release();
     }
+
+    @Test public void mapsWithoutItsPanelDisplayNeverFloatsAfterTheVideoCoversIt() {
+        Activity host = Robolectric.buildActivity(Activity.class).setup().get();
+        EmbeddedMaps maps = new EmbeddedMaps(host);
+        List<String> events = new ArrayList<>();
+        maps.returnBeneathVideo(() -> events.add("float"));
+        maps.resume();
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(2));
+        assertEquals(List.of(), events);
+        maps.release();
+    }
 }

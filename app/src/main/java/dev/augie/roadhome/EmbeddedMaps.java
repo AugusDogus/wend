@@ -33,6 +33,14 @@ final class EmbeddedMaps extends MapPanel {
     /** Live Maps floating above the fullscreen video. Its display keeps the panel's size. */
     private final LiveSurfaceWindow floating;
     private final Point screen = new Point();
+    /** Floats Maps once it has returned beneath the fullscreen video and laid out in its panel. */
+    private Runnable pendingFloat;
+    private boolean panelFrameReady;
+    private MapFrame panelFrame;
+    private final Runnable panelFrameDeadline = () -> {
+        Log.w("RoadHomeMap", "Maps did not lay out at its panel size within 900 ms; floating it as it is");
+        panelFrameReady();
+    };
     private boolean hostActive;
     private boolean launching;
     private boolean pictureInPictureChecked;
@@ -124,15 +132,18 @@ final class EmbeddedMaps extends MapPanel {
         hostActive = true;
         if (motion != null && motion.expanding()) cancelPendingTransition();
         launch();
+        floatWhenReady();
     }
     void suspend() {
         hostActive = false;
         cancelPendingTransition();
+        cancelPendingFloat();
         // Another app replaced Road Home and the video below; Maps waits hidden in its panel.
         floating.cancel();
     }
 
     @Override void home(Runnable then) {
+        cancelPendingFloat();
         if (!floating.active()) { resume(); then.run(); return; }
         hostActive = true;
         // Lands over its panel, still above the fullscreen video, which then shrinks away below it.
@@ -168,6 +179,57 @@ final class EmbeddedMaps extends MapPanel {
     @Override void leavePanel() { floating.leaveCard(); }
 
     @Override void returnFromFloating() { floating.collapse(); }
+
+    @Override void returnBeneathVideo(Runnable ready) {
+        cancelPendingTransition();
+        cancelPendingFloat();
+        if (activityView == null || state != State.READY) return;
+        int panelDisplay = activityView.getVirtualDisplayId();
+        try {
+            MapsTask.Task existing = tasks.find();
+            if (existing == null) {
+                Log.w("RoadHomeMap", "No Maps task to return beneath the video; the panel offers to reopen Maps");
+                return;
+            }
+            // No motion: the video covers the whole screen. Road Home comes forward behind it.
+            if (existing.displayId != panelDisplay) tasks.move(existing, panelDisplay);
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.e("RoadHomeMap", "Could not return Maps beneath the fullscreen video to display " + panelDisplay, error);
+            showError("Maps could not be restored. Open Maps from Recents to recover your route.");
+            return;
+        }
+        if (ready == null) return;
+        pendingFloat = ready;
+        panelFrame = new MapFrame(getWidth(), () -> post(this::panelFrameReady));
+        postDelayed(panelFrameDeadline, 900);
+    }
+
+    private void panelFrameReady() {
+        stopWaitingForPanelFrame();
+        if (pendingFloat == null) return;
+        panelFrameReady = true;
+        floatWhenReady();
+    }
+
+    private void floatWhenReady() {
+        if (pendingFloat == null || !panelFrameReady || !hostActive) return;
+        Runnable ready = pendingFloat;
+        pendingFloat = null;
+        panelFrameReady = false;
+        ready.run();
+    }
+
+    private void cancelPendingFloat() {
+        pendingFloat = null;
+        panelFrameReady = false;
+        stopWaitingForPanelFrame();
+    }
+
+    private void stopWaitingForPanelFrame() {
+        removeCallbacks(panelFrameDeadline);
+        if (panelFrame != null) panelFrame.close();
+        panelFrame = null;
+    }
 
     /** The floating video's visual weight, in the panel's shape, anywhere on Road Home's fullscreen. */
     private FloatingPlacement floatingPlacement() {
@@ -330,6 +392,7 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     void release() {
+        cancelPendingFloat();
         floating.release();
         if (motion != null) motion.release();
         transition.cancel();

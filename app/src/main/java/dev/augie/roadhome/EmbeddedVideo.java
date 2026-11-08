@@ -193,8 +193,11 @@ final class EmbeddedVideo extends FrameLayout {
         return new Rect(location[0], location[1], location[0] + getWidth(), location[1] + getHeight());
     }
 
-    /** A floating window is tapped: the video grows to fullscreen above Maps, with its own input. */
-    void expand() { window.expand(null); }
+    /**
+     * The floating video grows to fullscreen above Maps, with its own input.
+     * @param reached runs once it covers the screen
+     */
+    void expand(Runnable reached) { window.expand(reached); }
 
     /** 288 x 162 dp in a corner of the screen below the status bar, which fullscreen Maps keeps. */
     private FloatingPlacement floatingPlacement() {

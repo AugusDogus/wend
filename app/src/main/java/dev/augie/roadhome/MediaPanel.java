@@ -113,7 +113,8 @@ final class MediaPanel extends LinearLayout {
     Rect floatVideo(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener) {
         return video.floatAboveMaps(corner, listener);
     }
-    void expandVideo() { video.expand(); }
+    /** @param reached runs once the video shows whole and receives touches */
+    void expandVideo(Runnable reached) { video.expand(reached); }
 
     void start() {
         started = true;

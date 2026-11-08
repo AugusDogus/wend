@@ -96,8 +96,17 @@ public final class MainActivity extends Activity {
         @Override public void settled(FloatingPlacement.Corner corner) {
             preferences.edit().putString(FLOATING_VIDEO_CORNER, corner.name()).apply();
         }
-        @Override public void tapped() { media.expandVideo(); }
+        @Override public void tapped() { swapToVideo(); }
     };
+
+    /**
+     * The floating video grows over fullscreen Maps. Hidden beneath it, Maps returns to its
+     * panel's display and Road Home comes forward; Maps then emerges floating when allowed.
+     */
+    private void swapToVideo() {
+        media.expandVideo(() -> maps.returnBeneathVideo(preferences.getBoolean(FLOATING_MAPS, true)
+                ? () -> floatMaps(LiveSurfaceWindow.Entry.EMERGING) : null));
+    }
 
     void openMapsFullscreen() {
         maps.openFullscreen(() -> {
