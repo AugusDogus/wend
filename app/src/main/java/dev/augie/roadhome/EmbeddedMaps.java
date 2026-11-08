@@ -339,10 +339,15 @@ final class EmbeddedMaps extends MapPanel {
                 // aside, and Maps lays out at the full screen size on its own display first, as
                 // the dock expansion does. Moved at its panel size, Android 10 left Road Home
                 // resumed and visible behind fullscreen Maps, so Home later had nothing to animate.
-                floating.cancel();
                 takeover = next;
                 next.covered();
-                if (!growHiddenDisplay()) activityView.setLayoutParams(new LayoutParams(screen.x, screen.y));
+                // Above the video app, Road Home's stopped window cannot show Maps' display, and a
+                // display shown nowhere is missing from SurfaceFlinger's layers, so Maps could not
+                // be seen laying out. It stays in its window, under the frozen frame, until it moves.
+                if (!growHiddenDisplay()) {
+                    floating.cancel();
+                    activityView.setLayoutParams(new LayoutParams(screen.x, screen.y));
+                }
                 takeoverFrame = new MapFrame(screen.x, () -> post(this::moveTakeover));
                 postDelayed(takeoverDeadline, TAKEOVER_LAYOUT_MS);
             }, next::revealed);
@@ -384,6 +389,8 @@ final class EmbeddedMaps extends MapPanel {
             showError("Maps could not open fullscreen. Tap Open Maps; existing tasks were left intact.");
             moving.failed();
         } finally {
+            // Maps' display, kept in the floating window above the video app, now has no task.
+            floating.cancel();
             post(this::restorePanelSize);
         }
     }
