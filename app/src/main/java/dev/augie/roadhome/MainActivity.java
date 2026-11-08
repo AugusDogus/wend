@@ -110,18 +110,35 @@ public final class MainActivity extends Activity {
 
     void openMapsFullscreen() {
         maps.openFullscreen(() -> {
-            if (!preferences.getBoolean(FLOATING_VIDEO, true)) return null;
-            return media.floatVideo(FloatingPlacement.Corner.parse(
-                    preferences.getString(FLOATING_VIDEO_CORNER, null), FloatingPlacement.Corner.BOTTOM_RIGHT),
-                    floatingVideo);
+            FloatingPlacement.Corner corner = videoCorner();
+            return corner == null ? null : media.floatVideo(corner, floatingVideo);
         });
+    }
+
+    /** Where the video floats over fullscreen Maps, or null when it should not float. */
+    private FloatingPlacement.Corner videoCorner() {
+        if (!preferences.getBoolean(FLOATING_VIDEO, true)) return null;
+        return FloatingPlacement.Corner.parse(preferences.getString(FLOATING_VIDEO_CORNER, null),
+                FloatingPlacement.Corner.BOTTOM_RIGHT);
     }
     private final LiveSurfaceWindow.Listener floatingMaps = new LiveSurfaceWindow.Listener() {
         @Override public void settled(FloatingPlacement.Corner corner) {
             preferences.edit().putString(FLOATING_MAPS_CORNER, corner.name()).apply();
         }
-        @Override public void tapped() { }
+        @Override public void tapped() { swapToMaps(); }
     };
+
+    /**
+     * Floating Maps takes the screen as fullscreen Maps. Under a frozen frame, the fullscreen video
+     * steps aside, then emerges floating above Maps when allowed.
+     */
+    private void swapToMaps() {
+        maps.openFullscreenFromFloating(new MapPanel.Takeover() {
+            @Override public void covered() { media.videoBeneathMaps(videoCorner(), floatingVideo); }
+            @Override public void revealed() { media.emergeVideo(); }
+            @Override public void failed() { media.homeVideo(); }
+        });
+    }
 
     /** Live video expands from its card; Maps then leaves its panel for a corner above it. */
     boolean openVideoFullscreen(Runnable open) {

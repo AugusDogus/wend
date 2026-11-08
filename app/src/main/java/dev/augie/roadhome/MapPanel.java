@@ -15,6 +15,16 @@ abstract class MapPanel extends FrameLayout {
         Rect starting();
     }
 
+    /** What happens around floating Maps as a tap brings it fullscreen over the fullscreen video. */
+    interface Takeover {
+        /** A frozen frame covers the screen; Maps moves to the main display next. */
+        void covered();
+        /** Fullscreen Maps shows, with nothing frozen left above it. */
+        void revealed();
+        /** Maps could not go fullscreen. It is back in its panel, which explains the error. */
+        void failed();
+    }
+
     MapPanel(Activity host) { super(host); }
     abstract void resume();
     abstract void suspend();
@@ -45,4 +55,7 @@ abstract class MapPanel extends FrameLayout {
      * @param ready if not null, runs once Maps has laid out at the panel's size and Road Home shows
      */
     void returnBeneathVideo(Runnable ready) { }
+
+    /** Floating Maps was tapped: it takes the screen from the fullscreen video below it. */
+    void openFullscreenFromFloating(Takeover takeover) { takeover.failed(); }
 }

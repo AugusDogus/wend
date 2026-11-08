@@ -18,7 +18,7 @@ import android.view.animation.AnimationUtils;
 
 /** Brief, in-memory visual bridge while the real Maps task changes displays once. */
 final class MapTransition {
-    private enum Completion { CROSSFADE, HANDOFF, REVEAL }
+    private enum Completion { CROSSFADE, HELD_CROSSFADE, HANDOFF, REVEAL }
     private enum Phase { PENDING, WAITING_FOR_FRAME, REVEALING, DISPOSED }
     private final Activity host;
     private final View panel;
@@ -31,25 +31,38 @@ final class MapTransition {
         windows = host.getSystemService(WindowManager.class);
     }
 
-    void move(boolean expanding, Runnable moveTask) {
-        prepare(expanding, moveTask, Completion.CROSSFADE);
+    void move(boolean expanding, Runnable moveTask) { move(expanding, moveTask, () -> { }); }
+
+    /** @param revealed runs once Maps shows with no cover left above it; never if canceled */
+    void move(boolean expanding, Runnable moveTask, Runnable revealed) {
+        prepare(expanding, moveTask, Completion.CROSSFADE, revealed);
+    }
+
+    /**
+     * Keep the original pixels stationary until {@link #settleHeld}, then crossfade once Maps'
+     * frame is ready, as when Maps first lays out at a new size on its own display.
+     * @param revealed runs once Maps shows with no cover left above it; never if canceled
+     */
+    void holdThenCrossfade(Runnable covered, Runnable revealed) {
+        prepare(true, covered, Completion.HELD_CROSSFADE, revealed);
     }
 
     /** Keep the original pixels stationary until the native window animator is ready. */
-    void hold(Runnable moveTask) { prepare(true, moveTask, Completion.HANDOFF); }
+    void hold(Runnable moveTask) { prepare(true, moveTask, Completion.HANDOFF, () -> { }); }
 
     /** Keep the final cropped frame still while Maps lays out, then remove it without fading. */
-    void settle(Runnable moveTask) { prepare(false, moveTask, Completion.REVEAL); }
+    void settle(Runnable moveTask) { prepare(false, moveTask, Completion.REVEAL, () -> { }); }
 
     /** After a slow expansion, keep its original cover until the fullscreen frame is ready. */
     void settleHeld() {
         if (cover != null && cover.phase == Phase.WAITING_FOR_FRAME) cover.awaitFrame();
     }
 
-    private void prepare(boolean expanding, Runnable moveTask, Completion completion) {
+    private void prepare(boolean expanding, Runnable moveTask, Completion completion, Runnable revealed) {
         cancel();
         if (!ValueAnimator.areAnimatorsEnabled() || windows == null || !panel.isLaidOut()) {
             moveTask.run();
+            revealed.run();
             return;
         }
         Bitmap snapshot = null;
@@ -63,7 +76,7 @@ final class MapTransition {
                     width, height, rotation);
             if (!(result instanceof Bitmap)) throw new IllegalStateException("No transition snapshot returned");
             snapshot = (Bitmap) result;
-            Cover next = new Cover(snapshot, expanding ? width : panel.getWidth(), moveTask, completion);
+            Cover next = new Cover(snapshot, expanding ? width : panel.getWidth(), moveTask, completion, revealed);
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(width, height,
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -85,6 +98,7 @@ final class MapTransition {
             if (cover != null) cancel();
             else if (snapshot != null) snapshot.recycle();
             moveTask.run();
+            revealed.run();
         }
     }
 
@@ -115,6 +129,7 @@ final class MapTransition {
         private final int destinationWidth;
         private final Runnable moveTask;
         private final Completion completion;
+        private final Runnable revealed;
         private MapFrame frame;
         private Phase phase = Phase.PENDING;
         private final Runnable deadline = () -> {
@@ -122,12 +137,13 @@ final class MapTransition {
             reveal();
         };
 
-        Cover(Bitmap snapshot, int destinationWidth, Runnable moveTask, Completion completion) {
+        Cover(Bitmap snapshot, int destinationWidth, Runnable moveTask, Completion completion, Runnable revealed) {
             super(host);
             this.snapshot = snapshot;
             this.destinationWidth = destinationWidth;
             this.moveTask = moveTask;
             this.completion = completion;
+            this.revealed = revealed;
             screen = new RectF(0, 0, snapshot.getWidth(), snapshot.getHeight());
             // The empty video card is black in Road Home as well.
             blank.setColor(Color.BLACK);
@@ -144,7 +160,7 @@ final class MapTransition {
             phase = Phase.WAITING_FOR_FRAME;
             moveTask.run();
             if (phase == Phase.DISPOSED) return;
-            if (completion == Completion.HANDOFF) {
+            if (completion == Completion.HANDOFF || completion == Completion.HELD_CROSSFADE) {
                 postDelayed(deadline, 1500);
                 return;
             }
@@ -160,7 +176,7 @@ final class MapTransition {
 
         private void reveal() {
             if (phase != Phase.WAITING_FOR_FRAME) return;
-            if (completion != Completion.CROSSFADE) { cancel(); return; }
+            if (completion == Completion.HANDOFF || completion == Completion.REVEAL) { cancel(); return; }
             phase = Phase.REVEALING;
             removeCallbacks(deadline);
             if (frame != null) frame.close();
@@ -169,7 +185,9 @@ final class MapTransition {
             animate().alpha(0).setDuration(160)
                     .setInterpolator(AnimationUtils.loadInterpolator(host, R.interpolator.window_ease_out))
                     .withEndAction(() -> {
-                        if (cover == Cover.this) cancel();
+                        if (cover != Cover.this) return;
+                        cancel();
+                        revealed.run();
                     }).start();
         }
 

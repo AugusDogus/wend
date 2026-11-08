@@ -208,6 +208,35 @@ final class EmbeddedVideo extends FrameLayout {
                 Ui.dp(host, 16));
     }
 
+    /**
+     * Fullscreen Maps now covers the whole fullscreen video: hide it, ready to {@link #emergeAboveMaps}.
+     * @param corner where it floats, or null to return it to its card hidden as before
+     */
+    void yieldToMaps(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener) {
+        if (!window.active()) return;
+        if (corner == null || presentation != VideoCardState.PLAYING || playerLifecycle == null) {
+            window.cancel();
+            return;
+        }
+        try { appSwitches.start(); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("RoadHomeVideo", "Floating video unavailable: app switches cannot be observed; it returns to its card", error);
+            window.cancel();
+            return;
+        }
+        // Before Road Home stops: its hidden window must not power off the playing display.
+        playerLifecycle.presentElsewhere();
+        if (!window.hideForCorner(floatingPlacement(), corner, listener)) {
+            appSwitches.stop();
+            window.cancel();
+            return;
+        }
+        Log.i("RoadHomeVideo", "Hiding the live video under fullscreen Maps; it floats in the " + corner + " corner next");
+    }
+
+    /** The video hidden by {@link #yieldToMaps} appears floating in its corner. */
+    void emergeAboveMaps() { window.emerge(); }
+
     private void presentationRestored() {
         appSwitches.stop();
         if (playerLifecycle != null) playerLifecycle.returnToHost();

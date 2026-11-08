@@ -37,6 +37,13 @@ final class EmbeddedMaps extends MapPanel {
     private Runnable pendingFloat;
     private boolean panelFrameReady;
     private MapFrame panelFrame;
+    /** A tap on floating Maps that is taking the screen from the video, until Maps moves. */
+    private Takeover takeover;
+    private MapFrame takeoverFrame;
+    private final Runnable takeoverDeadline = () -> {
+        Log.w("RoadHomeMap", "Maps did not lay out at the full screen size within 900 ms; moving it as it is");
+        moveTakeover();
+    };
     private final Runnable panelFrameDeadline = () -> {
         Log.w("RoadHomeMap", "Maps did not lay out at its panel size within 900 ms; floating it as it is");
         panelFrameReady();
@@ -138,12 +145,16 @@ final class EmbeddedMaps extends MapPanel {
         hostActive = false;
         cancelPendingTransition();
         cancelPendingFloat();
+        cancelTakeover();
         // Another app replaced Road Home and the video below; Maps waits hidden in its panel.
         floating.cancel();
     }
 
     @Override void home(Runnable then) {
         cancelPendingFloat();
+        // Home wins over a takeover still behind its frozen frame.
+        cancelTakeover();
+        transition.cancel();
         if (!floating.active()) { resume(); then.run(); return; }
         hostActive = true;
         // Lands over its panel, still above the fullscreen video, which then shrinks away below it.
@@ -202,6 +213,63 @@ final class EmbeddedMaps extends MapPanel {
         pendingFloat = ready;
         panelFrame = new MapFrame(getWidth(), () -> post(this::panelFrameReady));
         postDelayed(panelFrameDeadline, 900);
+    }
+
+    @Override void openFullscreenFromFloating(Takeover next) {
+        if (activityView == null || takeover != null) return;
+        // Grows live, never past pixel scale one, to its full-height panel display centered on
+        // screen. A held frame then covers the task move, and crossfades to fullscreen Maps.
+        floating.focus(() -> transition.holdThenCrossfade(() -> {
+            // Under the frozen frame: Maps leaves its window for its panel, the video steps aside,
+            // and Maps lays out at the full screen size on its own display first, as the dock
+            // expansion does. Moved at its panel size, Android 10 left Road Home resumed and
+            // visible behind fullscreen Maps, so Home later had nothing to animate.
+            floating.cancel();
+            takeover = next;
+            next.covered();
+            activityView.setLayoutParams(new LayoutParams(screen.x, screen.y));
+            takeoverFrame = new MapFrame(screen.x, () -> post(this::moveTakeover));
+            postDelayed(takeoverDeadline, 900);
+        }, next::revealed));
+    }
+
+    private void moveTakeover() {
+        Takeover moving = takeover;
+        if (moving == null) return;
+        stopWaitingForTakeover();
+        takeover = null;
+        try {
+            MapsTask.Task existing = tasks.find();
+            if (existing == null) throw new IllegalStateException("No Maps task is running");
+            tasks.move(existing, 0);
+            transition.settleHeld();
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            transition.cancel();
+            Log.e("RoadHomeMap", "Could not open floating Maps fullscreen on display 0", error);
+            showError("Maps could not open fullscreen. Tap Open Maps; existing tasks were left intact.");
+            moving.failed();
+        } finally {
+            post(this::restorePanelSize);
+        }
+    }
+
+    private void cancelTakeover() {
+        if (takeover == null) return;
+        takeover = null;
+        stopWaitingForTakeover();
+        restorePanelSize();
+    }
+
+    private void stopWaitingForTakeover() {
+        removeCallbacks(takeoverDeadline);
+        if (takeoverFrame != null) takeoverFrame.close();
+        takeoverFrame = null;
+    }
+
+    private void restorePanelSize() {
+        if (activityView != null && (activityView.getLayoutParams().width != -1 || activityView.getLayoutParams().height != -1)) {
+            activityView.setLayoutParams(new LayoutParams(-1, -1));
+        }
     }
 
     private void panelFrameReady() {
@@ -393,6 +461,7 @@ final class EmbeddedMaps extends MapPanel {
 
     void release() {
         cancelPendingFloat();
+        cancelTakeover();
         floating.release();
         if (motion != null) motion.release();
         transition.cancel();
