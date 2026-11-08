@@ -1,6 +1,7 @@
 package dev.augie.roadhome;
 
-import android.view.ViewGroup;
+import android.content.Context;
+import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -57,9 +58,19 @@ public class SegmentedControlTest {
         assertFalse(otherNode.isChecked());
     }
 
-    @Test public void everySegmentIsAFullHeightTarget() {
+    @Test public void everySegmentIsA48dpTouchTargetInItsSettingsRow() {
+        Context context = RuntimeEnvironment.getApplication();
+        View row = new SettingsRows(context).choiceRow(R.string.settings_map_position, control, 290);
+        // As in the settings sheet's layout card: a 64 dp row beside the preview.
+        row.measure(View.MeasureSpec.makeMeasureSpec(Ui.dp(context, 500), View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(Ui.dp(context, SettingsRows.ROW_DP), View.MeasureSpec.EXACTLY));
+        row.layout(0, 0, row.getMeasuredWidth(), row.getMeasuredHeight());
+
+        int target = Ui.dp(context, 48);
         for (int i = 0; i < control.getChildCount(); i++) {
-            assertEquals(ViewGroup.LayoutParams.MATCH_PARENT, control.getChildAt(i).getLayoutParams().height);
+            View segment = control.getChildAt(i);
+            assertTrue("Segment " + i + " is " + segment.getWidth() + " x " + segment.getHeight() + " px",
+                    segment.getWidth() >= target && segment.getHeight() >= target);
         }
     }
 }

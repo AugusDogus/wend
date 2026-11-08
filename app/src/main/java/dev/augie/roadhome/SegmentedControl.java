@@ -7,6 +7,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -59,7 +60,8 @@ final class SegmentedControl<T> extends LinearLayout {
         inset = Ui.dp(context, INSET_DP);
         setOrientation(HORIZONTAL);
         setWillNotDraw(false);
-        setPadding(inset, inset, inset, inset);
+        // Segments span the full height, so each is a 48 dp target; the thumb is drawn inset.
+        setPadding(inset, 0, inset, 0);
         setBackground(Ui.surface(context, 0x38000000, 12));
         thumb.setColor(0x2EFFFFFF);
         thumb.setCornerRadius(Ui.dp(context, 12 - INSET_DP));
@@ -72,7 +74,7 @@ final class SegmentedControl<T> extends LinearLayout {
             segment.setEllipsize(TextUtils.TruncateAt.END);
             int padding = Ui.dp(context, 12);
             segment.setPadding(padding, 0, padding, 0);
-            segment.setBackground(Ui.ripple(context, 12 - INSET_DP));
+            segment.setBackground(new InsetDrawable(Ui.ripple(context, 12 - INSET_DP), 0, inset, 0, inset));
             segment.setOnClickListener(v -> choose(index));
             segment.setAccessibilityDelegate(new AccessibilityDelegate() {
                 @Override public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfo info) {
