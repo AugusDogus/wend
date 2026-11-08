@@ -122,7 +122,7 @@ final class EmbeddedDisplayLifecycle implements SurfaceHolder.Callback {
 
     @Override public void surfaceCreated(SurfaceHolder holder) {
         hostSurface = true;
-        if (!elsewhere) { created(); return; }
+        if (!elsewhere) created();
         Runnable ready = hostReady;
         hostReady = null;
         if (ready != null) ready.run();

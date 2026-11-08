@@ -194,6 +194,16 @@ final class LiveSurfaceWindow {
     void collapse() { if (running != null) running.collapse(); }
 
     /**
+     * Moves over its card and stays drawn there, above windows that still cover the card, until
+     * {@link #collapse} hands it back to the card.
+     * @param arrived runs once it is drawn over its card, or at once if it already returned
+     */
+    void returnOverCard(Runnable arrived) {
+        if (running == null) arrived.run();
+        else running.returnOverCard(arrived);
+    }
+
+    /**
      * Fades out without returning to the card, as when the session ends or another app opens.
      * @param reason completes "Closing ... because ..." in the log
      */
@@ -447,6 +457,16 @@ final class LiveSurfaceWindow {
             surface.input(new Rect());
             if (touches != null) touches.whole();
             animateTo(Target.CARD, MOTION_MS, motion, () -> finish(false));
+        }
+
+        void returnOverCard(Runnable arrived) {
+            if (phase == Phase.CLOSED || target == Target.GONE) { arrived.run(); return; }
+            // Not yet drawn elsewhere or hidden: nothing to keep above the card.
+            if (phase == Phase.WAITING || target == Target.HIDDEN) { finish(false); arrived.run(); return; }
+            if (target == Target.CARD && phase == Phase.RESTING) { arrived.run(); return; }
+            surface.input(new Rect());
+            if (touches != null) touches.only(new Rect());
+            animateTo(Target.CARD, MOTION_MS, motion, arrived);
         }
 
         void dismiss(String reason) {

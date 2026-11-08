@@ -182,4 +182,13 @@ public class LiveSurfaceWindowTest {
         assertEquals(List.of("restored"), events);
         assertFalse(window.active());
     }
+
+    @Test public void homeBeforeAFloatingWindowIsDrawnRestoresItAndContinuesAtOnce() {
+        openFloating(LiveSurfaceWindow.Entry.HELD_AT_CARD);
+        window.returnOverCard(() -> events.add("arrived"));
+        assertEquals(List.of("restored", "arrived"), events);
+        assertFalse(window.active());
+        window.returnOverCard(() -> events.add("arrived again"));
+        assertEquals(List.of("restored", "arrived", "arrived again"), events);
+    }
 }

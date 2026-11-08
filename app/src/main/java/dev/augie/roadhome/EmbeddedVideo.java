@@ -99,17 +99,34 @@ final class EmbeddedVideo extends FrameLayout {
         maybeLaunch();
     }
 
+    /** Road Home is visible again, by Home or because the app covering it left. */
     void resume() {
         hostActive = true;
         window.hostShown();
         if (window.active()) {
-            // Home returns a floating video to its card once Road Home's window can show it.
-            if (window.floating() && playerLifecycle != null) playerLifecycle.whenHostReady(window::collapse);
-            else window.collapse();
+            // A video floating above Maps returns to its card. A whole video above Road Home
+            // stays until Home: Road Home also shows behind it when Maps leaves for its panel.
+            if (window.floating()) returnToCard();
             return;
         }
         maybeLaunch();
     }
+
+    /** Home returns any presentation to the card. */
+    void home() {
+        hostActive = true;
+        window.hostShown();
+        if (window.active()) returnToCard();
+        else maybeLaunch();
+    }
+
+    private void returnToCard() {
+        // Once Road Home's window can show the card again.
+        if (playerLifecycle != null) playerLifecycle.whenHostReady(window::collapse);
+        else window.collapse();
+    }
+
+    boolean presenting() { return window.active(); }
 
     void suspend() {
         hostActive = false;
@@ -123,13 +140,14 @@ final class EmbeddedVideo extends FrameLayout {
 
     boolean floating() { return window.floating(); }
 
-    boolean openFullscreen(Runnable open) {
+    /** @param reached runs once the video shows whole and receives touches */
+    boolean openFullscreen(Runnable open, Runnable reached) {
         if (window.active()) return true;
         if (state != State.SHOWN || playerSurface == null || previousBounds == null
                 || presentation != VideoCardState.PLAYING || !hostActive) return false;
         cancelPreparation();
         window.open(this, playerSurface, source(previousBounds), displaySize, open,
-                this::presentationRestored, null);
+                this::presentationRestored, reached);
         if (window.active()) postDelayed(inspect, 300);
         return true;
     }
@@ -303,8 +321,8 @@ final class EmbeddedVideo extends FrameLayout {
         } catch (ReflectiveOperationException | RuntimeException error) { fail(error); }
     }
 
-    /** Geometry is followed while Road Home shows the card or a floating window shows the video. */
-    private boolean observing() { return hostActive || window.floating(); }
+    /** Geometry is followed while Road Home shows the card or a live window shows the video. */
+    private boolean observing() { return hostActive || window.active(); }
 
     private void inspectSurface() {
         if (!observing() || (state != State.PREPARING && state != State.SHOWN)) return;

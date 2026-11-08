@@ -15,6 +15,10 @@ public final class MainActivity extends Activity {
     static final String FLOATING_VIDEO = "floatingVideo";
     /** "layout" preference: the corner the floating video last settled in. */
     static final String FLOATING_VIDEO_CORNER = "floatingVideoCorner";
+    /** "layout" preference: live Maps floats in a small window over fullscreen video. */
+    static final String FLOATING_MAPS = "floatingMaps";
+    /** "layout" preference: the corner floating Maps last settled in. */
+    static final String FLOATING_MAPS_CORNER = "floatingMapsCorner";
     private MapPanel maps;
     private MediaPanel media;
     private LinearLayout content;
@@ -56,7 +60,7 @@ public final class MainActivity extends Activity {
         body.leftMargin = 0;
         root.addView(content, body);
         maps = BuildConfig.WINDOWED_MAPS ? new WindowedMaps(this) : new EmbeddedMaps(this);
-        media = new MediaPanel(this, this::openMusic);
+        media = new MediaPanel(this, this::openMusic, () -> maps.returnFromFloating());
         // The dock and the map side are places in the car, not reading order, so the row of
         // panels never mirrors; each panel still lays out its own content for the locale.
         root.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
@@ -103,7 +107,25 @@ public final class MainActivity extends Activity {
                     floatingVideo);
         });
     }
-    boolean openVideoFullscreen(Runnable open) { return media.openVideoFullscreen(open); }
+    private final LiveSurfaceWindow.Listener floatingMaps = new LiveSurfaceWindow.Listener() {
+        @Override public void settled(FloatingPlacement.Corner corner) {
+            preferences.edit().putString(FLOATING_MAPS_CORNER, corner.name()).apply();
+        }
+        @Override public void tapped() { }
+    };
+
+    /** Live video expands from its card; Maps then leaves its panel for a corner above it. */
+    boolean openVideoFullscreen(Runnable open) {
+        if (!media.openVideoFullscreen(open, () -> maps.leavePanel())) return false;
+        if (media.videoPresenting()) floatMaps(LiveSurfaceWindow.Entry.HELD_AT_CARD);
+        return true;
+    }
+
+    private void floatMaps(LiveSurfaceWindow.Entry entry) {
+        if (!preferences.getBoolean(FLOATING_MAPS, true)) return;
+        maps.floatAboveVideo(FloatingPlacement.Corner.parse(preferences.getString(FLOATING_MAPS_CORNER, null),
+                FloatingPlacement.Corner.BOTTOM_RIGHT), floatingMaps, entry);
+    }
     // A virtual display can keep Home started behind another fullscreen app on Android 10.
     // Remove native Maps overlays explicitly instead of relying on onStop.
     void externalAppOpening() { maps.suspend(); media.suspendVideo(); }
@@ -165,8 +187,12 @@ public final class MainActivity extends Activity {
         hideSystemBars();
         // Moving an embedded task fullscreen can leave Home started. Its return intent
         // must restore Maps even when Android does not deliver another onStart.
-        maps.resume();
-        media.resumeVideo();
+        // Floating Maps lands over its panel first; the fullscreen video then shrinks into its
+        // card below it, and the end of that presentation hands Maps back to its panel.
+        maps.home(() -> {
+            media.homeVideo();
+            if (!media.videoPresenting()) maps.returnFromFloating();
+        });
     }
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);

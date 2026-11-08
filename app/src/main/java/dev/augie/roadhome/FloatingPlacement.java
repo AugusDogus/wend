@@ -1,5 +1,6 @@
 package dev.augie.roadhome;
 
+import android.graphics.Point;
 import android.graphics.Rect;
 
 /**
@@ -64,6 +65,15 @@ final class FloatingPlacement {
             if (distance < best) { best = distance; nearest = corner; }
         }
         return nearest;
+    }
+
+    /**
+     * A window of the same visual weight (area) as {@code width} x {@code height}, but shaped
+     * {@code aspect} (width / height), such as a floating map that keeps its panel's shape.
+     */
+    static Point matchingArea(int width, int height, float aspect) {
+        double area = (double) width * height;
+        return new Point((int) Math.round(Math.sqrt(area * aspect)), (int) Math.round(Math.sqrt(area / aspect)));
     }
 
     /** Distance in px a release at this px/s velocity would coast before stopping. */

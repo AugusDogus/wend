@@ -23,4 +23,20 @@ abstract class MapPanel extends FrameLayout {
     abstract void openFullscreen(Covering covering);
     abstract void setInnerCorners(boolean mapsOnRight);
     abstract void release();
+
+    /** Home: any floating Maps returns to its panel first, then {@code then} runs. */
+    void home(Runnable then) { resume(); then.run(); }
+
+    /**
+     * Lifts live Maps out of its panel into a small window above a fullscreen video.
+     * @return false, leaving Maps where it is, when this host cannot float it now
+     */
+    boolean floatAboveVideo(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener,
+            LiveSurfaceWindow.Entry entry) { return false; }
+
+    /** Maps lifted with {@link LiveSurfaceWindow.Entry#HELD_AT_CARD} now moves to its corner. */
+    void leavePanel() { }
+
+    /** The fullscreen video below floating Maps has gone: Maps returns to its panel. */
+    void returnFromFloating() { }
 }

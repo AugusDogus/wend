@@ -38,7 +38,7 @@ public class MediaPanelTest {
             ShadowMediaSessionManager sessions = Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class));
             sessions.addController(musicController);
             sessions.addController(videoController);
-            MediaPanel panel = new MediaPanel(activity, () -> { });
+            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { });
             try {
                 panel.start();
                 assertEquals("com.spotify.music", panel.musicPackage());
@@ -60,7 +60,7 @@ public class MediaPanelTest {
             ShadowMediaSessionManager sessions = Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class));
             sessions.addController(musicController);
             sessions.addController(videoController);
-            MediaPanel panel = new MediaPanel(activity, () -> { });
+            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { });
             try {
                 panel.start();
                 assertEquals("com.spotify.music", panel.musicPackage());
@@ -99,7 +99,7 @@ public class MediaPanelTest {
             Shadows.shadowOf(activity.getSystemService(ActivityManager.class)).setTasks(Collections.singletonList(task));
             ShadowMediaSessionManager sessions = Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class));
             sessions.addController(controller);
-            MediaPanel panel = new MediaPanel(activity, () -> { });
+            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { });
             try {
                 panel.start();
                 panel.stop();

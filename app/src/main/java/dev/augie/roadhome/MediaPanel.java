@@ -41,7 +41,8 @@ final class MediaPanel extends LinearLayout {
     private final MediaSessionSubscriptions subscriptions = new MediaSessionSubscriptions(handler, this::refresh);
     private final MediaSessionManager.OnActiveSessionsChangedListener sessionListener = this::select;
 
-    MediaPanel(Activity context, Runnable openMusic) {
+    /** @param videoPresentationEnded runs when a fullscreen or floating video has finished */
+    MediaPanel(Activity context, Runnable openMusic, Runnable videoPresentationEnded) {
         super(context);
         sessions = context.getSystemService(MediaSessionManager.class);
         setOrientation(VERTICAL);
@@ -49,7 +50,10 @@ final class MediaPanel extends LinearLayout {
         setBackgroundColor(android.graphics.Color.TRANSPARENT);
         int padding = Ui.dp(context, 12);
         setPadding(padding, padding, padding, padding);
-        video = new EmbeddedVideo(context, this::videoPresentationEnded);
+        video = new EmbeddedVideo(context, () -> {
+            if (!started) unsubscribe();
+            videoPresentationEnded.run();
+        });
         LayoutParams videoLayout = new LayoutParams(-1, -2);
         videoLayout.bottomMargin = Ui.dp(context, 16);
         addView(video, videoLayout);
@@ -96,8 +100,12 @@ final class MediaPanel extends LinearLayout {
     }
 
     String musicPackage() { return controller == null ? "com.spotify.music" : controller.getPackageName(); }
-    boolean openVideoFullscreen(Runnable open) { return video.openFullscreen(open); }
+    /** @param reached runs once the live video shows whole and receives touches */
+    boolean openVideoFullscreen(Runnable open, Runnable reached) { return video.openFullscreen(open, reached); }
+    /** Whether a live video presentation is showing outside its card, or about to. */
+    boolean videoPresenting() { return video.presenting(); }
     void resumeVideo() { video.resume(); }
+    void homeVideo() { video.home(); }
     void suspendVideo() { video.suspend(); }
     void videoOpened() { video.fullscreenOpened(); }
 
@@ -131,8 +139,6 @@ final class MediaPanel extends LinearLayout {
         // A floating video still needs its session's pause, title, and end updates.
         if (!video.floating()) unsubscribe();
     }
-
-    private void videoPresentationEnded() { if (!started) unsubscribe(); }
 
     private void unsubscribe() {
         if (sessions != null) sessions.removeOnActiveSessionsChangedListener(sessionListener);

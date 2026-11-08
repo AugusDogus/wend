@@ -7,7 +7,9 @@ import android.app.PendingIntent;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.Point;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.os.Build;
 import android.os.Process;
 import android.util.Log;
@@ -28,6 +30,9 @@ final class EmbeddedMaps extends MapPanel {
     private EmbeddedMapMotion motion;
     private final MapsTask tasks;
     private final MapTransition transition;
+    /** Live Maps floating above the fullscreen video. Its display keeps the panel's size. */
+    private final LiveSurfaceWindow floating;
+    private final Point screen = new Point();
     private boolean hostActive;
     private boolean launching;
     private boolean pictureInPictureChecked;
@@ -40,6 +45,8 @@ final class EmbeddedMaps extends MapPanel {
         super(context);
         tasks = new MapsTask(context);
         transition = new MapTransition(context, this);
+        floating = new LiveSurfaceWindow(context, BuildConfig.APPLICATION_ID + " live map", "RoadHomeMap");
+        context.getWindowManager().getDefaultDisplay().getRealSize(screen);
         setBackground(Ui.surface(context, Ui.PANEL, 10));
         status = new LinearLayout(context);
         status.setOrientation(LinearLayout.VERTICAL);
@@ -106,7 +113,7 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     void launch() {
-        if (!hostActive || state != State.READY || activityView == null) return;
+        if (!hostActive || state != State.READY || activityView == null || floating.active()) return;
         if (motion != null && motion.pending()) return;
         cancelPendingTransition();
         if (launching) return;
@@ -118,7 +125,70 @@ final class EmbeddedMaps extends MapPanel {
         if (motion != null && motion.expanding()) cancelPendingTransition();
         launch();
     }
-    void suspend() { hostActive = false; cancelPendingTransition(); }
+    void suspend() {
+        hostActive = false;
+        cancelPendingTransition();
+        // Another app replaced Road Home and the video below; Maps waits hidden in its panel.
+        floating.cancel();
+    }
+
+    @Override void home(Runnable then) {
+        if (!floating.active()) { resume(); then.run(); return; }
+        hostActive = true;
+        // Lands over its panel, still above the fullscreen video, which then shrinks away below it.
+        floating.returnOverCard(then);
+    }
+
+    @Override boolean floatAboveVideo(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener,
+            LiveSurfaceWindow.Entry entry) {
+        if (activityView == null || displayLifecycle == null || state != State.READY || !hostActive
+                || launching || floating.active() || status.getVisibility() == View.VISIBLE || !isLaidOut()
+                || (motion != null && motion.pending()) || transition.pending()) return false;
+        try {
+            MapsTask.Task existing = tasks.find();
+            if (existing == null || existing.displayId != activityView.getVirtualDisplayId()) return false;
+            ActivityViewSurface surface = new ActivityViewSurface(activityView);
+            // Before anything can hide Road Home: its surface changes must not move this root.
+            displayLifecycle.presentElsewhere();
+            floating.openFloating(this, surface, new RectF(0, 0, getWidth(), getHeight()),
+                    new Point(getWidth(), getHeight()), floatingPlacement(), corner, entry, listener,
+                    this::floatingEnded);
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("RoadHomeMap", "Floating Maps unavailable; Maps stays in its panel under the video", error);
+            floating.cancel();
+        }
+        if (!floating.active()) {
+            displayLifecycle.returnToHost();
+            return false;
+        }
+        Log.i("RoadHomeMap", "Floating live Maps above the video in the " + corner + " corner");
+        return true;
+    }
+
+    @Override void leavePanel() { floating.leaveCard(); }
+
+    @Override void returnFromFloating() { floating.collapse(); }
+
+    /** The floating video's visual weight, in the panel's shape, anywhere on Road Home's fullscreen. */
+    private FloatingPlacement floatingPlacement() {
+        Point size = FloatingPlacement.matchingArea(Ui.dp(getContext(), FloatingPlacement.VIDEO_WIDTH_DP),
+                Ui.dp(getContext(), FloatingPlacement.VIDEO_HEIGHT_DP), getWidth() / (float) getHeight());
+        return new FloatingPlacement(new Rect(0, 0, screen.x, screen.y), size.x, size.y, Ui.dp(getContext(), 16));
+    }
+
+    private void floatingEnded() {
+        if (displayLifecycle != null) displayLifecycle.returnToHost();
+        if (hostActive) {
+            try {
+                // The same panel geometry and input every return from fullscreen applies.
+                revealSurface();
+                status.setVisibility(View.GONE);
+            } catch (ReflectiveOperationException | RuntimeException error) {
+                Log.e("RoadHomeMap", "Could not return floating Maps to its panel input and geometry", error);
+                showError("Maps could not return to this panel. Tap Open Maps; your route is kept.");
+            }
+        }
+    }
 
     private void cancelPendingTransition() {
         if (motion != null && motion.pending()) {
@@ -260,6 +330,7 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     void release() {
+        floating.release();
         if (motion != null) motion.release();
         transition.cancel();
         if (activityView == null || state == State.CLOSED) return;

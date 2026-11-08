@@ -1,5 +1,6 @@
 package dev.augie.roadhome;
 
+import android.graphics.Point;
 import android.graphics.Rect;
 import dev.augie.roadhome.FloatingPlacement.Corner;
 import org.junit.Test;
@@ -64,5 +65,19 @@ public class FloatingPlacementTest {
         assertEquals(Corner.TOP_LEFT, Corner.parse("TOP_LEFT", Corner.BOTTOM_RIGHT));
         assertEquals(Corner.BOTTOM_RIGHT, Corner.parse(null, Corner.BOTTOM_RIGHT));
         assertEquals(Corner.BOTTOM_RIGHT, Corner.parse("MIDDLE", Corner.BOTTOM_RIGHT));
+    }
+
+    @Test public void aFloatingMapMatchesTheFloatingVideosAreaAtThePanelsShape() {
+        // The 70% map panel is 832 x 720 px; the floating video is 432 x 243 px.
+        Point size = FloatingPlacement.matchingArea(432, 243, 832f / 720);
+        assertEquals(new Point(348, 301), size);
+        assertEquals(432 * 243, size.x * size.y, 432 * 243 * 0.01f);
+        assertEquals(832f / 720, size.x / (float) size.y, 0.01f);
+    }
+
+    @Test public void aNarrowerPanelGivesANarrowerWindowOfTheSameArea() {
+        // The 60% map panel is 713 x 720 px.
+        Point size = FloatingPlacement.matchingArea(432, 243, 713f / 720);
+        assertEquals(new Point(322, 326), size);
     }
 }
