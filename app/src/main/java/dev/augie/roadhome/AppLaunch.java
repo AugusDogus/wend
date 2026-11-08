@@ -28,12 +28,12 @@ final class AppLaunch {
         openDirect(activity, packageName);
     }
 
-    /** Opens an Android screen such as Settings over the launcher. */
+    /** Opens an Android screen such as Settings in its own task over the launcher, never inside Home's task. */
     static void openSystemScreen(Activity activity, Intent intent, String name) {
         MainActivity home = activity instanceof MainActivity ? (MainActivity) activity : null;
         if (home != null) home.externalAppOpening();
         try {
-            activity.startActivity(intent, mainDisplay(activity));
+            activity.startActivity(new Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), mainDisplay(activity));
         } catch (ActivityNotFoundException | SecurityException error) {
             Log.e("RoadHome", "Cannot open " + name + " with " + intent, error);
             Toast.makeText(activity, "Android could not open " + name + ". Open it from the Android settings app.",
