@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.Looper;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
@@ -19,10 +20,12 @@ public final class MainActivity extends Activity {
     private MediaPanel media;
     private LinearLayout content;
     private SharedPreferences preferences;
+    private AppDrawer drawer;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         preferences = getSharedPreferences("layout", MODE_PRIVATE);
+        AppCatalog.get(this); // Loads apps in the background so the drawer opens with them.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemBars();
         LinearLayout root = new LinearLayout(this);
@@ -44,6 +47,11 @@ public final class MainActivity extends Activity {
         media = new MediaPanel(this, this::openMusic);
         arrangePanels();
         setContentView(root);
+        // Build the drawer and its tiles when the launcher is idle, not on the first tap.
+        Looper.myQueue().addIdleHandler(() -> {
+            if (drawer == null && !isDestroyed()) drawer = new AppDrawer(this, AppCatalog.get(this));
+            return false;
+        });
     }
 
     private LinearLayout createDock() {
@@ -74,7 +82,7 @@ public final class MainActivity extends Activity {
         ImageButton musicButton = Ui.iconButton(this, Ui.Icon.MUSIC, "Spotify", () -> AppDrawer.open(this, "com.spotify.music"));
         setAppIcon(musicButton, "com.spotify.music");
         dock.addView(musicButton, dockButtonLayout());
-        dock.addView(Ui.iconButton(this, Ui.Icon.APPS, "Apps", () -> AppDrawer.show(this)), dockButtonLayout());
+        dock.addView(Ui.iconButton(this, Ui.Icon.APPS, "Apps", this::showApps), dockButtonLayout());
         dock.addView(new View(this), new LinearLayout.LayoutParams(1, 0, 1));
         dock.addView(Ui.iconButton(this, Ui.Icon.SETTINGS, "Layout and settings", this::showSettings), dockButtonLayout());
         return dock;
@@ -95,6 +103,11 @@ public final class MainActivity extends Activity {
         catch (PackageManager.NameNotFoundException error) {
             android.util.Log.i("RoadHome", "Using fallback icon for unavailable app " + packageName);
         }
+    }
+
+    private void showApps() {
+        if (drawer == null) drawer = new AppDrawer(this, AppCatalog.get(this));
+        drawer.show();
     }
 
     private void openMusic() { AppDrawer.open(this, media.musicPackage()); }
@@ -159,11 +172,22 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onStart() { super.onStart(); overridePendingTransition(0, 0); maps.resume(); media.start(); }
-    @Override protected void onStop() { maps.suspend(); media.stop(); super.onStop(); }
-    @Override protected void onDestroy() { media.release(); maps.release(); super.onDestroy(); }
+    @Override protected void onStop() {
+        if (drawer != null) drawer.dismiss();
+        maps.suspend();
+        media.stop();
+        super.onStop();
+    }
+    @Override protected void onDestroy() {
+        if (drawer != null) drawer.release();
+        media.release();
+        maps.release();
+        super.onDestroy();
+    }
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (drawer != null) drawer.dismiss();
         hideSystemBars();
         // Moving an embedded task fullscreen can leave Home started. Its return intent
         // must restore Maps even when Android does not deliver another onStart.

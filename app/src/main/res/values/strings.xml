@@ -2,6 +2,7 @@
     <string name="media_service_unavailable">Media service unavailable</string>
     <string name="media_controls_unavailable">Music controls unavailable</string>
     <string name="open_music_directly">Open your music app directly</string>
+    <string name="loading_apps">Loading apps…</string>
     <string name="apps_unavailable">Apps could not be loaded. Close this screen and try again.</string>
     <string name="no_apps">No apps are available to open.</string>
     <string name="no_matching_apps">No matching apps. Try another name.</string>

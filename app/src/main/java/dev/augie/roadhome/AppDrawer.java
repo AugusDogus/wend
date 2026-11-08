@@ -1,129 +1,156 @@
 package dev.augie.roadhome;
 
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.ActivityOptions;
 import android.app.Dialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.pm.LauncherApps;
 import android.content.res.ColorStateList;
-import android.content.pm.ResolveInfo;
-import android.graphics.Color;
 import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.LayerDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.TransitionDrawable;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Process;
+import android.os.SystemClock;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.GridLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-import java.text.Collator;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
+import java.util.HashMap;
 import java.util.Locale;
-import java.util.Set;
+import java.util.Map;
 
-/** Full-width glass app drawer. Package/icon loading happens off the UI thread. */
-final class AppDrawer {
+/**
+ * Full-width glass app drawer. One instance per activity is reused for every opening; it
+ * shows AppCatalog's cached apps and search hides tiles instead of rebuilding them.
+ */
+final class AppDrawer implements AppCatalog.Listener {
     private static final int COLUMNS = 5;
-    private static final class App {
-        final String packageName;
-        final String label;
-        final Drawable icon;
-        App(String packageName, String label, Drawable icon) {
-            this.packageName = packageName;
-            this.label = label;
-            this.icon = icon;
-        }
-    }
+    // A warm capture takes a few milliseconds. Never let a slow one hold the drawer back.
+    private static final long CAPTURE_DEADLINE_MS = 64;
+    private static final int BLUR_FADE_MS = 150;
 
     private final Activity activity;
+    private final AppCatalog catalog;
+    private final FrostedBackdrop backdrop;
+    private final Handler main = new Handler(Looper.getMainLooper());
     private final Dialog dialog;
-    private final GridLayout grid;
+    private final LinearLayout sheet;
     private final EditText search;
     private final TextView status;
-    private final List<App> apps = new ArrayList<>();
-    private final FrameLayout backdrop;
-    private final LinearLayout sheet;
-    private final int sheetWidth;
+    private final ScrollView scroll;
+    private final AppGrid grid;
+    private final Map<LauncherApp.Key, TextView> tiles = new HashMap<>();
+    private final Runnable captureDeadline = this::reveal;
+    /** Identifies the current opening, so a late capture from an earlier one is ignored. */
+    private Object opening;
+    private boolean revealed;
+    private boolean capturedBeforeReveal;
+    private boolean drawn;
+    private long openedAt;
 
-    private AppDrawer(Activity activity) {
+    AppDrawer(Activity activity, AppCatalog catalog) {
+        long started = SystemClock.uptimeMillis();
         this.activity = activity;
+        this.catalog = catalog;
+        backdrop = new FrostedBackdrop(activity);
         dialog = new Dialog(activity);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        sheetWidth = activity.getResources().getDisplayMetrics().widthPixels;
-        backdrop = new FrameLayout(activity);
-        backdrop.setOnClickListener(v -> dialog.dismiss());
-        LinearLayout root = new LinearLayout(activity);
-        sheet = root;
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(Ui.glass(activity));
-        root.setClickable(true);
-        root.setPadding(Ui.dp(activity, 8), Ui.dp(activity, 4), Ui.dp(activity, 8), 0);
+        dialog.setOnDismissListener(ignored -> reset());
+        FrameLayout root = new FrameLayout(activity);
+        root.setBackgroundColor(0x22000000);
+        root.setOnClickListener(v -> dialog.dismiss());
+        sheet = new LinearLayout(activity);
+        sheet.setOrientation(LinearLayout.VERTICAL);
+        sheet.setClickable(true);
+        sheet.setPadding(Ui.dp(activity, 8), Ui.dp(activity, 4), Ui.dp(activity, 8), 0);
         LinearLayout header = new LinearLayout(activity);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.addView(Ui.iconButton(activity, Ui.Icon.CLOSE, "Close apps", dialog::dismiss),
                 new LinearLayout.LayoutParams(Ui.dp(activity, 48), Ui.dp(activity, 48)));
-        search = new EditText(activity);
-        search.setHint("Search apps");
-        search.setContentDescription("Search apps");
-        search.setTextSize(17);
-        search.setTextColor(Ui.TEXT);
-        search.setHintTextColor(Ui.MUTED);
-        search.setSingleLine(true);
-        search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        search.setImeOptions(EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI
-                | EditorInfo.IME_FLAG_NO_FULLSCREEN);
-        search.setOnEditorActionListener((view, action, event) -> {
-            if (action != EditorInfo.IME_ACTION_DONE) return false;
-            InputMethodManager keyboard = activity.getSystemService(InputMethodManager.class);
-            if (keyboard != null) keyboard.hideSoftInputFromWindow(search.getWindowToken(), 0);
-            search.clearFocus();
-            return true;
-        });
-        search.setBackground(Ui.surface(activity, 0x553C536A, 24));
-        search.setPadding(Ui.dp(activity, 16), 0, Ui.dp(activity, 16), 0);
+        search = searchField();
         LinearLayout.LayoutParams searchLayout = new LinearLayout.LayoutParams(0, Ui.dp(activity, 48), 1);
         searchLayout.setMargins(Ui.dp(activity, 8), 0, Ui.dp(activity, 8), 0);
         header.addView(search, searchLayout);
         header.addView(new View(activity), new LinearLayout.LayoutParams(Ui.dp(activity, 48), 1));
-        root.addView(header, new LinearLayout.LayoutParams(-1, Ui.dp(activity, 64)));
-        status = Ui.text(activity, "Loading apps…", 17, Ui.MUTED);
+        sheet.addView(header, new LinearLayout.LayoutParams(-1, Ui.dp(activity, 64)));
+        status = Ui.text(activity, "", 17, Ui.MUTED);
         status.setGravity(Gravity.CENTER);
-        root.addView(status, new LinearLayout.LayoutParams(-1, Ui.dp(activity, 48)));
-        grid = new GridLayout(activity);
-        grid.setColumnCount(COLUMNS);
-        ScrollView scroll = new ScrollView(activity);
-        scroll.setFillViewport(false);
+        sheet.addView(status, new LinearLayout.LayoutParams(-1, Ui.dp(activity, 48)));
+        grid = new AppGrid(activity, COLUMNS, Ui.dp(activity, 100));
+        scroll = new ScrollView(activity);
         scroll.addView(grid);
-        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        FrameLayout.LayoutParams sheetLayout = new FrameLayout.LayoutParams(sheetWidth, -1, Gravity.START);
-        backdrop.addView(root, sheetLayout);
-        dialog.setContentView(backdrop);
-        root.setFocusableInTouchMode(true);
-        root.requestFocus();
-        search.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence text, int start, int count, int after) { }
-            @Override public void onTextChanged(CharSequence text, int start, int before, int count) { render(); }
-            @Override public void afterTextChanged(Editable text) { }
-        });
+        sheet.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        root.addView(sheet, new FrameLayout.LayoutParams(-1, -1));
+        dialog.setContentView(root);
+        sheet.setFocusableInTouchMode(true);
+        sheet.requestFocus();
+        catalog.addListener(this);
+        bind();
+        Log.i("RoadHome", "App drawer prepared with " + tiles.size() + " apps in "
+                + (SystemClock.uptimeMillis() - started) + " ms");
     }
+
+    void show() {
+        if (opening != null) return;
+        Object current = new Object();
+        opening = current;
+        openedAt = SystemClock.uptimeMillis();
+        revealed = false;
+        capturedBeforeReveal = false;
+        drawn = false;
+        catalog.retryIfFailed();
+        sheet.setBackground(clearGlass());
+        backdrop.capture(activity, new FrostedBackdrop.Listener() {
+            @Override public void onCaptured() {
+                if (opening != current) return;
+                capturedBeforeReveal = !revealed;
+                reveal();
+            }
+            @Override public void onBlurred(Bitmap bitmap) {
+                if (opening != current) return;
+                if (capturedBeforeReveal) frost(bitmap);
+                else Log.i("RoadHome", "Backdrop capture finished after the drawer appeared; "
+                        + "keeping clear glass so the blur cannot include the drawer");
+            }
+            @Override public void onUnavailable() { if (opening == current) reveal(); }
+        });
+        main.postDelayed(captureDeadline, CAPTURE_DEADLINE_MS);
+    }
+
+    /** Hides the drawer immediately, for example when an app opens over it. */
+    void dismiss() { if (dialog.isShowing()) dialog.dismiss(); else reset(); }
+
+    void release() {
+        dismiss();
+        catalog.removeListener(this);
+        backdrop.release();
+    }
+
+    @Override public void onAppsChanged(AppCatalog catalog) { bind(); }
 
     static void open(Activity activity, String packageName) {
         if (EmbeddedVideo.PACKAGE.equals(packageName) && activity instanceof MainActivity
@@ -148,7 +175,7 @@ final class AppDrawer {
             try {
                 if (VideoTask.openFullscreen(activity)) return true;
             } catch (ReflectiveOperationException | RuntimeException error) {
-                android.util.Log.e("RoadHome", "Could not restore the existing video task", error);
+                Log.e("RoadHome", "Could not restore the existing video task", error);
                 Toast.makeText(activity, "The video could not be restored. Open it from Recents; existing tasks were left intact.",
                         Toast.LENGTH_LONG).show();
                 return false;
@@ -160,42 +187,42 @@ final class AppDrawer {
             return false;
         }
         try {
-            ActivityOptions options = ActivityOptions.makeBasic();
-            options.setLaunchDisplayId(activity.getWindowManager().getDefaultDisplay().getDisplayId());
-            activity.startActivity(launch, options.toBundle());
+            activity.startActivity(launch, mainDisplay(activity));
             return true;
         }
         catch (ActivityNotFoundException | SecurityException error) {
-            android.util.Log.e("RoadHome", "Cannot launch " + packageName, error);
+            Log.e("RoadHome", "Cannot launch " + packageName, error);
             Toast.makeText(activity, "Android could not open this app. Try another app.", Toast.LENGTH_LONG).show();
             return false;
         }
     }
 
-    static void show(Activity activity) { new AppDrawer(activity).show(); }
-
-    private void show() {
-        FrostedBackdrop.capture(activity, new FrostedBackdrop.Listener() {
-            @Override public void onCaptured(Bitmap bitmap) {
-                if (activity.isFinishing() || activity.isDestroyed()) { bitmap.recycle(); return; }
-                BitmapDrawable image = new BitmapDrawable(activity.getResources(), bitmap);
-                image.setGravity(Gravity.FILL);
-                sheet.setBackground(new LayerDrawable(new Drawable[]{image,
-                        new ColorDrawable(0xB8101922), Ui.glass(activity)}));
-                backdrop.setBackgroundColor(0x22000000);
-                showSheet();
-            }
-            @Override public void onUnavailable() {
-                if (activity.isFinishing() || activity.isDestroyed()) return;
-                sheet.setBackground(new LayerDrawable(new Drawable[]{
-                        new ColorDrawable(0xEE101922), Ui.glass(activity)}));
-                backdrop.setBackgroundColor(0x22000000);
-                showSheet();
-            }
-        });
+    /** Apps from another profile, such as a work profile, open through LauncherApps. */
+    private static void openInProfile(Activity activity, LauncherApp app) {
+        MainActivity home = activity instanceof MainActivity ? (MainActivity) activity : null;
+        if (home != null) home.externalAppOpening();
+        try {
+            LauncherApps launcherApps = activity.getSystemService(LauncherApps.class);
+            if (launcherApps == null) throw new SecurityException("LauncherApps service is unavailable");
+            launcherApps.startMainActivity(app.component, app.key.user, null, mainDisplay(activity));
+        } catch (ActivityNotFoundException | SecurityException error) {
+            Log.e("RoadHome", "Cannot launch " + app.component + " in profile " + app.key.user, error);
+            Toast.makeText(activity, "Android could not open this app in its profile. "
+                    + "Check that the profile is turned on.", Toast.LENGTH_LONG).show();
+            if (home != null) home.externalAppFailed();
+        }
     }
 
-    private void showSheet() {
+    private static Bundle mainDisplay(Activity activity) {
+        ActivityOptions options = ActivityOptions.makeBasic();
+        options.setLaunchDisplayId(activity.getWindowManager().getDefaultDisplay().getDisplayId());
+        return options.toBundle();
+    }
+
+    private void reveal() {
+        if (revealed || opening == null) return;
+        revealed = true;
+        main.removeCallbacks(captureDeadline);
         if (BuildConfig.WINDOWED_MAPS && dialog.getWindow() != null) {
             dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
         }
@@ -212,64 +239,145 @@ final class AppDrawer {
                     | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                     | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
         }
-        new Thread(() -> {
-            List<App> loaded = new ArrayList<>();
-            try {
-                Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-                Set<String> seen = new HashSet<>();
-                for (ResolveInfo item : activity.getPackageManager().queryIntentActivities(query, 0)) {
-                    String packageName = item.activityInfo.packageName;
-                    if (packageName.equals(activity.getPackageName()) || !seen.add(packageName)) continue;
-                    loaded.add(new App(packageName, item.loadLabel(activity.getPackageManager()).toString(),
-                            item.loadIcon(activity.getPackageManager())));
-                }
-                Collator collator = Collator.getInstance();
-                loaded.sort((a, b) -> collator.compare(a.label, b.label));
-                activity.runOnUiThread(() -> {
-                    if (!dialog.isShowing()) return;
-                    apps.addAll(loaded);
-                    render();
-                });
-            } catch (RuntimeException error) {
-                android.util.Log.e("RoadHome", "Could not load launchable applications", error);
-                activity.runOnUiThread(() -> {
-                    if (dialog.isShowing()) status.setText(R.string.apps_unavailable);
-                });
-            }
-        }, "RoadHome-apps").start();
+        logFirstFrame();
     }
 
-    private void render() {
+    private void logFirstFrame() {
+        ViewTreeObserver observer = sheet.getViewTreeObserver();
+        observer.addOnDrawListener(new ViewTreeObserver.OnDrawListener() {
+            @Override public void onDraw() {
+                if (drawn) return;
+                drawn = true;
+                Log.i("RoadHome", "App drawer drew " + visibleTiles() + " apps "
+                        + (SystemClock.uptimeMillis() - openedAt) + " ms after opening");
+                ViewTreeObserver.OnDrawListener self = this;
+                // A draw listener cannot remove itself during dispatch.
+                main.post(() -> { if (observer.isAlive()) observer.removeOnDrawListener(self); });
+            }
+        });
+    }
+
+    private void frost(Bitmap bitmap) {
+        BitmapDrawable image = new BitmapDrawable(activity.getResources(), bitmap);
+        image.setGravity(Gravity.FILL);
+        TransitionDrawable glass = new TransitionDrawable(new Drawable[]{clearGlass(),
+                new LayerDrawable(new Drawable[]{image, new ColorDrawable(0xB8101922), Ui.glass(activity)})});
+        glass.setCrossFadeEnabled(true);
+        sheet.setBackground(glass);
+        glass.startTransition(drawn && ValueAnimator.areAnimatorsEnabled() ? BLUR_FADE_MS : 0);
+    }
+
+    private Drawable clearGlass() {
+        return new LayerDrawable(new Drawable[]{new ColorDrawable(0xEE101922), Ui.glass(activity)});
+    }
+
+    private void reset() {
+        opening = null;
+        main.removeCallbacks(captureDeadline);
+        search.setText("");
+        search.clearFocus();
+        sheet.requestFocus();
+        scroll.scrollTo(0, 0);
+    }
+
+    private void bind() {
+        Map<LauncherApp.Key, TextView> previous = new HashMap<>(tiles);
+        tiles.clear();
         grid.removeAllViews();
-        String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
-        int width = (sheetWidth - Ui.dp(activity, 16)) / COLUMNS;
-        for (App app : apps) {
-            if (!app.label.toLowerCase(Locale.ROOT).contains(query)) continue;
-            LinearLayout item = new LinearLayout(activity);
-            item.setOrientation(LinearLayout.VERTICAL);
-            item.setGravity(Gravity.CENTER);
-            item.setBackground(new RippleDrawable(ColorStateList.valueOf(0x3384BFFF),
-                    Ui.surface(activity, Color.TRANSPARENT, 12), null));
-            ImageView icon = new ImageView(activity);
-            icon.setImageDrawable(new AppIcon(app.icon));
-            icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            item.addView(icon, new LinearLayout.LayoutParams(Ui.dp(activity, 48), Ui.dp(activity, 48)));
-            TextView label = Ui.text(activity, app.label, 15, Ui.TEXT);
-            label.setGravity(Gravity.CENTER);
-            label.setMaxLines(2);
-            label.setEllipsize(TextUtils.TruncateAt.END);
-            LinearLayout.LayoutParams labelLayout = new LinearLayout.LayoutParams(-1, Ui.dp(activity, 38));
-            labelLayout.topMargin = Ui.dp(activity, 8);
-            item.addView(label, labelLayout);
-            item.setContentDescription(app.label);
-            item.setFocusable(true);
-            item.setOnClickListener(v -> { dialog.dismiss(); open(activity, app.packageName); });
-            GridLayout.LayoutParams layout = new GridLayout.LayoutParams();
-            layout.width = width;
-            layout.height = Ui.dp(activity, 100);
-            grid.addView(item, layout);
+        for (LauncherApp app : catalog.apps()) {
+            TextView tile = previous.remove(app.key);
+            if (tile == null) tile = tile();
+            if (tile.getTag() != app) bindTile(tile, app);
+            tiles.put(app.key, tile);
+            grid.addView(tile);
         }
-        status.setText(apps.isEmpty() ? R.string.no_apps : R.string.no_matching_apps);
-        status.setVisibility(grid.getChildCount() == 0 ? View.VISIBLE : View.GONE);
+        filter();
+    }
+
+    private void filter() {
+        String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
+        for (int i = 0; i < grid.getChildCount(); i++) {
+            View tile = grid.getChildAt(i);
+            LauncherApp app = (LauncherApp) tile.getTag();
+            tile.setVisibility(app.label.toLowerCase(Locale.ROOT).contains(query) ? View.VISIBLE : View.GONE);
+        }
+        showStatus();
+    }
+
+    private void showStatus() {
+        switch (catalog.status()) {
+            case LOADING: status.setText(R.string.loading_apps); break;
+            case FAILED: status.setText(R.string.apps_unavailable); break;
+            case READY:
+                if (catalog.apps().isEmpty()) status.setText(R.string.no_apps);
+                else if (visibleTiles() == 0) status.setText(R.string.no_matching_apps);
+                else { status.setVisibility(View.GONE); return; }
+                break;
+        }
+        status.setVisibility(View.VISIBLE);
+    }
+
+    private int visibleTiles() {
+        int visible = 0;
+        for (int i = 0; i < grid.getChildCount(); i++) {
+            if (grid.getChildAt(i).getVisibility() == View.VISIBLE) visible++;
+        }
+        return visible;
+    }
+
+    private TextView tile() {
+        TextView tile = Ui.text(activity, "", 15, Ui.TEXT);
+        tile.setGravity(Gravity.CENTER_HORIZONTAL);
+        tile.setMaxLines(2);
+        tile.setEllipsize(TextUtils.TruncateAt.END);
+        tile.setCompoundDrawablePadding(Ui.dp(activity, 8));
+        tile.setPadding(Ui.dp(activity, 4), Ui.dp(activity, 6), Ui.dp(activity, 4), 0);
+        tile.setBackground(new RippleDrawable(ColorStateList.valueOf(0x3384BFFF),
+                Ui.surface(activity, Color.TRANSPARENT, 12), null));
+        tile.setFocusable(true);
+        return tile;
+    }
+
+    private void bindTile(TextView tile, LauncherApp app) {
+        tile.setTag(app);
+        tile.setText(app.label);
+        tile.setContentDescription(app.label);
+        BitmapDrawable icon = new BitmapDrawable(activity.getResources(), app.icon);
+        int size = Ui.dp(activity, AppCatalog.ICON_DP);
+        icon.setBounds(0, 0, size, size);
+        tile.setCompoundDrawables(null, icon, null, null);
+        tile.setOnClickListener(v -> {
+            dismiss();
+            if (Process.myUserHandle().equals(app.key.user)) open(activity, app.key.packageName);
+            else openInProfile(activity, app);
+        });
+    }
+
+    private EditText searchField() {
+        EditText field = new EditText(activity);
+        field.setHint("Search apps");
+        field.setContentDescription("Search apps");
+        field.setTextSize(17);
+        field.setTextColor(Ui.TEXT);
+        field.setHintTextColor(Ui.MUTED);
+        field.setSingleLine(true);
+        field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        field.setImeOptions(EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                | EditorInfo.IME_FLAG_NO_FULLSCREEN);
+        field.setOnEditorActionListener((view, action, event) -> {
+            if (action != EditorInfo.IME_ACTION_DONE) return false;
+            InputMethodManager keyboard = activity.getSystemService(InputMethodManager.class);
+            if (keyboard != null) keyboard.hideSoftInputFromWindow(field.getWindowToken(), 0);
+            field.clearFocus();
+            return true;
+        });
+        field.setBackground(Ui.surface(activity, 0x553C536A, 24));
+        field.setPadding(Ui.dp(activity, 16), 0, Ui.dp(activity, 16), 0);
+        field.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence text, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence text, int start, int before, int count) { filter(); }
+            @Override public void afterTextChanged(Editable text) { }
+        });
+        return field;
     }
 }
