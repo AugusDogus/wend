@@ -232,7 +232,7 @@ final class MediaPanel extends LinearLayout {
         CharSequence track = description == null ? null : description.getTitle();
         CharSequence subtitle = description == null ? null : description.getSubtitle();
         title.setText(TextUtils.isEmpty(track) ? "Nothing playing" : track);
-        artist.setText(TextUtils.isEmpty(subtitle) ? "Choose something in your music app" : subtitle);
+        artist.setText(TextUtils.isEmpty(subtitle) ? "Choose something to play" : subtitle);
         Bitmap bitmap = description == null ? null : description.getIconBitmap();
         if (bitmap == null && metadata != null) bitmap = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
         MediaMetadata videoMetadata = videoController == null ? null : videoController.getMetadata();

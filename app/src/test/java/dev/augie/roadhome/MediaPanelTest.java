@@ -301,6 +301,27 @@ public class MediaPanelTest {
         }
     }
 
+    /** Design feedback (fixtures): "Choose something in your musi…" at the 70% layout, 357 px wide. */
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Config(qualifiers = "w853dp-h480dp-land-hdpi")
+    @Test public void theEmptyPanelSubtitleFitsTheNarrowestPanel() {
+        try (ActivityController<Activity> host = Robolectric.buildActivity(Activity.class).setup()) {
+            Activity activity = host.get();
+            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { }, () -> { });
+            activity.setContentView(panel, new ViewGroup.LayoutParams(357, 720));
+            try {
+                panel.start();
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                android.widget.TextView subtitle = (android.widget.TextView) panel.getChildAt(3);
+                assertEquals("Nothing playing", ((android.widget.TextView) panel.getChildAt(2)).getText().toString());
+                assertTrue("Laid out", subtitle.getLayout() != null);
+                assertEquals("\"" + subtitle.getText() + "\" is not cut off", 0, subtitle.getLayout().getEllipsisCount(0));
+            } finally {
+                panel.stop(); panel.release();
+            }
+        }
+    }
+
     private static Bitmap draw(View view) {
         Bitmap drawn = Bitmap.createBitmap(view.getWidth(), view.getHeight(), Bitmap.Config.ARGB_8888);
         view.draw(new Canvas(drawn));
