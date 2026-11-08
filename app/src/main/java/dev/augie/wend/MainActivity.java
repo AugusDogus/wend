@@ -25,13 +25,17 @@ public final class MainActivity extends Activity {
         @Override public void settled(FloatingPlacement.Corner corner) {
             settings.setFloatingVideoCorner(corner);
         }
-        @Override public void tapped() { swapToVideo(); }
+        @Override public void fullscreen() { swapToVideo(); }
+        // It returns to its card paused, as closing Android's PiP stops the video.
+        @Override public void closed() { media.pauseVideo(); }
     };
     private final LiveSurfaceWindow.Listener floatingMaps = new LiveSurfaceWindow.Listener() {
         @Override public void settled(FloatingPlacement.Corner corner) {
             settings.setFloatingMapsCorner(corner);
         }
-        @Override public void tapped() { swapToMaps(); }
+        @Override public void fullscreen() { swapToMaps(); }
+        // Maps keeps navigating in its panel; its window's end returns it there.
+        @Override public void closed() { }
     };
 
     @Override public void onCreate(Bundle savedInstanceState) {

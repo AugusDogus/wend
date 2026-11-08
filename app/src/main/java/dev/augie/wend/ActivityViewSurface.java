@@ -33,6 +33,8 @@ class ActivityViewSurface {
         KEPT
     }
 
+    /** Layer of a display presented in another window: below that window's own buffer. */
+    static final int BELOW_WINDOW = -1;
     private final SurfaceControl surface;
     private final PreviewInput previewInput;
     private final SurfaceView parent;
@@ -145,12 +147,16 @@ class ActivityViewSurface {
         inPreview = false;
     }
 
-    /** Puts our live display in another window at {@code placement}, without input, in one frame. */
+    /**
+     * Puts our live display in another window at {@code placement}, without input, in one frame.
+     * It sits below that window's own (transparent) buffer, so whatever the window draws, such as
+     * a floating window's controls, shows above it.
+     */
     void attach(View destination, SurfacePlacement placement, float radius, float alpha)
             throws ReflectiveOperationException {
         try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
             reparent.invoke(transaction, surface, windowSurface(destination));
-            transaction.setLayer(surface, 1);
+            transaction.setLayer(surface, BELOW_WINDOW);
             touchableRegion.setEmpty();
             updateInput(transaction);
             place(transaction, placement, radius, alpha);

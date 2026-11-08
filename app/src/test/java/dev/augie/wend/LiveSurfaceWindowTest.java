@@ -84,10 +84,7 @@ public class LiveSurfaceWindowTest {
         card.layout(0, 0, 320, 180);
         window.openFloating(card, null, new RectF(16, 122, 496, 392), new Point(1280, 720),
                 new FloatingPlacement(new Rect(0, 36, 1280, 720), 432, 243, 24),
-                FloatingPlacement.Corner.BOTTOM_RIGHT, entry, new LiveSurfaceWindow.Listener() {
-                    @Override public void settled(FloatingPlacement.Corner corner) { events.add("settled " + corner); }
-                    @Override public void tapped() { events.add("tapped"); }
-                }, () -> events.add("restored"));
+                FloatingPlacement.Corner.BOTTOM_RIGHT, entry, listener(), () -> events.add("restored"));
     }
 
     @Test public void aFloatingWindowThatNeverGetsAFrameRestoresWithoutOpeningAnything() {
@@ -255,12 +252,109 @@ public class LiveSurfaceWindowTest {
         assertEquals(corner, touchRegion());
         // A second tap on the dock's Maps button, where the video has just arrived.
         tap(corner.exactCenterX(), corner.exactCenterY());
-        assertEquals(List.of(), events);
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(LiveSurfaceWindow.ENTRY_TAP_GRACE_MS));
         tap(corner.exactCenterX(), corner.exactCenterY());
-        assertEquals(List.of("tapped"), events);
+        waitFor(FloatingDrag.DOUBLE_TAP_MS);
+        assertEquals(List.of(), events);
+        assertFalse(window.controlsShown());
+        waitFor(LiveSurfaceWindow.ENTRY_TAP_GRACE_MS);
+        tap(corner.exactCenterX(), corner.exactCenterY());
+        waitFor(FloatingDrag.DOUBLE_TAP_MS);
+        assertTrue(window.controlsShown());
         window.cancel();
     }
+
+    /** The floating window resting in its corner, past its entry's tap grace. */
+    private DrawnSurface restingFloating() throws Exception {
+        DrawnSurface surface = DrawnSurface.of(host);
+        openFloating(surface, LiveSurfaceWindow.Entry.FROM_CARD);
+        commitFrame();
+        settle();
+        waitFor(LiveSurfaceWindow.ENTRY_TAP_GRACE_MS);
+        return surface;
+    }
+
+    private static final Rect CORNER = new FloatingPlacement(new Rect(0, 36, 1280, 720), 432, 243, 24)
+            .rest(FloatingPlacement.Corner.BOTTOM_RIGHT);
+    /** Robolectric's density is 1, so the 48 dp controls are 48 px. */
+    private static final Rect CLOSE = new Rect(CORNER.right - 48, CORNER.top, CORNER.right, CORNER.top + 48);
+
+    @Test public void aTapShowsTheControlsAndTheyFadeOnTheirOwn() throws Exception {
+        restingFloating();
+        tap(900, 650);
+        assertFalse("A second tap could still make it a double tap", window.controlsShown());
+        waitFor(FloatingDrag.DOUBLE_TAP_MS);
+        assertTrue(window.controlsShown());
+        // Robolectric's frames make each wait a little longer than asked.
+        waitFor(LiveSurfaceWindow.MENU_MS - 400);
+        assertTrue(window.controlsShown());
+        waitFor(400);
+        assertFalse(window.controlsShown());
+        assertEquals("A tap only shows the controls", List.of(), events);
+        window.cancel();
+    }
+
+    @Test public void aTapAwayFromTheShownControlsHidesThem() throws Exception {
+        restingFloating();
+        tap(900, 650);
+        waitFor(FloatingDrag.DOUBLE_TAP_MS);
+        tap(900, 650);
+        waitFor(FloatingDrag.DOUBLE_TAP_MS);
+        assertFalse(window.controlsShown());
+        assertEquals(List.of(), events);
+        window.cancel();
+    }
+
+    @Test public void aDoubleTapOpensTheWindowFullscreen() throws Exception {
+        restingFloating();
+        tap(900, 650);
+        tap(900, 650);
+        waitFor(1000);
+        assertEquals(List.of("fullscreen"), events);
+        assertFalse(window.controlsShown());
+        window.cancel();
+    }
+
+    @Test public void theFullscreenControlOpensTheWindowFullscreen() throws Exception {
+        restingFloating();
+        tap(900, 650);
+        waitFor(FloatingDrag.DOUBLE_TAP_MS);
+        tap(CORNER.exactCenterX(), CORNER.exactCenterY());
+        assertEquals(List.of("fullscreen"), events);
+        window.cancel();
+    }
+
+    @Test public void theCloseControlClosesTheWindow() throws Exception {
+        restingFloating();
+        tap(CLOSE.exactCenterX(), CLOSE.exactCenterY());
+        waitFor(FloatingDrag.DOUBLE_TAP_MS);
+        assertEquals("Hidden controls take no taps", List.of(), events);
+        assertTrue("That tap showed them", window.controlsShown());
+        tap(CLOSE.exactCenterX(), CLOSE.exactCenterY());
+        assertEquals("A shown control acts at once", List.of("closed"), events);
+        assertEquals("Touches reach the app below at once", new Rect(), touchRegion());
+        settle();
+        assertEquals(List.of("closed", "restored"), events);
+        assertFalse(window.active());
+    }
+
+    @Test public void aWindowDraggedOffTheBottomLeavesDownwardAndCloses() throws Exception {
+        DrawnSurface surface = restingFloating();
+        long down = SystemClock.uptimeMillis();
+        touch(MotionEvent.ACTION_DOWN, down, 1040, 574);
+        for (int y = 600; y <= 700; y += 25) {
+            waitFor(100);
+            touch(MotionEvent.ACTION_MOVE, down, 1040, y);
+        }
+        waitFor(100);
+        touch(MotionEvent.ACTION_UP, down, 1040, 700);
+        assertEquals(List.of("closed"), events);
+        settle();
+        assertEquals(List.of("closed", "restored"), events);
+        assertTrue("It left below the screen", surface.last().top >= 720);
+        assertFalse(window.active());
+    }
+
+    private static void waitFor(int ms) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms)); }
 
     @Test public void aSnappingWindowTakesTouchesWhereItIsDrawn() throws Exception {
         DrawnSurface surface = DrawnSurface.of(host);
@@ -317,7 +411,8 @@ public class LiveSurfaceWindowTest {
     private LiveSurfaceWindow.Listener listener() {
         return new LiveSurfaceWindow.Listener() {
             @Override public void settled(FloatingPlacement.Corner corner) { events.add("settled " + corner); }
-            @Override public void tapped() { events.add("tapped"); }
+            @Override public void fullscreen() { events.add("fullscreen"); }
+            @Override public void closed() { events.add("closed"); }
         };
     }
 
