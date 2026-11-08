@@ -31,7 +31,7 @@ def main():
     if not signer.is_file() or not args.apk.is_file():
         parser.error("The input APK or SDK build-tools/36.0.0/apksigner is missing.")
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="road-home-sign-") as directory:
+    with tempfile.TemporaryDirectory(prefix="wend-sign-") as directory:
         folder = Path(directory)
         for name in ("platform.x509.pem", "platform.pk8"):
             target = folder / name

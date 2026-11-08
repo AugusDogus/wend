@@ -51,18 +51,18 @@ def main():
             partition.write_bytes(stream.read(VENDOR_LENGTH))
         commands = [
             "mkdir /overlay",
-            f'write "{overlay}" /overlay/RoadHomeFocus.apk',
+            f'write "{overlay}" /overlay/WendFocus.apk',
             "set_inode_field /overlay mode 040755",
-            "set_inode_field /overlay/RoadHomeFocus.apk mode 0100644",
+            "set_inode_field /overlay/WendFocus.apk mode 0100644",
             "ea_set /overlay security.selinux u:object_r:vendor_overlay_file:s0",
-            "ea_set /overlay/RoadHomeFocus.apk security.selinux u:object_r:vendor_overlay_file:s0",
+            "ea_set /overlay/WendFocus.apk security.selinux u:object_r:vendor_overlay_file:s0",
         ]
         for command in commands:
             subprocess.run(["debugfs", "-w", "-R", command, str(partition)], check=True,
                            stdout=subprocess.DEVNULL)
         # debugfs can exit zero even when a command fails. Verify the actual bytes.
         extracted = folder / "verified.apk"
-        subprocess.run(["debugfs", "-R", f'dump /overlay/RoadHomeFocus.apk "{extracted}"', str(partition)], check=True)
+        subprocess.run(["debugfs", "-R", f'dump /overlay/WendFocus.apk "{extracted}"', str(partition)], check=True)
         if not extracted.is_file() or extracted.read_bytes() != overlay.read_bytes():
             raise SystemExit("Overlay verification failed. AVD boot configuration was not changed.")
         with image.open("r+b") as stream:

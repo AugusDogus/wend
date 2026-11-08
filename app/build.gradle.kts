@@ -1,10 +1,10 @@
 plugins { id("com.android.application") }
 android {
-    namespace = "dev.augie.roadhome"
+    namespace = "dev.augie.wend"
     compileSdk = 35
     buildFeatures { buildConfig = true }
     defaultConfig {
-        applicationId = "dev.augie.roadhome"
+        applicationId = "dev.augie.wend"
         minSdk = 29
         targetSdk = 29
         versionCode = 1

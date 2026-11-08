@@ -57,8 +57,8 @@ public final class FixtureActivity extends Activity implements SurfaceHolder.Cal
         if (BuildConfig.VIDEO) setupVideo(root);
         else button(root, "Mark route active", () -> { route = true; update(); });
         button(root, "Toggle automatic PiP", () -> { autoPip = !autoPip; update(); });
-        button(root, "Return to Road Home", () -> startActivity(new Intent(Intent.ACTION_MAIN)
-                .addCategory(Intent.CATEGORY_HOME).setPackage("dev.augie.roadhome.emulator")
+        button(root, "Return to Wend", () -> startActivity(new Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_HOME).setPackage("dev.augie.wend.emulator")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
         if (BuildConfig.VIDEO) {
             root.setBackgroundColor(0xff172033);
@@ -95,7 +95,7 @@ public final class FixtureActivity extends Activity implements SurfaceHolder.Cal
                     if (change < 0) pause();
                     update();
                 }).build();
-        session = new MediaSession(this, "Road Home emulator video");
+        session = new MediaSession(this, "Wend emulator video");
         session.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
         session.setCallback(new MediaSession.Callback() {
             @Override public void onPlay() { play(); }
