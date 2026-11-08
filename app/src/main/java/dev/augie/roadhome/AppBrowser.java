@@ -14,7 +14,9 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -35,7 +37,8 @@ final class AppBrowser implements AppCatalog.Listener {
     private final AppCatalog catalog;
     private final Chooser chooser;
     private final int allHiddenMessage;
-    private final int hiddenMatchMessage;
+    private final int hiddenMatchOne;
+    private final int hiddenMatchMany;
     private final EditText search;
     private final TextView status;
     private final ScrollView scroll;
@@ -46,16 +49,18 @@ final class AppBrowser implements AppCatalog.Listener {
     private Predicate<LauncherApp> hidden = app -> false;
 
     /**
-     * {@code allHiddenMessage} explains an empty grid when every app is hidden, and
-     * {@code hiddenMatchMessage} (formatted with the query) when only hidden apps match it.
+     * {@code allHiddenMessage} explains an empty grid when every app is hidden. When only
+     * hidden apps match the query, {@code hiddenMatchOne} is formatted with that app's label
+     * and {@code hiddenMatchMany} with the query.
      */
     AppBrowser(Activity activity, AppCatalog catalog, String searchHint, int allHiddenMessage,
-            int hiddenMatchMessage, Chooser chooser) {
+            int hiddenMatchOne, int hiddenMatchMany, Chooser chooser) {
         this.activity = activity;
         this.catalog = catalog;
         this.chooser = chooser;
         this.allHiddenMessage = allHiddenMessage;
-        this.hiddenMatchMessage = hiddenMatchMessage;
+        this.hiddenMatchOne = hiddenMatchOne;
+        this.hiddenMatchMany = hiddenMatchMany;
         search = searchField(searchHint);
         body = new FrameLayout(activity);
         grid = new AppGrid(activity, COLUMNS, Ui.dp(activity, CELL_DP));
@@ -117,31 +122,40 @@ final class AppBrowser implements AppCatalog.Listener {
 
     private void filter() {
         String query = query();
-        boolean hiddenMatch = false;
+        List<String> hiddenMatches = new ArrayList<>();
         for (int i = 0; i < grid.getChildCount(); i++) {
             View tile = grid.getChildAt(i);
             LauncherApp app = (LauncherApp) tile.getTag();
             boolean matches = app.label.toLowerCase(Locale.ROOT).contains(query);
             boolean isHidden = hidden.test(app);
-            if (matches && isHidden) hiddenMatch = true;
+            if (matches && isHidden) hiddenMatches.add(app.label);
             tile.setVisibility(matches && !isHidden ? View.VISIBLE : View.GONE);
         }
-        showStatus(hiddenMatch);
+        showStatus(hiddenMatches);
     }
 
     private String typedQuery() { return search.getText().toString().trim(); }
     private String query() { return typedQuery().toLowerCase(Locale.ROOT); }
 
-    private void showStatus(boolean hiddenMatch) {
+    private void showStatus(List<String> hiddenMatches) {
         switch (catalog.status()) {
             case LOADING: status.setText(R.string.loading_apps); break;
             case FAILED: status.setText(R.string.apps_unavailable); break;
             case READY:
-                if (catalog.apps().isEmpty()) status.setText(R.string.no_apps);
-                else if (visibleTiles() > 0) { status.setVisibility(View.GONE); return; }
-                else if (query().isEmpty()) status.setText(allHiddenMessage);
-                else if (hiddenMatch) status.setText(activity.getString(hiddenMatchMessage, typedQuery()));
-                else status.setText(activity.getString(R.string.no_matching_apps, typedQuery()));
+                if (catalog.apps().isEmpty()) {
+                    status.setText(R.string.no_apps);
+                } else if (visibleTiles() > 0) {
+                    status.setVisibility(View.GONE);
+                    return;
+                } else if (query().isEmpty()) {
+                    status.setText(allHiddenMessage);
+                } else if (hiddenMatches.size() == 1) {
+                    status.setText(activity.getString(hiddenMatchOne, hiddenMatches.get(0)));
+                } else if (!hiddenMatches.isEmpty()) {
+                    status.setText(activity.getString(hiddenMatchMany, typedQuery()));
+                } else {
+                    status.setText(activity.getString(R.string.no_matching_apps, typedQuery()));
+                }
                 break;
         }
         status.setVisibility(View.VISIBLE);

@@ -79,7 +79,7 @@ final class SettingsSheet implements AppCatalog.Listener {
         this.host = host;
         pins = settings.dockPins(dockCapacity);
         picker = new AppBrowser(activity, catalog, activity.getString(R.string.settings_search_hint),
-                R.string.every_app_pinned, R.string.matching_apps_pinned, this::pin);
+                R.string.every_app_pinned, R.string.matching_app_pinned, R.string.matching_apps_pinned, this::pin);
 
         SettingsRows rows = new SettingsRows(activity);
         mainHeader = rows.header(Ui.Icon.CLOSE, R.string.settings_close, this::close,
