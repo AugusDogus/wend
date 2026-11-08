@@ -26,7 +26,7 @@ The app drawer spans the full screen width with five columns, centered search, a
 
 The drawer backdrop uses Android 10's privileged screen-capture API and a downsampled RenderScript blur. Capture and blur run off the main thread; captures stay in memory and are never written or transmitted. The API overload excludes secure layers. If capture or blur fails, the event is logged and a translucent fallback is shown. The launcher itself has no Internet permission.
 
-The drawer opens from a cached app catalog as a draggable glass sheet; see [launcher UI behavior and validation](docs/launcher-ui.md).
+The app drawer, configurable dock and settings sheet are described in [launcher UI behavior and validation](docs/launcher-ui.md).
 
 This intentionally targets Android 10's hidden `ActivityView` API. `platform-stubs` supplies compile-only declarations matching AOSP Android 10; it is not packaged. A matching platform signature is required for the system UID and media/control permissions. Installing this APK grants broad system privileges. It never sets itself as the default home app.
 

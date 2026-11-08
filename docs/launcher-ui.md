@@ -1,10 +1,15 @@
-# Launcher app catalog and drawer sheet
+# Launcher UI: app catalog, drawer, dock and settings
 
 The user reported that the app list took seconds to load on every opening and could
 not be dragged down to dismiss. The drawer now shows a launcher-wide cached catalog
 immediately and is a draggable glass bottom sheet. Validated on the
 `road-home-google-api29` emulator (Android 10, 1280 x 720, 240 dpi) with the
 release build on November 7, 2026. Not yet installed on the PX6.
+
+The user then reported that settings looked bad and could not add or remove dock
+apps. The dock is now a configurable list of pins, and settings is a glass sheet with
+live layout controls and a dock editor; see [Configurable dock](#configurable-dock)
+and [Settings sheet](#settings-sheet). Same emulator and build type, same day.
 
 ## App catalog
 
@@ -40,19 +45,24 @@ default activity icon.
 
 ## Drawer
 
-`MainActivity` keeps one `AppDrawer`, built when the launcher first goes idle. Tiles
+`MainActivity` keeps one `AppDrawer`, built when the launcher first goes idle. Its
+grid and search are an `AppBrowser`, which the settings app picker reuses. Tiles
 are single `TextView`s with a compound icon in `AppGrid`, which lays out fixed cells
 and skips hidden tiles. Search only toggles tile visibility. Catalog changes reuse
 existing tiles by package and profile. Dismissal clears the query and scrolls to the
 top. Rows fade under the header and at the bottom edge. Tapping a tile removes the
-sheet at once and opens the app through the existing Maps and YouTube task paths;
-apps in another profile open through `LauncherApps.startMainActivity`.
+sheet at once and opens the app through `AppLaunch`, which keeps the existing Maps
+and YouTube task paths; apps in another profile open through
+`LauncherApps.startMainActivity`.
 
 ## Bottom sheet
 
-`BottomSheet` is a reusable glass sheet in its own window. The settings screen can
-supply a different header and body. Related classes: `SheetPanel` (touch),
+`BottomSheet` is a reusable glass sheet in its own window; the drawer and settings
+each supply a header and body. Related classes: `SheetPanel` (touch),
 `SheetDrag` (release rules), `SheetGlass` (surface), `FrostedBackdrop` (capture).
+Both sheets share one `FrostedBackdrop` (one worker thread and RenderScript context),
+owned and released by `MainActivity`. `SheetGlass.Density` is `LIGHT` for the drawer's
+icon grid and `DENSE` for settings, which is mostly text (see below).
 
 - Layout: full width, a 24 dp frosted gap above, 16 dp top corners, a 36 x 4 dp
   handle centered in a 20 dp zone, then the 48 dp header row.
@@ -133,3 +143,161 @@ Also verified on the emulator, with screenshots and recordings:
   decorative to accessibility services.
 
 Evidence (git-ignored): `build/evidence/app-catalog/` and `build/evidence/drawer-sheet/`.
+
+## Configurable dock
+
+The dock column is `Dock`: the clock and date, the pinned apps, then the fixed Apps
+and Settings buttons. Pins are a `DockPins` value: an ordered list of distinct, valid
+package names (two or more dot-separated segments, each starting with a letter).
+
+- Default: `BuildConfig.MAPS_PACKAGE`, then `com.spotify.music`.
+- Stored in SharedPreferences `layout`, key `dockPins`, as comma-separated packages.
+  A missing key means the defaults; an empty string is a dock the user emptied.
+  Invalid names, repeats and pins past the capacity are dropped and logged; a value
+  of the wrong type is logged and reads as the defaults.
+- Capacity: `DockLayout.pinCapacity` takes the display's shorter side in dp. The
+  clock (42), date (22), bottom padding (4), Apps and Settings (52 each: a 48 dp target
+  plus a 4 dp gap) leave 308 of 480 dp, so five 52 dp slots fit on the PX6.
+- Icons come from `AppCatalog`, so the dock follows installs, removals and pin changes
+  live. A pin whose app is not installed (or not in the main profile) is skipped in
+  the dock but stays stored, and comes back in place when the app is reinstalled.
+  Until the catalog first loads, the dock reserves the pins' slots so the Apps button
+  does not jump, then fades the icons in over 150 ms.
+- Tapping a pin goes through `AppLaunch.open`, the routing that used to live in
+  `AppDrawer`: Maps opens fullscreen through `MainActivity.openMapsFullscreen`, the
+  video package tries the live-video path first, and an existing YouTube task is
+  restored instead of relaunched.
+
+## Settings sheet
+
+`SettingsSheet` replaces the AlertDialog. It is a `BottomSheet` with denser glass, a
+header of [close] [Settings] [balancing space], and a centered column (at most
+680 dp of the 853 dp screen) of grouped cards. Section labels are small and muted;
+rows are at least 64 dp tall and every control is a 48 dp target. Builders for the
+rows live in `SettingsRows`. Layout is start/end relative; directional glyphs (back,
+forward chevron) mirror in right-to-left languages.
+
+- Layout: Map position (Left / Right) and Map width (Balanced 60% / More map 70%)
+  as `SegmentedControl`s. A raised thumb slides to the choice over 220 ms with a
+  strong ease-out. Choices are `LauncherSettings.MapSide` and `MapWidth`, stored under
+  the original keys `mapsOnRight` and `mapPercent`, so existing installs keep their
+  layout. `LayoutPreview` draws the screen: the dock with its real pinned icons, the
+  media panel and a night-style map. The map slides and resizes over 280 ms
+  (ease-in-out) and the media panel is revealed around it rather than squeezed. Left
+  and Right are physical places in the car, so the preview, the Left/Right control and
+  the launcher's row of panels never mirror; each panel's own content still follows
+  the locale.
+- Applying a layout reattaches the Maps ActivityView. On the emulator that blocks the
+  shared render thread for about 100 ms, which froze the first frames of the preview.
+  The real panels are now rearranged once the preview settles (320 ms after the last
+  tap, so quick taps coalesce) or as soon as the sheet starts closing, whichever comes
+  first. Behind the sheet the launcher therefore changes within a third of a second.
+- Dock: the pins in dock order with icon, name, move up, move down and remove. The
+  count ("2 of 5") sits beside the section label. Moved rows slide 240 ms; the row you
+  moved rises above its neighbor (lighter fill, raised Z) and sinks back when it lands,
+  so the two never pass through each other. Removed rows fade and shrink over 120 ms
+  before the rows below close the gap, and the card resizes with them. A pin that is
+  not installed shows its package name, a dashed placeholder and "Not installed".
+- Add app opens a picker page inside the sheet: the same `AppBrowser` grid, without
+  apps already pinned or from other profiles, with search. Choosing an app pins it at
+  the bottom and returns. Back, or the back arrow, returns without pinning. Empty
+  searches say what happened: "No apps match “Waze”. Try another name.", "YouTube is
+  already in the dock." or "Every app is already in the dock." At capacity, Add app is dimmed and
+  explains "The dock is full. Remove an app to add another."
+- Floating windows: "Video over fullscreen Maps" (`floatingVideo`) and "Maps over
+  fullscreen video" (`floatingMaps`), both default on, stored in `layout` and read
+  through `LauncherSettings.floatingVideo()` and `floatingMaps()`. This lane only adds
+  the switches; the windows themselves are implemented elsewhere.
+- System: Android settings and Default home app open the existing intents through
+  `AppLaunch.openSystemScreen`, which suspends the Maps and video overlays like any
+  external app and restores them if Android cannot open the screen.
+- Footer: "Road Home" and the version name.
+- Dragging, the close button, a backdrop tap, Back (after leaving the picker) and Home
+  all dismiss it, as with the drawer. Dismissal returns to the main page, clears the
+  picker search and scrolls to the top.
+
+Press ripples were invisible on every transparent button in the launcher (dock icons,
+close buttons, drawer tiles): Android masks a ripple by its content, and a transparent
+background masks it completely. `Ui.ripple` now gives those ripples an explicit
+rounded mask, so presses show.
+
+### Settings contrast
+
+Over Maps' bright day tiles the drawer's glass measured #4a5b60 and a card #666c72,
+giving muted text about 2.6:1. Settings uses `SheetGlass.Density.DENSE` (88% tint
+instead of 72%) and 8% white cards; the same area then measured #323d46 for the glass
+and #444b52 for a card: about 5.5:1 for muted section labels on the glass and 4.4:1
+for muted secondary text inside cards. Primary text is above 8:1 on both.
+
+### Settings validation
+
+Verified on `road-home-google-api29` with the release build, with screenshots and
+recordings:
+
+- Before: the AlertDialog (`settings/before-settings-dialog.png`).
+- Every section on screen: layout, dock, floating windows, system and footer
+  (`settings/final-top.png`, `settings/v2-middle.png`, `settings/v2-bottom.png`).
+- Map side and width changed live; the preview morph and an interrupted change were
+  inspected frame by frame (`settings/layout-live.mp4`, `layout-side-frames.png`,
+  `layout-interrupt-frames.png`). With the deferred relayout, the preview window drew
+  a frame on every vsync during the morph and the main window relaid out afterwards
+  (`settings/gfxinfo-side-1014.txt`, `gfxinfo-side-802.txt`). UI-thread work was under
+  3 ms for 31 of 33 frames (6.5 and 10.7 ms for the other two); emulator rendering
+  took 12 to 58 ms per frame on a host with a load average of 14.
+- Pins removed, added through the picker, reordered and filled to capacity, with the
+  dock updated after each change (`dock/removed-spotify.png`, `picker.png`,
+  `added-youtube.png`, `moved-youtube-up.png`, `full-dock-disabled-add.png`,
+  `home-five-pins.png`, `home-youtube-maps.png`). Reorder, removal and the lifted row
+  were inspected frame by frame (`dock/edit-pins.mp4`, `reorder-lifted.mp4`,
+  `reorder-final.mp4` and their `*-frames.png` sheets).
+- Installing the Maps fixture, pinning it, uninstalling it (settings showed "Not
+  installed" and the dock skipped it) and reinstalling it (back in fifth place), with
+  no reload (`dock/fixture-uninstalled-settings.png`, `fixture-dock-compare.png`).
+- Picker search with no match, a pinned-only match and the already-pinned message
+  (`dock/picker-no-match.png`, `picker-already-pinned.png`).
+- Back from the picker, Back and Home on the main page, and a tap on the disabled Add
+  app (`settings/back-home-sequence.png`). Drag down: a 19% pull at 133 dp/s sprang
+  back and a 47% pull at 244 dp/s dismissed, revealing the updated dock
+  (`settings/drag-dismiss.mp4`, `drag-dismiss-frames.png`).
+- A floating-window switch turned off stayed off after closing and reopening
+  (`settings/switch-maps-off-reopened.png`); it was turned back on.
+- Android settings and Default home app opened, and Home restored the launcher with
+  Maps task 190 in its panel (`settings/system-rows-sequence.png`).
+- The YouTube pin opened YouTube; a second tap reused task 253 instead of creating
+  another (`dock/youtube-pin-opened.png`). The Maps pin moved task 190 fullscreen and
+  Home returned it (`dock/maps-pin-opened-fullscreen.png`).
+- With animations off, every change applied on the next frame
+  (`settings/animations-off.mp4`, `animations-off-pair.png`). Animations were turned
+  back on afterwards.
+- Press ripples before and after the fix (`settings/ripple-contact.png`, then the
+  close button in `picker-transition-frames.png`).
+
+Unit tests: `DockPinsTest` (20: parse and serialize, defaults, empty versus missing,
+garbage, dedupe, capacity, add, remove, move, immutability), `DockLayoutTest` (4),
+`LauncherSettingsTest` (10: defaults, existing keys, wrong types, unknown widths,
+floating keys, pins), `LayoutPreviewTest` (5: map geometry and corner rounding) and
+`SegmentedControlTest` (5: selection, listener, accessibility, target height).
+
+### Settings limits
+
+- No PX6 validation, and the emulator's frame rate is not a hardware claim.
+- The blurred backdrop is captured when the sheet opens, so the panels and dock under
+  the glass do not visibly change until the sheet moves or closes. The preview is how
+  layout and dock changes read while it is open.
+- Right-to-left layout was not checked on a device: changing the locale or forcing
+  RTL needs settings this session does not drive. Very long app names were not seen
+  on screen; rows ellipsize at one line and picker tiles at two.
+- A soft keyboard never appeared on the emulator, so the picker search was typed with
+  injected text, not an IME.
+- Pins are per package in the main profile; work-profile apps are not offered.
+- The dock's reserved slots and 150 ms icon fade while the catalog first loads were not
+  seen on screen; the settings sheet's backdrop tap was not tried (it is the drawer's
+  verified `BottomSheet` path).
+- Shrinking the stored capacity (a shorter screen) drops the surplus pins the next
+  time the dock is saved.
+- After a move, the moved row's arrows are no longer under the finger, so moving an
+  app several places takes taps on different rows (or the neighbor's arrows).
+- Emulator state left behind: release build installed, Maps then YouTube pinned, Maps
+  on the right at 70%, both floating-window switches on, the Maps fixture uninstalled.
+
+Evidence (git-ignored): `build/evidence/settings/` and `build/evidence/dock/`.
