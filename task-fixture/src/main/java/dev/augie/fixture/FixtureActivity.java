@@ -20,6 +20,8 @@ import android.util.Log;
 import android.util.Rational;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
+import android.widget.FrameLayout;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -45,7 +47,6 @@ public final class FixtureActivity extends Activity implements SurfaceHolder.Cal
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(16, 12, 16, 12);
-        root.setBackgroundColor(BuildConfig.VIDEO ? 0xff172033 : 0xff124c48);
         heading = new TextView(this);
         heading.setTextSize(24);
         heading.setText(BuildConfig.VIDEO ? "Emulator video fixture" : "Emulator map fixture");
@@ -59,9 +60,28 @@ public final class FixtureActivity extends Activity implements SurfaceHolder.Cal
         button(root, "Return to Road Home", () -> startActivity(new Intent(Intent.ACTION_MAIN)
                 .addCategory(Intent.CATEGORY_HOME).setPackage("dev.augie.roadhome.emulator")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
-        setContentView(root);
+        if (BuildConfig.VIDEO) {
+            root.setBackgroundColor(0xff172033);
+            setContentView(root);
+        } else setContentView(withMapSurface(root));
         update();
         Log.i("RoadFixture", "created " + getPackageName() + " task=" + getTaskId() + " instance=" + instance);
+    }
+
+    // Google Maps draws tiles into a SurfaceView. Hiding it exercises the launcher's slow path,
+    // where map buffers never report the new size.
+    private FrameLayout withMapSurface(LinearLayout controls) {
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(0xff124c48);
+        SurfaceView map = new SurfaceView(this);
+        map.getHolder().addCallback(new MapSurface());
+        root.addView(map, new FrameLayout.LayoutParams(-1, -1));
+        button(controls, "Toggle map surface", () -> {
+            map.setVisibility(map.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+            Log.i("RoadFixture", "map surface visible=" + (map.getVisibility() == View.VISIBLE));
+        });
+        root.addView(controls, new FrameLayout.LayoutParams(-1, -2));
+        return root;
     }
 
     private void setupVideo(LinearLayout root) {
