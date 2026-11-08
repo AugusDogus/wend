@@ -314,8 +314,7 @@ final class LiveSurfaceWindow {
         void createOutline() {
             if (outline != null) return;
             try {
-                outline = new FloatingOutline(ActivityViewSurface.windowSurface(overlay),
-                        host.getResources().getDisplayMetrics().density);
+                outline = new FloatingOutline(ActivityViewSurface.windowSurface(overlay));
             } catch (ReflectiveOperationException | RuntimeException error) {
                 Log.w(tag, "Floating window outline unavailable; showing the display without it", error);
             }
