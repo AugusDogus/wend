@@ -80,7 +80,8 @@ final class EmbeddedVideo extends FrameLayout {
         }
         thumbnail.setVisibility(presentation == VideoCardState.THUMBNAIL ? VISIBLE : GONE);
         if (window.active()) {
-            // A paused floating video keeps its last frame; only a cleared or ended session removes it.
+            // A paused floating video keeps its last frame. A cleared or ended session removes it,
+            // as does stopped playback (playbackEnded).
             if (window.floating() && presentation == VideoCardState.HIDDEN) {
                 window.dismiss("its media session ended or cleared its title");
             }
@@ -97,6 +98,15 @@ final class EmbeddedVideo extends FrameLayout {
         }
         setVisibility(presentation == VideoCardState.HIDDEN ? GONE : VISIBLE);
         maybeLaunch();
+    }
+
+    /**
+     * Playback stopped, failed, or was reset rather than paused. The player then draws its own
+     * stopped, up-next, or ad screen, which must not float over Maps; the card keeps the title.
+     * @param state completes "the video ..." in the log
+     */
+    void playbackEnded(String state) {
+        if (window.floating()) window.dismiss("the video " + state + ", not paused");
     }
 
     /** Road Home is visible again, by Home or because the app covering it left. */
