@@ -3,15 +3,16 @@ package dev.augie.wend;
 import android.app.Activity;
 import android.os.SystemClock;
 import android.util.Log;
-import android.view.Gravity;
-import android.view.View;
-import android.widget.LinearLayout;
+import android.widget.FrameLayout;
 
 /**
  * Full-width glass app drawer on a BottomSheet. One instance per activity is reused for every
  * opening; it shows AppCatalog's cached apps and search hides tiles instead of rebuilding them.
  */
 final class AppDrawer {
+    /** As in the settings header: a 48 dp button or balancing space, then an 8 dp gap. */
+    private static final int SEARCH_INSET_DP = 56;
+
     private final AppCatalog catalog;
     private final BottomSheet sheet;
     private final AppBrowser browser;
@@ -25,14 +26,13 @@ final class AppDrawer {
             dismiss();
             AppLaunch.open(activity, app);
         });
-        LinearLayout header = new LinearLayout(activity);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(Ui.iconButton(activity, Ui.Icon.CLOSE, "Close apps", this::close),
-                new LinearLayout.LayoutParams(Ui.dp(activity, 48), Ui.dp(activity, 48)));
-        LinearLayout.LayoutParams searchLayout = new LinearLayout.LayoutParams(0, Ui.dp(activity, 48), 1);
-        searchLayout.setMargins(Ui.dp(activity, 8), 0, Ui.dp(activity, 8), 0);
+        // Dragging, Back, a backdrop tap and Home close the drawer, so it has no close button.
+        // Equal insets keep the search field centered under the grab handle in either direction.
+        FrameLayout header = new FrameLayout(activity);
+        int inset = Ui.dp(activity, SEARCH_INSET_DP);
+        FrameLayout.LayoutParams searchLayout = new FrameLayout.LayoutParams(-1, -1);
+        searchLayout.setMargins(inset, 0, inset, 0);
         header.addView(browser.search(), searchLayout);
-        header.addView(new View(activity), new LinearLayout.LayoutParams(Ui.dp(activity, 48), 1));
         sheet = new BottomSheet(activity, backdrop, SheetGlass.Density.LIGHT, "App drawer", header,
                 browser.body(), browser::reset);
         Log.i("Wend", "App drawer prepared with " + browser.size() + " apps in "
@@ -44,7 +44,7 @@ final class AppDrawer {
         sheet.show();
     }
 
-    /** Slides the drawer away, as the close button, Back, and Home do. */
+    /** Slides the drawer away, as Back and Home do. */
     void close() { sheet.close(); }
 
     /** Hides the drawer immediately, for example when an app opens over it. */

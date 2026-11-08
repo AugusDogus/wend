@@ -122,7 +122,7 @@ final class SettingsRows {
         return row;
     }
 
-    /** [leading button] [content] [balancing space], like the app drawer's header. */
+    /** [leading button] [content] [balancing space], so the content stays centered. */
     View header(Ui.Icon icon, int description, Runnable action, View content) {
         LinearLayout header = new LinearLayout(context);
         header.setGravity(Gravity.CENTER_VERTICAL);

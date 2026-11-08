@@ -48,7 +48,7 @@ final class SheetPanel extends LinearLayout {
     @Override public boolean onInterceptTouchEvent(MotionEvent event) { return track(event); }
 
     // The panel has no click action. It claims touches no child wanted, such as on the
-    // handle, so a header drag can start there; Close, Back and the backdrop dismiss it.
+    // handle, so a header drag can start there; Back and the backdrop dismiss it.
     @SuppressLint("ClickableViewAccessibility")
     @Override public boolean onTouchEvent(MotionEvent event) {
         track(event);

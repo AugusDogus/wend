@@ -67,6 +67,11 @@ and YouTube task paths; apps in another profile open through
 TalkBack reads the typed query, and the status line ("No apps match …") is a polite
 live region, so TalkBack announces it.
 
+The drawer has no close button: dragging down, Back, a backdrop tap and Home close
+it. Its header is only the search field, centered under the handle with 56 dp on each
+side (the room the settings header gives its close button and balancing space), so it
+reads the same left to right and right to left.
+
 ## Bottom sheet
 
 `BottomSheet` is a reusable glass sheet in its own window; the drawer and settings
@@ -92,7 +97,7 @@ icon grid and `DENSE` for settings, which is mostly text (see below).
 - Release: a downward fling of at least 500 dp/s dismisses; an upward one of at
   least 500 dp/s keeps it open; otherwise it dismisses at 25% of its travel and
   springs back below that.
-- The close button, a tap on the backdrop, Back, and Home all use the same exit.
+- Settings' close button, a tap on the backdrop, Back, and Home all use the same exit.
   Opening an app and `onStop` remove it immediately.
 - With Android's animator duration scale at 0, every transition jumps to its end.
   Drags still follow the finger.
@@ -152,9 +157,10 @@ Also verified on the emulator, with screenshots and recordings:
 - The emulator shows no soft keyboard, so resizing the sheet around the IME was not seen.
 - Work-profile launching, locale-change reloads, and catching the sheet mid-animation
   were not exercised.
-- The backdrop strip is 24 dp, below the 48 dp target. The 48 dp close button and
-  Back remain the primary ways to close. Dragging is touch only; the handle is
-  decorative to accessibility services.
+- The backdrop strip is 24 dp, below the 48 dp target. In the drawer, which has no
+  close button, Back, Home and that strip (TalkBack offers it as "Close app drawer")
+  are the only ways to close without dragging; settings keeps its 48 dp close button. Dragging
+  is touch only; the handle is decorative to accessibility services.
 
 Evidence (git-ignored): `build/evidence/app-catalog/` and `build/evidence/drawer-sheet/`.
 

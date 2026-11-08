@@ -32,8 +32,8 @@ import java.util.Locale;
 /**
  * A full-width glass sheet in its own window. It slides up over the launcher and follows a
  * downward drag from its header, or from content already scrolled to the top. Releasing past
- * a quarter of its height or flinging down dismisses it; otherwise it springs back. The close
- * button, a backdrop tap, Back and Home all use the same exit.
+ * a quarter of its height or flinging down dismisses it; otherwise it springs back. A close
+ * button in the header (settings has one), a backdrop tap, Back and Home all use the same exit.
  */
 final class BottomSheet {
     interface Listener {
