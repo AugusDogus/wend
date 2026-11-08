@@ -153,8 +153,14 @@ final class EmbeddedVideo extends FrameLayout {
         cancelPreparation();
         // Before Road Home stops: its hidden window must not power off the playing display.
         playerLifecycle.presentElsewhere();
-        window.openFloating(this, playerSurface, source(previousBounds), displaySize.x, displaySize.y,
-                corner, settled, this::presentationRestored);
+        try {
+            window.openFloating(this, playerSurface, source(previousBounds), displaySize.x, displaySize.y,
+                    corner, settled, this::presentationRestored);
+        } catch (RuntimeException error) {
+            // Runs inside the Maps expansion, which must open fullscreen regardless.
+            Log.e("RoadHomeVideo", "Could not create the floating video window; Maps opens fullscreen"
+                    + " and the video stays in its card", error);
+        }
         if (!window.active()) {
             appSwitches.stop();
             playerLifecycle.returnToHost();
