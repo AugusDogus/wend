@@ -157,6 +157,21 @@ final class LiveSurfaceWindow {
         start(next, null);
     }
 
+    /**
+     * As {@link #openFloating(View, ActivityViewSurface, RectF, Point, FloatingPlacement,
+     * FloatingPlacement.Corner, Entry, Listener, Runnable)}, showing only {@code floatingSource} of
+     * the display while it floats, such as Maps' map without its controls, and all of
+     * {@code source} in its card.
+     */
+    void openFloating(View card, ActivityViewSurface surface, RectF source, RectF floatingSource,
+            Point display, FloatingPlacement placement, FloatingPlacement.Corner corner, Entry entry,
+            Listener listener, Runnable restored) {
+        Running next = new Running(card, surface, source, display, entry, listener, () -> { }, restored);
+        next.floatingSource = new RectF(floatingSource);
+        next.floatIn(placement, corner, listener);
+        start(next, null);
+    }
+
     private void start(Running next, Runnable reached) {
         if (active()) return;
         if (windows == null || !next.card.isLaidOut()) { next.fallback.run(); return; }
@@ -263,7 +278,10 @@ final class LiveSurfaceWindow {
         final TimeInterpolator easeOut = AnimationUtils.loadInterpolator(host, R.interpolator.window_ease_out);
         final Runnable deadline = () -> fail(new IllegalStateException(
                 "Live window was not ready within " + READY_MS + " ms"));
+        /** The display region shown in its card and, unless {@link #floatingSource} is set, while it floats. */
         RectF source;
+        /** The region shown while it floats, if it differs from its card's. */
+        RectF floatingSource;
         Runnable reached;
         /** Runs once it is drawn over its card, or as it is handed back to the card. */
         Runnable overCard;
@@ -359,12 +377,14 @@ final class LiveSurfaceWindow {
             return new Rect(location[0], location[1], location[0] + card.getWidth(), location[1] + card.getHeight());
         }
 
-        SurfacePlacement emergeFrom() { return SurfacePlacement.fit(source, placement.rest(corner)).scaled(EMERGE_SCALE); }
+        RectF floated() { return floatingSource != null ? floatingSource : source; }
+
+        SurfacePlacement emergeFrom() { return SurfacePlacement.fit(floated(), placement.rest(corner)).scaled(EMERGE_SCALE); }
 
         SurfacePlacement placementFor(Target next) {
             switch (next) {
                 case CARD: return SurfacePlacement.fit(source, cardOnScreen());
-                case CORNER: return SurfacePlacement.fit(source, placement.rest(corner));
+                case CORNER: return SurfacePlacement.fit(floated(), placement.rest(corner));
                 case WHOLE: return whole;
                 case GONE: return away != null ? away : current;
                 default: return current;
@@ -516,7 +536,7 @@ final class LiveSurfaceWindow {
             // As Android 10's PiP: the menu goes, and the dismiss target shows where to drop it.
             menu(false);
             overlay.dismissTarget(true);
-            show(SurfacePlacement.fit(source, bounds), radius, 1, 1);
+            show(SurfacePlacement.fit(floated(), bounds), radius, 1, 1);
         }
 
         boolean resting() { return target == Target.CORNER && phase == Phase.RESTING; }
@@ -563,7 +583,7 @@ final class LiveSurfaceWindow {
         void closeDragged(Rect bounds) {
             overlay.dismissTarget(false);
             // It leaves downward from where it was dropped, as Android 10's PiP does.
-            close(SurfacePlacement.fit(source, placement.below(bounds)));
+            close(SurfacePlacement.fit(floated(), placement.below(bounds)));
         }
 
         /** @param to where it leaves to as it fades, or null to fade where it is */
@@ -624,7 +644,7 @@ final class LiveSurfaceWindow {
         void updateSource(RectF next) {
             if (phase != Phase.RESTING) return;
             source = new RectF(next);
-            if (target == Target.CORNER) show(SurfacePlacement.fit(source, placement.rest(corner)), radius, 1, 1);
+            if (target == Target.CORNER) show(SurfacePlacement.fit(floated(), placement.rest(corner)), radius, 1, 1);
         }
 
         void fail(Exception error) {

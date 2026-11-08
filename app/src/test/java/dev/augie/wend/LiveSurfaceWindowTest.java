@@ -337,6 +337,28 @@ public class LiveSurfaceWindowTest {
         assertFalse(window.active());
     }
 
+    /** Feedback: floating Maps was an odd shape showing all of Maps' controls. */
+    @Test public void aWindowCanFloatOnlyPartOfWhatItsCardShows() throws Exception {
+        DrawnSurface surface = DrawnSurface.of(host);
+        card.layout(0, 0, 320, 180);
+        RectF panel = new RectF(0, 0, 833, 720), map = new RectF(236.5f, 150, 596.5f, 600);
+        Rect corner = new Rect(966, 334, 1256, 696);
+        window.openFloating(card, surface, panel, map, new Point(833, 720),
+                new FloatingPlacement(new Rect(0, 0, 1280, 720), 290, 362, 24),
+                FloatingPlacement.Corner.BOTTOM_RIGHT, LiveSurfaceWindow.Entry.FROM_CARD, listener(),
+                () -> events.add("restored"));
+        commitFrame();
+        RectF leaving = surface.drawn.get(0);
+        assertEquals("It leaves the card showing all of the panel", 833f / 720,
+                leaving.width() / leaving.height(), .001f);
+        settle();
+        assertEquals(corner, touchRegion());
+        Rect shown = new Rect();
+        surface.last().round(shown);
+        assertEquals("Floating, it shows only the map", corner, shown);
+        window.cancel();
+    }
+
     /** Below the fullscreen control, as Android 10 puts a PiP's media action. */
     private static final Rect PLAY_PAUSE = new Rect(CORNER.centerX() - 24, CORNER.bottom - 48,
             CORNER.centerX() + 24, CORNER.bottom);

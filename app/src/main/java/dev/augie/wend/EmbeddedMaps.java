@@ -278,7 +278,7 @@ final class EmbeddedMaps extends MapPanel {
                     ActivityViewSurface.PreviewInput.FORWARDED);
             // Before anything can hide Wend: its surface changes must not move this root.
             displayLifecycle.presentElsewhere();
-            floating.openFloating(this, surface, new RectF(0, 0, getWidth(), getHeight()),
+            floating.openFloating(this, surface, new RectF(0, 0, getWidth(), getHeight()), floatingCrop(),
                     new Point(getWidth(), getHeight()), floatingPlacement(), corner, entry, listener,
                     this::floatingEnded);
         } catch (ReflectiveOperationException | RuntimeException error) {
@@ -494,10 +494,16 @@ final class EmbeddedMaps extends MapPanel {
         panelFrame = null;
     }
 
-    /** The floating video's visual weight, in the panel's shape, anywhere on Wend's fullscreen. */
+    /** The map alone, in portrait, from the panel display Maps keeps while it floats. */
+    private RectF floatingCrop() {
+        return FloatingMapCrop.of(getWidth(), getHeight(), getResources().getDisplayMetrics().density);
+    }
+
+    /** The floating video's visual weight, in the map crop's shape, anywhere on Wend's fullscreen. */
     private FloatingPlacement floatingPlacement() {
+        RectF crop = floatingCrop();
         Point size = FloatingPlacement.matchingArea(Ui.dp(getContext(), FloatingPlacement.VIDEO_WIDTH_DP),
-                Ui.dp(getContext(), FloatingPlacement.VIDEO_HEIGHT_DP), getWidth() / (float) getHeight());
+                Ui.dp(getContext(), FloatingPlacement.VIDEO_HEIGHT_DP), crop.width() / crop.height());
         return new FloatingPlacement(new Rect(0, 0, screen.x, screen.y), size.x, size.y, Ui.dp(getContext(), 16));
     }
 
