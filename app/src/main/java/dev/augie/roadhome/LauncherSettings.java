@@ -64,15 +64,22 @@ final class LauncherSettings {
 
     void setFloatingMaps(boolean enabled) { preferences.edit().putBoolean(FLOATING_MAPS, enabled).apply(); }
 
-    /** The corner the floating video last settled in. */
-    FloatingPlacement.Corner floatingVideoCorner() { return readCorner(FLOATING_VIDEO_CORNER); }
+    /**
+     * The corner the floating video last settled in. Top right by default: landscape guidance
+     * keeps the next turn top left, the trip sheet bottom left, and its buttons bottom right.
+     */
+    FloatingPlacement.Corner floatingVideoCorner() {
+        return readCorner(FLOATING_VIDEO_CORNER, FloatingPlacement.Corner.TOP_RIGHT);
+    }
 
     void setFloatingVideoCorner(FloatingPlacement.Corner corner) {
         preferences.edit().putString(FLOATING_VIDEO_CORNER, corner.name()).apply();
     }
 
-    /** The corner floating Maps last settled in. */
-    FloatingPlacement.Corner floatingMapsCorner() { return readCorner(FLOATING_MAPS_CORNER); }
+    /** The corner floating Maps last settled in; bottom right by default. */
+    FloatingPlacement.Corner floatingMapsCorner() {
+        return readCorner(FLOATING_MAPS_CORNER, FloatingPlacement.Corner.BOTTOM_RIGHT);
+    }
 
     void setFloatingMapsCorner(FloatingPlacement.Corner corner) {
         preferences.edit().putString(FLOATING_MAPS_CORNER, corner.name()).apply();
@@ -97,8 +104,7 @@ final class LauncherSettings {
 
     void setDockPins(DockPins pins) { preferences.edit().putString(DOCK_PINS, pins.serialize()).apply(); }
 
-    private FloatingPlacement.Corner readCorner(String key) {
-        FloatingPlacement.Corner fallback = FloatingPlacement.Corner.BOTTOM_RIGHT;
+    private FloatingPlacement.Corner readCorner(String key, FloatingPlacement.Corner fallback) {
         String stored;
         try {
             stored = preferences.getString(key, null);

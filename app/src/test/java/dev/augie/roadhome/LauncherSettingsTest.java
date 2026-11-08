@@ -79,8 +79,9 @@ public class LauncherSettingsTest {
         assertFalse(settings.floatingMaps());
     }
 
-    @Test public void floatingCornersDefaultToBottomRightAndAreRemembered() {
-        assertEquals(FloatingPlacement.Corner.BOTTOM_RIGHT, settings.floatingVideoCorner());
+    @Test public void videoFloatsTopRightAndMapsBottomRightUntilACornerIsRemembered() {
+        // Top right is the corner landscape guidance leaves empty.
+        assertEquals(FloatingPlacement.Corner.TOP_RIGHT, settings.floatingVideoCorner());
         assertEquals(FloatingPlacement.Corner.BOTTOM_RIGHT, settings.floatingMapsCorner());
         settings.setFloatingVideoCorner(FloatingPlacement.Corner.TOP_LEFT);
         settings.setFloatingMapsCorner(FloatingPlacement.Corner.BOTTOM_LEFT);
@@ -90,9 +91,9 @@ public class LauncherSettingsTest {
         assertEquals(FloatingPlacement.Corner.BOTTOM_LEFT, new LauncherSettings(preferences).floatingMapsCorner());
     }
 
-    @Test public void unknownOrWronglyTypedCornersFallBackToBottomRight() {
+    @Test public void unknownOrWronglyTypedCornersFallBackToEachWindowsDefault() {
         preferences.edit().putString("floatingVideoCorner", "MIDDLE").putInt("floatingMapsCorner", 2).commit();
-        assertEquals(FloatingPlacement.Corner.BOTTOM_RIGHT, settings.floatingVideoCorner());
+        assertEquals(FloatingPlacement.Corner.TOP_RIGHT, settings.floatingVideoCorner());
         assertEquals(FloatingPlacement.Corner.BOTTOM_RIGHT, settings.floatingMapsCorner());
     }
 

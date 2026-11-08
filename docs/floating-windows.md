@@ -50,13 +50,15 @@ it off; `floatingVideoCorner` remembers the last corner.
 - **Drag.** It follows the finger 1:1, clamped on screen. Release projects the
   momentum (a normal 0.998/ms scroll deceleration) and snaps to the nearest
   corner over 280 ms. A touch during the snap catches it where it is drawn.
-- **Default corner: bottom right.** In fullscreen Google Maps screenshots
-  (`build/maps-rendering/final-contact-sheet.jpg` in the main checkout), the
-  instruction bar spans the top, so either top corner would hide the next turn.
-  Bottom left holds the Street View thumbnail, and in guidance the trip sheet.
-  Bottom right covers only small step and location buttons, and is the passenger
-  side, away from the driver's line of sight. Those were route-preview
-  screenshots, not live guidance, so check the choice on the PX6.
+- **Default corner: top right.** In real Google Maps live guidance at
+  1280 × 720 landscape, the next-turn card sits top left, the trip sheet bottom
+  left, and the compass, search, and sound buttons bottom right. The first
+  default, bottom right, came from route-preview screenshots and covered search
+  and sound during guidance; top right covered nothing, and Maps' search opened
+  beside it (device report RH-2: `s2n-nav-corners-grid.png`,
+  `s2n-01-nav-full-video-float.png`, and `s2n-05-search-closed.png` under
+  `build/validation/real-apps-api29/` in the main checkout). A corner the driver
+  drags it to is remembered and wins over the default. Check it on the PX6.
 - **Home** returns it to the card once Road Home's window has a surface again,
   concurrently with the Maps return animation. Playback never stops.
 - **Tap** swaps: the video takes the screen and Maps floats above it (see
@@ -102,7 +104,7 @@ this, Home did nothing after the title was cleared from fullscreen.
 When the live video opens fullscreen (the "Open" action under its card), Maps
 keeps running live in a small window above it. The `layout` preference
 `floatingMaps` (default true) turns it off; `floatingMapsCorner` remembers its
-corner, default bottom right (the passenger side, as for the video).
+corner, default bottom right (the passenger side).
 
 - **Size.** The floating video's area (288 × 162 dp) in the panel's own shape:
   232 × 201 dp for the 70% panel, 215 × 217 dp for 60%. The panel's display is
