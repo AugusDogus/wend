@@ -50,10 +50,11 @@ final class EmbeddedMaps extends MapPanel {
     private MapFrame takeoverFrame;
     /**
      * How long Maps, behind a frozen frame, may take to lay out at the full screen size before it
-     * moves as it is. Maps then finishes laying out on the main display; moving it first leaves
-     * Road Home visible behind it, so Home loses its live return.
+     * moves as it is. Moved earlier, Maps lays out a second time on the main display, which holds
+     * the frozen frame longer, not shorter: real Maps in guidance took 0.6 to 0.9 s here on the
+     * loaded emulator, and a 700 ms cap made those swaps slower.
      */
-    private static final int TAKEOVER_LAYOUT_MS = 700;
+    private static final int TAKEOVER_LAYOUT_MS = 900;
     /**
      * How long Maps may take to lay out in its panel before it floats as it is: until then the
      * fullscreen video shows no navigation, and floating Maps finishes its layout live.
