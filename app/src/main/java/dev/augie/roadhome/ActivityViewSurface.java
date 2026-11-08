@@ -103,6 +103,19 @@ final class ActivityViewSurface {
         }
     }
 
+    /** Puts our live display in another window at {@code placement}, without input, in one frame. */
+    void attach(View destination, SurfacePlacement placement, float radius, float alpha)
+            throws ReflectiveOperationException {
+        try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+            reparent.invoke(transaction, surface, windowSurface(destination));
+            transaction.setLayer(surface, 1);
+            touchableRegion.setEmpty();
+            updateInput(transaction);
+            place(transaction, placement, radius, alpha);
+            transaction.apply();
+        }
+    }
+
     void transform(float scale, float x, float y, Rect bounds) throws ReflectiveOperationException {
         try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
             transform(transaction, scale, x, y, bounds);

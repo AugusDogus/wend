@@ -21,6 +21,8 @@ import java.util.concurrent.Executors;
 /** Keeps YouTube at normal display size and exposes only its decoder surface's region. */
 final class EmbeddedVideo extends FrameLayout {
     static final String PACKAGE = BuildConfig.VIDEO_PACKAGE;
+    /** Names the live video's overlay window, whose compositor layer VideoSurface trusts. */
+    static final String WINDOW_TITLE = BuildConfig.APPLICATION_ID + " live video";
     private static final String PLAYER_UNAVAILABLE = "Player unavailable. Use Open YouTube below.";
     private enum State { EMPTY, WAITING, READY, PREPARING, SHOWN, FAILED, CLOSED }
     private State state = State.EMPTY;
@@ -28,7 +30,7 @@ final class EmbeddedVideo extends FrameLayout {
     private ActivityViewSurface playerSurface;
     private EmbeddedDisplayLifecycle playerLifecycle;
     private final Activity host;
-    private final LiveVideoWindow window;
+    private final LiveSurfaceWindow window;
     private final TaskFrontWatcher appSwitches = new TaskFrontWatcher(this::appMovedToFront);
     private final Runnable presentationEnded;
     private final TextView status;
@@ -47,7 +49,7 @@ final class EmbeddedVideo extends FrameLayout {
         super(context);
         host = context;
         this.presentationEnded = presentationEnded;
-        window = new LiveVideoWindow(context);
+        window = new LiveSurfaceWindow(context, WINDOW_TITLE, "RoadHomeVideo");
         context.getSystemService(WindowManager.class).getDefaultDisplay().getRealSize(displaySize);
         setBackgroundColor(android.graphics.Color.BLACK);
         setClipChildren(true);
@@ -126,8 +128,8 @@ final class EmbeddedVideo extends FrameLayout {
         if (state != State.SHOWN || playerSurface == null || previousBounds == null
                 || presentation != VideoCardState.PLAYING || !hostActive) return false;
         cancelPreparation();
-        window.open(this, playerSurface, source(previousBounds), displaySize.x, displaySize.y, open,
-                this::presentationRestored);
+        window.open(this, playerSurface, source(previousBounds), displaySize, open,
+                this::presentationRestored, null);
         if (window.active()) postDelayed(inspect, 300);
         return true;
     }
@@ -138,7 +140,7 @@ final class EmbeddedVideo extends FrameLayout {
      *
      * @return the card's screen area the video left, or null to keep today's behavior
      */
-    Rect floatAboveMaps(FloatingPlacement.Corner corner, LiveVideoWindow.CornerListener settled) {
+    Rect floatAboveMaps(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener) {
         if (window.active() || state != State.SHOWN || playerSurface == null || previousBounds == null
                 || presentation != VideoCardState.PLAYING || !hostActive) return null;
         if (playerLifecycle == null) {
@@ -154,8 +156,8 @@ final class EmbeddedVideo extends FrameLayout {
         // Before Road Home stops: its hidden window must not power off the playing display.
         playerLifecycle.presentElsewhere();
         try {
-            window.openFloating(this, playerSurface, source(previousBounds), displaySize.x, displaySize.y,
-                    corner, settled, this::presentationRestored);
+            window.openFloating(this, playerSurface, source(previousBounds), displaySize, floatingPlacement(),
+                    corner, LiveSurfaceWindow.Entry.FROM_CARD, listener, this::presentationRestored);
         } catch (RuntimeException error) {
             // Runs inside the Maps expansion, which must open fullscreen regardless.
             Log.e("RoadHomeVideo", "Could not create the floating video window; Maps opens fullscreen"
@@ -171,6 +173,18 @@ final class EmbeddedVideo extends FrameLayout {
         int[] location = new int[2];
         getLocationOnScreen(location);
         return new Rect(location[0], location[1], location[0] + getWidth(), location[1] + getHeight());
+    }
+
+    /** A floating window is tapped: the video grows to fullscreen above Maps, with its own input. */
+    void expand() { window.expand(null); }
+
+    /** 288 x 162 dp in a corner of the screen below the status bar, which fullscreen Maps keeps. */
+    private FloatingPlacement floatingPlacement() {
+        int statusBar = host.getResources().getIdentifier("status_bar_height", "dimen", "android");
+        int top = statusBar == 0 ? 0 : host.getResources().getDimensionPixelSize(statusBar);
+        return new FloatingPlacement(new Rect(0, top, displaySize.x, displaySize.y),
+                Ui.dp(host, FloatingPlacement.VIDEO_WIDTH_DP), Ui.dp(host, FloatingPlacement.VIDEO_HEIGHT_DP),
+                Ui.dp(host, 16));
     }
 
     private void presentationRestored() {

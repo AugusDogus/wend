@@ -88,12 +88,19 @@ public final class MainActivity extends Activity {
     }
 
     private void openMusic() { AppLaunch.open(this, media.musicPackage()); }
+    private final LiveSurfaceWindow.Listener floatingVideo = new LiveSurfaceWindow.Listener() {
+        @Override public void settled(FloatingPlacement.Corner corner) {
+            preferences.edit().putString(FLOATING_VIDEO_CORNER, corner.name()).apply();
+        }
+        @Override public void tapped() { media.expandVideo(); }
+    };
+
     void openMapsFullscreen() {
         maps.openFullscreen(() -> {
             if (!preferences.getBoolean(FLOATING_VIDEO, true)) return null;
             return media.floatVideo(FloatingPlacement.Corner.parse(
                     preferences.getString(FLOATING_VIDEO_CORNER, null), FloatingPlacement.Corner.BOTTOM_RIGHT),
-                    corner -> preferences.edit().putString(FLOATING_VIDEO_CORNER, corner.name()).apply());
+                    floatingVideo);
         });
     }
     boolean openVideoFullscreen(Runnable open) { return media.openVideoFullscreen(open); }

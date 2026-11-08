@@ -21,6 +21,8 @@ final class FloatingPlacement {
         }
     }
 
+    /** A floating video's 16:9 size; other floating windows match its area. */
+    static final int VIDEO_WIDTH_DP = 288, VIDEO_HEIGHT_DP = 162;
     // A normal scroll's deceleration per millisecond: a release travels v * 0.499 px.
     private static final float DECELERATION = 0.998f;
     private final Rect area;

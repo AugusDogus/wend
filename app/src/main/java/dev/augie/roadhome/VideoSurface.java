@@ -143,7 +143,7 @@ final class VideoSurface {
             // Require this virtual display to be hosted by Road Home, not some other app.
             Layer host = layers.get(root.parent);
             if (host == null || (!host.name.startsWith("SurfaceView - " + BuildConfig.APPLICATION_ID + "/")
-                    && !(presenting && host.name.startsWith(LiveVideoWindow.TITLE + "#")))) continue;
+                    && !(presenting && host.name.startsWith(EmbeddedVideo.WINDOW_TITLE + "#")))) continue;
             Bounds bounds = new Bounds((video.x - root.x) / root.sx, (video.y - root.y) / root.sy,
                     video.width * video.sx / root.sx, video.height * video.sy / root.sy, video.id, video.frame);
             if (!Float.isFinite(bounds.left) || !Float.isFinite(bounds.top)

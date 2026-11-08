@@ -32,6 +32,20 @@ final class SurfacePlacement {
         return new SurfacePlacement(1, 0, 0, new RectF(0, 0, width, height));
     }
 
+    /** The whole display at pixel scale one, centered on a screen at least as large. */
+    static SurfacePlacement centered(int width, int height, int screenWidth, int screenHeight) {
+        return new SurfacePlacement(1, (screenWidth - width) / 2f, (screenHeight - height) / 2f,
+                new RectF(0, 0, width, height));
+    }
+
+    /** The same shown region, scaled by {@code factor} about its on-screen center. */
+    SurfacePlacement scaled(float factor) {
+        RectF visible = visible();
+        float next = scale * factor;
+        return new SurfacePlacement(next, visible.centerX() - crop.centerX() * next,
+                visible.centerY() - crop.centerY() * next, new RectF(crop));
+    }
+
     static SurfacePlacement lerp(SurfacePlacement from, SurfacePlacement to, float fraction) {
         return new SurfacePlacement(lerp(from.scale, to.scale, fraction), lerp(from.x, to.x, fraction),
                 lerp(from.y, to.y, fraction), new RectF(lerp(from.crop.left, to.crop.left, fraction),

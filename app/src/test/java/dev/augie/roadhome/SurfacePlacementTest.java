@@ -55,4 +55,29 @@ public class SurfacePlacementTest {
         fullscreen.crop(crop);
         assertEquals(new Rect(0, 0, 1280, 720), crop);
     }
+
+    @Test public void aPanelSizedDisplayIsCenteredUnscaledOnTheScreen() {
+        // Maps' 832 x 720 panel display, focused on the 1280 x 720 screen before going fullscreen.
+        SurfacePlacement centered = SurfacePlacement.centered(832, 720, 1280, 720);
+        assertEquals(1f, centered.scale, 0f);
+        assertRect(new RectF(224, 0, 1056, 720), centered.visible());
+        assertRect(new RectF(0, 0, 832, 720), centered.crop);
+    }
+
+    @Test public void aScreenSizedDisplayCenteredIsFullscreen() {
+        SurfacePlacement centered = SurfacePlacement.centered(1280, 720, 1280, 720);
+        assertRect(SurfacePlacement.fullscreen(1280, 720).visible(), centered.visible());
+    }
+
+    @Test public void scalingKeepsTheVisibleCenterAndTheCrop() {
+        SurfacePlacement corner = SurfacePlacement.fit(decoder, new Rect(824, 453, 1256, 696));
+        SurfacePlacement smaller = corner.scaled(.9f);
+        assertEquals(.81f, smaller.scale, .0001f);
+        assertRect(decoder, smaller.crop);
+        RectF visible = smaller.visible();
+        assertEquals(1040f, visible.centerX(), .01f);
+        assertEquals(574.5f, visible.centerY(), .01f);
+        assertEquals(432 * .9f, visible.width(), .01f);
+        assertEquals(243 * .9f, visible.height(), .01f);
+    }
 }

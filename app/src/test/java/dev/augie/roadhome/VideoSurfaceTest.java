@@ -57,7 +57,7 @@ public class VideoSurfaceTest {
 
     @Test public void tracksWatchPageGeometryOnlyInsideOurActivePresentation() {
         Scene scene = new Scene();
-        scene.host.name = LiveVideoWindow.TITLE + "#0";
+        scene.host.name = EmbeddedVideo.WINDOW_TITLE + "#0";
         scene.root.x = 0; scene.root.y = 0;
         scene.video.x = 438; scene.video.y = 0;
         scene.video.sx = 405f / 1280; scene.video.sy = 228f / 720;

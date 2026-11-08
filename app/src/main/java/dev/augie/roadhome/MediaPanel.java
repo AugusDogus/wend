@@ -102,9 +102,10 @@ final class MediaPanel extends LinearLayout {
     void videoOpened() { video.fullscreenOpened(); }
 
     /** Keeps a playing video visible above fullscreen Maps; returns the card it left, or null. */
-    Rect floatVideo(FloatingPlacement.Corner corner, LiveVideoWindow.CornerListener settled) {
-        return video.floatAboveMaps(corner, settled);
+    Rect floatVideo(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener) {
+        return video.floatAboveMaps(corner, listener);
     }
+    void expandVideo() { video.expand(); }
 
     void start() {
         started = true;
