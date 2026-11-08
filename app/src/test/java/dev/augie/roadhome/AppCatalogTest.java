@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
+import android.os.Looper;
 import android.os.Process;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -16,6 +17,7 @@ import org.robolectric.annotation.Config;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 29)
@@ -55,6 +57,28 @@ public class AppCatalogTest {
         assertEquals(Process.myUserHandle(), mail.key.user);
         assertNull("A work-profile app cannot be pinned", catalog.pinnedApp("com.slack"));
         assertNull(catalog.pinnedApp("com.not.installed"));
+    }
+
+    @Test @Config(shadows = UnavailableLauncherApps.class)
+    public void aFailedListReadsPinnedAppsFromPackageManager() {
+        TestApps.installInPackageManager(context, "com.google.android.apps.maps", "Maps");
+
+        AppCatalog catalog = TestApps.loadedCatalog(context);
+
+        assertEquals(AppCatalog.Status.FAILED, catalog.status());
+        assertTrue("The drawer still reports the failure", catalog.apps().isEmpty());
+        LauncherApp maps = catalog.pinnedApp("com.google.android.apps.maps");
+        assertNotNull(maps);
+        assertEquals("Maps", maps.label);
+        assertNull(catalog.pinnedApp(DockPins.SPOTIFY));
+    }
+
+    @Test public void pinsAreUnknownWhileTheListLoads() {
+        TestApps.install(context, "com.google.android.apps.maps", "Maps");
+        AppCatalog catalog = new AppCatalog(context, Looper.getMainLooper());
+
+        assertEquals(AppCatalog.Status.LOADING, catalog.status());
+        assertNull(catalog.pinnedApp("com.google.android.apps.maps"));
     }
 
     private static List<String> labels(List<LauncherApp> apps) {

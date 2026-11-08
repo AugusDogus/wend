@@ -243,6 +243,7 @@ final class SettingsSheet implements AppCatalog.Listener {
 
     private void showPicker() {
         if (picking || pins.isFull()) return;
+        catalog.retryIfFailed();
         picker.reset();
         picker.setHidden(app -> !AppCatalog.canPin(app) || pins.contains(app.key.packageName));
         picking = true;

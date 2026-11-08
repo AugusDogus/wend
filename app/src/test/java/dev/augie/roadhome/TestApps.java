@@ -1,6 +1,9 @@
 package dev.augie.roadhome;
 
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.LauncherActivityInfo;
@@ -13,6 +16,7 @@ import android.os.Looper;
 import android.os.Process;
 import android.os.UserHandle;
 import android.os.UserManager;
+import org.robolectric.shadows.ShadowPackageManager;
 import org.robolectric.util.ReflectionHelpers;
 import org.robolectric.util.ReflectionHelpers.ClassParameter;
 import static org.robolectric.Shadows.shadowOf;
@@ -35,6 +39,19 @@ final class TestApps {
         };
         info.nonLocalizedLabel = label;
         add(context, user, packageName, info);
+    }
+
+    /**
+     * An app that PackageManager can launch, for tests where LauncherApps is unavailable
+     * ({@link UnavailableLauncherApps}) and the catalog falls back to PackageManager.
+     */
+    static void installInPackageManager(Context context, String packageName, String label) {
+        ComponentName component = new ComponentName(packageName, packageName + ".Main");
+        ShadowPackageManager packages = shadowOf(context.getPackageManager());
+        packages.addActivityIfNotPresent(component).nonLocalizedLabel = label;
+        IntentFilter launcher = new IntentFilter(Intent.ACTION_MAIN);
+        launcher.addCategory(Intent.CATEGORY_LAUNCHER);
+        packages.addIntentFilterForActivity(component, launcher);
     }
 
     /** An app whose label cannot be read, as when its resources are unavailable. */

@@ -4,7 +4,6 @@ import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.drawable.BitmapDrawable;
-import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.ImageButton;
@@ -17,7 +16,8 @@ import java.util.Map;
 /**
  * The launcher's left column: the clock and date, the pinned apps, then the fixed Apps and
  * Settings buttons. Pins draw the catalog's cached icons and follow installs, removals and
- * pin changes live. A pin whose app is not installed is skipped here but stays stored.
+ * pin changes live. A pin whose app is not installed is skipped here but stays stored. If the
+ * app list cannot load, the pins come from PackageManager instead (see AppCatalog.pinnedApp).
  */
 @SuppressLint("ViewConstructor")
 final class Dock extends LinearLayout implements AppCatalog.Listener {
@@ -83,15 +83,16 @@ final class Dock extends LinearLayout implements AppCatalog.Listener {
     @Override public void onAppsChanged(AppCatalog catalog) { render(); }
 
     private void render() {
-        slots.removeAllViews();
         if (catalog.status() == AppCatalog.Status.LOADING) {
-            // Hold the pins' space so the Apps button does not jump when the icons arrive.
-            for (int i = 0; i < pins.size(); i++) slots.addView(new View(getContext()), slot());
+            // Before the first load, hold the pins' space so the Apps button does not jump when the
+            // icons arrive. A retry after a failed load keeps the buttons already shown until it ends.
+            if (waitingForApps) {
+                slots.removeAllViews();
+                for (int i = 0; i < pins.size(); i++) slots.addView(new View(getContext()), slot());
+            }
             return;
         }
-        if (catalog.status() == AppCatalog.Status.FAILED) {
-            Log.w("RoadHome", "Dock apps are hidden because the app list could not load; opening Apps retries it");
-        }
+        slots.removeAllViews();
         Map<String, ImageButton> previous = new HashMap<>(buttons);
         buttons.clear();
         for (String packageName : pins.packages()) {
