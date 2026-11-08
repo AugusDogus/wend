@@ -131,6 +131,8 @@ final class DockEditor implements AppCatalog.Listener {
         for (int i = 0; i < card.getChildCount(); i++) {
             View child = card.getChildAt(i);
             child.animate().cancel();
+            // A row pinned moments ago may still be fading in; only new rows fade below.
+            child.setAlpha(1);
             before.put(child.getTag(), child.getTop() + child.getTranslationY());
         }
         int startHeight = card.getHeight();
