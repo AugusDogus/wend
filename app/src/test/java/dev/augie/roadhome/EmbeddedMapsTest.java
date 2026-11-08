@@ -15,6 +15,8 @@ import android.os.Looper;
 import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
 import android.view.View;
+import android.view.ViewTreeObserver;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -30,8 +32,11 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
+import org.robolectric.shadow.api.Shadow;
 import org.robolectric.shadows.ShadowProcess;
 import org.robolectric.shadows.ShadowSurfaceControl;
+import org.robolectric.shadows.ShadowViewRootImpl;
+import org.robolectric.shadows.ShadowWindowManagerImpl;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -42,6 +47,8 @@ import static org.robolectric.Shadows.shadowOf;
 @Config(sdk = 29)
 public class EmbeddedMapsTest {
     private final Activity host = Robolectric.buildActivity(Activity.class).setup().get();
+    /** The head unit's 1280 x 720 screen, in pixels. */
+    private static final String SCREEN = "w1280dp-h720dp-land-mdpi";
     private final List<String> events = new ArrayList<>();
 
     @Test public void reusingAnExistingTaskDoesNotWaitForTaskCreated() throws Exception {
@@ -263,6 +270,234 @@ public class EmbeddedMapsTest {
         maps.release();
     }
 
+    /**
+     * Device report BUG-1 (fixtures, P4 and P8): the video moved from Road Home's display to the
+     * main display left Road Home resumed, with its window, under the video app. A tap on floating
+     * Maps then laid Maps out through that window, and Road Home's stop half a second later called
+     * the takeover off, leaving Maps on its panel display, shown nowhere.
+     */
+    @Config(qualifiers = SCREEN, shadows = {Screenshots.class, CompositedWindows.class})
+    @Test public void aTapAboveTheVideoAppWhileRoadHomeStillHasItsWindowBringsMapsFullscreen() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        hostSurfaceCreated(maps);
+        floatAboveTheVideoApp(maps);
+        maps.openFullscreenFromFloating(takeover());
+        untilCovered();
+        // Road Home stops only now, as the takeover lays Maps out.
+        hostSurfaceDestroyed(maps);
+        maps.suspend();
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+        assertMapsFullscreen(maps, tasks);
+    }
+
+    /** Road Home resumed or paused under the video app until Maps covers it. */
+    @Config(qualifiers = SCREEN, shadows = {Screenshots.class, CompositedWindows.class})
+    @Test public void aTapAboveTheVideoAppWhileRoadHomeIsNeverStoppedBringsMapsFullscreen() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        hostSurfaceCreated(maps);
+        floatAboveTheVideoApp(maps);
+        maps.openFullscreenFromFloating(takeover());
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+        assertMapsFullscreen(maps, tasks);
+    }
+
+    /** Review R1: Android 10 stops Road Home only once the video app idles, which can be mid-takeover. */
+    @Config(qualifiers = SCREEN, shadows = {Screenshots.class, CompositedWindows.class})
+    @Test public void roadHomeStoppingDuringATapAboveTheVideoAppStillBringsMapsFullscreen() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        floatAboveTheVideoApp(maps);
+        maps.openFullscreenFromFloating(takeover());
+        untilCovered();
+        maps.suspend();
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+        assertMapsFullscreen(maps, tasks);
+    }
+
+    /** Review R1, its other half: the stop lands after the growth, before the frozen frame's first frame. */
+    @Config(qualifiers = SCREEN, shadows = {Screenshots.class, CompositedWindows.class})
+    @Test public void roadHomeStoppingBeforeTheFrozenFrameStartsStillBringsMapsFullscreen() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        floatAboveTheVideoApp(maps);
+        maps.openFullscreenFromFloating(takeover());
+        while (frozenFrames() == 0) shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(10));
+        assertEquals("The frozen frame waits for its first frame", List.of(), events);
+        maps.suspend();
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+        assertMapsFullscreen(maps, tasks);
+    }
+
+    /** Review R2: an app that comes forward without a touch, such as a reverse camera. */
+    @Config(qualifiers = SCREEN, shadows = {Screenshots.class, CompositedWindows.class})
+    @Test public void anotherAppComingForwardDuringATapAboveTheVideoAppLeavesMapsInItsPanel() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        floatAboveTheVideoApp(maps);
+        maps.openFullscreenFromFloating(takeover());
+        untilCovered();
+        appSwitches(maps).onTaskCreated(42, new ComponentName("com.android.camera", "Camera"));
+        shadowOf(Looper.getMainLooper()).idle();
+        assertEquals("No frozen frame stays over that app", 0, frozenFrames());
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+        assertMapsWaitsInItsPanel(maps, tasks);
+    }
+
+    @Config(qualifiers = SCREEN, shadows = {Screenshots.class, CompositedWindows.class})
+    @Test public void anotherAppComingForwardBeforeTheFrozenFrameStartsLeavesMapsInItsPanel() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        floatAboveTheVideoApp(maps);
+        maps.openFullscreenFromFloating(takeover());
+        while (frozenFrames() == 0) shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(10));
+        appSwitches(maps).onTaskCreated(42, new ComponentName("com.android.camera", "Camera"));
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+        assertEquals(List.of(), events);
+        assertMapsWaitsInItsPanel(maps, tasks);
+    }
+
+    /** The video app finished on its own: Road Home shows again, and so does Maps in its panel. */
+    @Config(qualifiers = SCREEN, shadows = {Screenshots.class, CompositedWindows.class})
+    @Test public void roadHomeShowingAgainDuringATapAboveTheVideoAppReturnsMapsToItsPanel() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        floatAboveTheVideoApp(maps);
+        maps.openFullscreenFromFloating(takeover());
+        untilCovered();
+        maps.resume();
+        hostSurfaceCreated(maps);
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+        assertMapsWaitsInItsPanel(maps, tasks);
+    }
+
+    @Config(qualifiers = SCREEN, shadows = {Screenshots.class, CompositedWindows.class})
+    @Test public void homeDuringATapAboveTheVideoAppReturnsMapsToItsPanel() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        floatAboveTheVideoApp(maps);
+        maps.openFullscreenFromFloating(takeover());
+        untilCovered();
+        maps.resume();
+        maps.home(maps::returnFromFloating);
+        hostSurfaceCreated(maps);
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+        assertMapsWaitsInItsPanel(maps, tasks);
+    }
+
+    /** Above the live video, Road Home only stops for another app: the takeover ends with its frozen frame. */
+    @Config(qualifiers = SCREEN, shadows = {Screenshots.class, CompositedWindows.class})
+    @Test public void anotherAppStoppingRoadHomeDuringATapAboveTheLiveVideoRemovesTheFrozenFrame() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        hostSurfaceCreated(maps);
+        assertTrue(maps.floatAboveVideo(FloatingPlacement.Corner.BOTTOM_RIGHT, listener(),
+                LiveSurfaceWindow.Entry.HELD_AT_CARD));
+        commitFrames();
+        maps.leavePanel();
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400));
+        maps.openFullscreenFromFloating(takeover());
+        untilCovered();
+        hostSurfaceDestroyed(maps);
+        maps.suspend();
+        assertEquals("No frozen frame stays over that app", 0, frozenFrames());
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+        assertMapsWaitsInItsPanel(maps, tasks);
+    }
+
+    /** The dock or the card opens the video app on the main display, and Maps floats above it at rest. */
+    private void floatAboveTheVideoApp(EmbeddedMaps maps) throws ReflectiveOperationException {
+        maps.suspend();
+        assertTrue(maps.floatAboveVideoApp(FloatingPlacement.Corner.BOTTOM_RIGHT, listener()));
+        commitFrames();
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400 + LiveSurfaceWindow.ENTRY_TAP_GRACE_MS));
+        assertTrue("Maps floats in its corner", floating(maps).floating());
+    }
+
+    /** Until the frozen frame covers the screen and Maps lays out, as Takeover.covered says. */
+    private void untilCovered() {
+        for (int i = 0; i < 100 && !events.contains("covered"); i++) {
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(10));
+        }
+        assertEquals(List.of("covered"), events);
+        assertEquals(1, frozenFrames());
+    }
+
+    private void assertMapsFullscreen(EmbeddedMaps maps, FakeTasks tasks) throws ReflectiveOperationException {
+        assertEquals("The existing Maps task moved to the main display once",
+                List.of("move to 0"), tasks.calls);
+        assertEquals(List.of("covered", "revealed"), events);
+        assertFalse("Nothing floats", floating(maps).active());
+        assertEquals("No frozen frame is left", 0, frozenFrames());
+        maps.release();
+    }
+
+    private void assertMapsWaitsInItsPanel(EmbeddedMaps maps, FakeTasks tasks) throws ReflectiveOperationException {
+        assertEquals("Maps never moved", List.of(), tasks.calls);
+        assertFalse("Nothing floats", floating(maps).active());
+        assertEquals("No frozen frame is left", 0, frozenFrames());
+        assertNull("Maps waits in its panel, with no message", panelMessage(maps));
+        android.graphics.Point size = new android.graphics.Point();
+        host.getSystemService(DisplayManager.class).getDisplay(panelDisplay(maps)).getRealSize(size);
+        assertEquals("Its display has the panel's size again", new android.graphics.Point(833, 720), size);
+        maps.release();
+    }
+
+    private MapPanel.Takeover takeover() {
+        return new MapPanel.Takeover() {
+            @Override public void covered() { events.add("covered"); }
+            @Override public void revealed() { events.add("revealed"); }
+            @Override public void failed() { events.add("failed"); }
+        };
+    }
+
+    /** Android draws, and then commits, the first frame of every window waiting for one. */
+    private void commitFrames() throws ReflectiveOperationException {
+        shadowOf(Looper.getMainLooper()).idle();
+        Method capture = ViewTreeObserver.class.getDeclaredMethod("captureFrameCommitCallbacks");
+        capture.setAccessible(true);
+        for (View window : windows()) {
+            Object callbacks = capture.invoke(window.getViewTreeObserver());
+            if (!(callbacks instanceof List<?>)) continue;
+            for (Object callback : (List<?>) callbacks) {
+                if (callback instanceof Runnable) ((Runnable) callback).run();
+            }
+        }
+    }
+
+    private int frozenFrames() {
+        int count = 0;
+        for (View window : windows()) {
+            if (window.getLayoutParams() instanceof WindowManager.LayoutParams && "Road Home map transition"
+                    .contentEquals(((WindowManager.LayoutParams) window.getLayoutParams()).getTitle())) count++;
+        }
+        return count;
+    }
+
+    private List<View> windows() {
+        ShadowWindowManagerImpl manager = Shadow.extract(host.getSystemService(WindowManager.class));
+        return new ArrayList<>(manager.getViews());
+    }
+
     @Test public void aVideoThatFloatedAsMapsStartedReturnsIfMapsThenFailsToMove() {
         EmbeddedMaps.CoverOnce once = new EmbeddedMaps.CoverOnce(covering());
         assertEquals(new Rect(1, 2, 3, 4), once.starting());
@@ -380,6 +615,14 @@ public class EmbeddedMapsTest {
         lifecycle.surfaceCreated((SurfaceHolder) holder.get(lifecycle));
     }
 
+    /** Road Home's window is hidden, as Road Home stops. */
+    private static void hostSurfaceDestroyed(EmbeddedMaps maps) throws ReflectiveOperationException {
+        EmbeddedDisplayLifecycle lifecycle = lifecycle(maps);
+        Field holder = EmbeddedDisplayLifecycle.class.getDeclaredField("holder");
+        holder.setAccessible(true);
+        lifecycle.surfaceDestroyed((SurfaceHolder) holder.get(lifecycle));
+    }
+
     private static EmbeddedDisplayLifecycle lifecycle(EmbeddedMaps maps) throws ReflectiveOperationException {
         Field field = EmbeddedMaps.class.getDeclaredField("displayLifecycle");
         field.setAccessible(true);
@@ -411,6 +654,17 @@ public class EmbeddedMapsTest {
     public static class Screenshots extends ShadowSurfaceControl {
         @Implementation protected static Bitmap screenshot(Rect crop, int width, int height, int rotation) {
             return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        }
+    }
+
+    /** Windows with a compositor surface, so a floating window can present Maps' display. */
+    @Implements(className = "android.view.ViewRootImpl", isInAndroidSdk = false)
+    public static class CompositedWindows extends ShadowViewRootImpl {
+        private SurfaceControl surface;
+
+        @Implementation protected SurfaceControl getSurfaceControl() {
+            if (surface == null) surface = new SurfaceControl.Builder().setName("Road Home test window").build();
+            return surface;
         }
     }
 }

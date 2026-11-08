@@ -101,12 +101,21 @@ final class EmbeddedDisplayLifecycle implements SurfaceHolder.Callback {
      */
     boolean resizeWhileHidden(int width, int height) throws ReflectiveOperationException {
         if (hostSurface) return false;
+        resize(width, height);
+        return true;
+    }
+
+    /**
+     * Resizes the display now, whether or not Road Home's window has a surface. ActivityView sizes
+     * the display to its view whenever that surface changes, so the caller gives the view the same
+     * size.
+     */
+    void resize(int width, int height) throws ReflectiveOperationException {
         Field field = ActivityView.class.getDeclaredField("mVirtualDisplay");
         field.setAccessible(true);
         Object display = field.get(view);
         if (!(display instanceof VirtualDisplay)) throw new IllegalStateException("Map display is not initialized");
         ((VirtualDisplay) display).resize(width, height, view.getResources().getDisplayMetrics().densityDpi);
-        return true;
     }
 
     /**

@@ -45,8 +45,32 @@ final class EmbeddedMaps extends MapPanel {
     private Runnable pendingFloat;
     private boolean panelFrameReady;
     private MapFrame panelFrame;
-    /** A tap on floating Maps that is taking the screen from the video, until Maps moves. */
-    private Takeover takeover;
+    /**
+     * A tap on floating Maps that is taking the screen from the video, from its frozen frame until
+     * Maps moves or the takeover is called off.
+     */
+    private static final class ScreenTakeover {
+        /** What floating Maps was above when it was tapped, which decides what Road Home's stop means. */
+        enum Above {
+            /** The live video Road Home presents whole above itself: Road Home stops only for another app. */
+            LIVE_VIDEO,
+            /**
+             * The video app Road Home opened on the main display: Road Home is hidden, or Android stops
+             * it at any moment, such as once the video app idles, and its window may still be there.
+             */
+            VIDEO_APP
+        }
+
+        final Takeover callbacks;
+        final Above above;
+
+        ScreenTakeover(Takeover callbacks, Above above) {
+            this.callbacks = callbacks;
+            this.above = above;
+        }
+    }
+
+    private ScreenTakeover takeover;
     private MapFrame takeoverFrame;
     /**
      * How long Maps, behind a frozen frame, may take to lay out at the full screen size before it
@@ -167,6 +191,8 @@ final class EmbeddedMaps extends MapPanel {
 
     void resume() {
         hostActive = true;
+        // Road Home shows again: a tap taking the screen is called off with its frozen frame.
+        cancelTakeover();
         // The video app left, or failed to open: Maps returns from above it to its panel.
         if (overVideoApp != null) { returnFromFloating(); return; }
         if (returningBeneath) {
@@ -183,12 +209,16 @@ final class EmbeddedMaps extends MapPanel {
     }
     void suspend() {
         hostActive = false;
+        // Above the video app Road Home opened, Road Home's stop is expected whenever Android
+        // delivers it, also halfway through a tap taking the screen: Maps keeps floating, or keeps
+        // going fullscreen, until another app comes to the front.
+        if (overVideoApp != null
+                || takeover != null && takeover.above == ScreenTakeover.Above.VIDEO_APP) return;
         cancelPendingTransition();
         cancelPendingFloat();
         cancelTakeover();
         // Another app replaced Road Home and the video below; Maps waits hidden in its panel.
-        // Above the video app Road Home opened, it stays until another app comes to the front.
-        if (overVideoApp == null) floating.cancel();
+        floating.cancel();
     }
 
     @Override void home(Runnable then) {
@@ -267,6 +297,8 @@ final class EmbeddedMaps extends MapPanel {
         // Road Home showing again returns Maps to its panel (resume); Maps and the video app are its own.
         if (packageName.equals(getContext().getPackageName()) || packageName.equals(PACKAGE)
                 || packageName.equals(EmbeddedVideo.PACKAGE)) return;
+        // A tap taking the screen is called off with its frozen frame: Maps never moves over that app.
+        cancelTakeover();
         floating.dismiss(packageName + " came to the front on display " + displayId);
     }
 
@@ -336,17 +368,20 @@ final class EmbeddedMaps extends MapPanel {
         // Grows live, never past pixel scale one, to its full-height panel display centered on
         // screen. A held frame then covers the task move, and crossfades to fullscreen Maps.
         floating.focus(() -> {
+            if (takeover != null) return;
+            ScreenTakeover started = new ScreenTakeover(next, overVideoApp != null
+                    ? ScreenTakeover.Above.VIDEO_APP : ScreenTakeover.Above.LIVE_VIDEO);
+            takeover = started;
             transition.holdThenCrossfade(() -> {
-                // Under the frozen frame: Maps leaves its window for its panel, the video steps
-                // aside, and Maps lays out at the full screen size on its own display first, as
-                // the dock expansion does. Moved at its panel size, Android 10 left Road Home
-                // resumed and visible behind fullscreen Maps, so Home later had nothing to animate.
-                takeover = next;
+                if (takeover != started) return;
+                // Under the frozen frame: the video steps aside, and Maps lays out at the full
+                // screen size on its own display first, as the dock expansion does. Moved at its
+                // panel size, Android 10 left Road Home resumed and visible behind fullscreen
+                // Maps, so Home later had nothing to animate.
                 next.covered();
-                // Above the video app, Road Home's stopped window cannot show Maps' display, and a
-                // display shown nowhere is missing from SurfaceFlinger's layers, so Maps could not
-                // be seen laying out. It stays in its window, under the frozen frame, until it moves.
-                if (!growHiddenDisplay()) {
+                if (started.above == ScreenTakeover.Above.VIDEO_APP) growAboveVideoApp();
+                else {
+                    // Maps leaves its window for its panel, where Road Home's layout sizes it.
                     floating.cancel();
                     activityView.setLayoutParams(new LayoutParams(screen.x, screen.y));
                 }
@@ -361,22 +396,24 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     /**
-     * Above the video app Road Home is stopped and lays out nothing, so Maps' display grows to the
-     * full screen size directly.
-     * @return false when Road Home's own layout has to size it
+     * Above the video app, Maps stays in its floating window, under the frozen frame, until it
+     * moves. Returned to its panel, it would show nowhere while Road Home is stopped, and a display
+     * shown nowhere is missing from SurfaceFlinger's layers, where Maps is seen laying out. Road
+     * Home may be stopped and lay out nothing, or still have its window (the video app moved off
+     * Road Home's display left it resumed), so the display and its view both take the full size.
      */
-    private boolean growHiddenDisplay() {
-        if (hostActive || displayLifecycle == null) return false;
-        try { return displayLifecycle.resizeWhileHidden(screen.x, screen.y); }
+    private void growAboveVideoApp() {
+        activityView.setLayoutParams(new LayoutParams(screen.x, screen.y));
+        if (displayLifecycle == null) return;
+        try { displayLifecycle.resize(screen.x, screen.y); }
         catch (ReflectiveOperationException | RuntimeException error) {
-            Log.w("RoadHomeMap", "Could not grow Maps' hidden display to " + screen.x + "x" + screen.y
+            Log.w("RoadHomeMap", "Could not grow Maps' display to " + screen.x + "x" + screen.y
                     + "; Maps moves at its panel size once its deadline passes and lays out fullscreen after", error);
-            return false;
         }
     }
 
     private void moveTakeover() {
-        Takeover moving = takeover;
+        ScreenTakeover moving = takeover;
         if (moving == null) return;
         stopWaitingForTakeover();
         takeover = null;
@@ -389,7 +426,7 @@ final class EmbeddedMaps extends MapPanel {
             transition.cancel();
             Log.e("RoadHomeMap", "Could not open floating Maps fullscreen on display 0", error);
             showError("Maps could not open fullscreen. Tap Open Maps; existing tasks were left intact.");
-            moving.failed();
+            moving.callbacks.failed();
         } finally {
             // Maps' display, kept in the floating window above the video app, now has no task.
             floating.cancel();
@@ -401,6 +438,8 @@ final class EmbeddedMaps extends MapPanel {
         if (takeover == null) return;
         takeover = null;
         stopWaitingForTakeover();
+        // Its frozen frame never stays above whatever called it off.
+        transition.cancel();
         restorePanelSize();
     }
 
