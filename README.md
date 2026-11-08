@@ -2,6 +2,12 @@
 
 A small native launcher for the PX6 running Hal9k Android 10. The real Google Maps app occupies the main panel; active Android media sessions supply the music controls. No map SDK, WebView, network backend, analytics, or copied Mini AA code.
 
+<p align="center">
+  <a href="docs/media/wend-demo.mp4"><img src="docs/media/wend-demo-preview.gif" width="800" alt="Wend: a playing video floats over fullscreen Maps, live navigation floats over the fullscreen video, and tapping a floating window swaps them"></a>
+</p>
+
+[Watch the one-minute demo](docs/media/wend-demo.mp4): the home layout, floating video and Maps windows, swapping, the app drawer and the settings sheet. It is silent, captioned, and recorded in the Android 10 emulator with real Google Maps and YouTube. Video: Big Buck Bunny, Blender Foundation, CC BY 3.0.
+
 Wend was called Road Home until November 2026. The rename changed the app ID from `dev.augie.roadhome` to `dev.augie.wend`, so Android treats Wend as a new app. Validation notes written before the rename may quote artifacts named `road-home-*`; logs now use the `Wend*` tag prefix where they used `RoadHome*`.
 
 ### Moving the PX6 from Road Home to Wend
