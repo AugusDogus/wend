@@ -42,8 +42,9 @@ Continuous presentation applies once the playing preview is ready.
 Repeated opening requests are coalesced. Missing overlay readiness falls back
 after 700 ms. Backgrounding cancels the window without a delayed app launch.
 Pausing fullscreen and returning Home preserves the paused media state and allows
-subsequent playback to prepare the preview again. Thumbnail artwork still depends
-on the app supplying it; without artwork the existing play placeholder is shown.
+subsequent playback to prepare the preview again. A paused card shows a recent
+still of the live video, then session artwork, then a play-control placeholder;
+see [the video card](floating-windows.md#the-video-card).
 
 ## Validation
 
