@@ -29,6 +29,18 @@ public final class MainActivity extends Activity {
     private FrostedBackdrop backdrop;
     private AppDrawer drawer;
     private SettingsSheet settingsSheet;
+    private final LiveSurfaceWindow.Listener floatingVideo = new LiveSurfaceWindow.Listener() {
+        @Override public void settled(FloatingPlacement.Corner corner) {
+            preferences.edit().putString(FLOATING_VIDEO_CORNER, corner.name()).apply();
+        }
+        @Override public void tapped() { swapToVideo(); }
+    };
+    private final LiveSurfaceWindow.Listener floatingMaps = new LiveSurfaceWindow.Listener() {
+        @Override public void settled(FloatingPlacement.Corner corner) {
+            preferences.edit().putString(FLOATING_MAPS_CORNER, corner.name()).apply();
+        }
+        @Override public void tapped() { swapToMaps(); }
+    };
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -92,12 +104,6 @@ public final class MainActivity extends Activity {
     }
 
     private void openMusic() { AppLaunch.open(this, media.musicPackage()); }
-    private final LiveSurfaceWindow.Listener floatingVideo = new LiveSurfaceWindow.Listener() {
-        @Override public void settled(FloatingPlacement.Corner corner) {
-            preferences.edit().putString(FLOATING_VIDEO_CORNER, corner.name()).apply();
-        }
-        @Override public void tapped() { swapToVideo(); }
-    };
 
     /**
      * The floating video grows over fullscreen Maps. Hidden beneath it, Maps returns to its
@@ -121,12 +127,6 @@ public final class MainActivity extends Activity {
         return FloatingPlacement.Corner.parse(preferences.getString(FLOATING_VIDEO_CORNER, null),
                 FloatingPlacement.Corner.BOTTOM_RIGHT);
     }
-    private final LiveSurfaceWindow.Listener floatingMaps = new LiveSurfaceWindow.Listener() {
-        @Override public void settled(FloatingPlacement.Corner corner) {
-            preferences.edit().putString(FLOATING_MAPS_CORNER, corner.name()).apply();
-        }
-        @Override public void tapped() { swapToMaps(); }
-    };
 
     /**
      * Floating Maps takes the screen as fullscreen Maps. Under a frozen frame, the fullscreen video
@@ -152,6 +152,7 @@ public final class MainActivity extends Activity {
         maps.floatAboveVideo(FloatingPlacement.Corner.parse(preferences.getString(FLOATING_MAPS_CORNER, null),
                 FloatingPlacement.Corner.BOTTOM_RIGHT), floatingMaps, entry);
     }
+
     // A virtual display can keep Home started behind another fullscreen app on Android 10.
     // Remove native Maps overlays explicitly instead of relying on onStop.
     void externalAppOpening() { maps.suspend(); media.suspendVideo(); }

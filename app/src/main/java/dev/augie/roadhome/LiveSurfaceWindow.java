@@ -151,12 +151,7 @@ final class LiveSurfaceWindow {
             next.overlay.setSystemUiVisibility(host.getWindow().getDecorView().getSystemUiVisibility());
             windows.addView(next.overlay, params);
             if (next.placement == null) routeHome();
-            else {
-                // Touches outside the floating window reach the app below it.
-                next.touches = new OverlayTouchRegion(next.overlay);
-                next.touches.only(new Rect());
-                next.overlay.setOnTouchListener((view, event) -> next.touch(event));
-            }
+            else next.takeTouches();
             next.overlay.getViewTreeObserver().registerFrameCommitCallback(next::attach);
             next.overlay.invalidate();
             next.overlay.postDelayed(next.deadline, READY_MS);
@@ -271,6 +266,13 @@ final class LiveSurfaceWindow {
                         @Override public void released(Rect bounds, FloatingPlacement.Corner next) { snap(next); }
                         @Override public void tapped() { Running.this.listener.tapped(); }
                     });
+        }
+
+        /** Touches outside the floating window reach the app below it; none reach it yet. */
+        void takeTouches() throws ReflectiveOperationException {
+            touches = new OverlayTouchRegion(overlay);
+            touches.only(new Rect());
+            overlay.setOnTouchListener((view, event) -> touch(event));
         }
 
         void attach() {
@@ -399,10 +401,7 @@ final class LiveSurfaceWindow {
         boolean hideForCorner(FloatingPlacement next, FloatingPlacement.Corner nextCorner, Listener nextListener) {
             if (phase == Phase.CLOSED || phase == Phase.WAITING || target != Target.WHOLE) return false;
             try {
-                if (touches == null) {
-                    touches = new OverlayTouchRegion(overlay);
-                    overlay.setOnTouchListener((view, event) -> touch(event));
-                }
+                if (touches == null) takeTouches();
                 floatIn(next, nextCorner, nextListener);
                 createOutline();
             } catch (ReflectiveOperationException | RuntimeException error) {
