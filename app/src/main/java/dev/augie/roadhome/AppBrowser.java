@@ -79,6 +79,8 @@ final class AppBrowser implements AppCatalog.Listener {
         status.setGravity(Gravity.CENTER);
         int inset = Ui.dp(activity, 24);
         status.setPadding(inset, 0, inset, 0);
+        // TalkBack announces "No apps match" and the other results as the query changes.
+        status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         body.addView(status, new FrameLayout.LayoutParams(-1, Ui.dp(activity, 48), Gravity.TOP));
         catalog.addListener(this);
         bind();
@@ -199,8 +201,8 @@ final class AppBrowser implements AppCatalog.Listener {
 
     private EditText searchField(String hint) {
         EditText field = new EditText(activity);
+        // The hint labels the field; a description would replace the typed query for TalkBack.
         field.setHint(hint);
-        field.setContentDescription(hint);
         field.setTextSize(17);
         field.setTextColor(Ui.TEXT);
         field.setHintTextColor(Ui.MUTED);
