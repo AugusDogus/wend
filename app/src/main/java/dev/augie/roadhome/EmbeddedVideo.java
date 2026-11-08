@@ -283,7 +283,7 @@ final class EmbeddedVideo extends FrameLayout {
             if (player != null) {
                 player.setCallback(null);
                 releaseLifecycle();
-                player.release();
+                releaseDisplay();
                 removeView(player);
                 player = null;
                 playerSurface = null;
@@ -450,6 +450,11 @@ final class EmbeddedVideo extends FrameLayout {
         Log.e("RoadHome", "Could not embed the playing YouTube video surface", error);
     }
 
+    /** ActivityView refuses to release a display it never created, before its first surface. */
+    private void releaseDisplay() {
+        if (player.getVirtualDisplayId() != android.view.Display.INVALID_DISPLAY) player.release();
+    }
+
     private void releaseLifecycle() {
         if (playerLifecycle != null) playerLifecycle.release();
         playerLifecycle = null;
@@ -464,7 +469,7 @@ final class EmbeddedVideo extends FrameLayout {
         if (player != null) {
             player.setCallback(null);
             releaseLifecycle();
-            player.release();
+            releaseDisplay();
             playerSurface = null;
         }
         state = State.CLOSED;

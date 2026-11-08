@@ -137,6 +137,29 @@ public class MediaPanelTest {
         }
     }
 
+    /** Road Home can be destroyed before the card's player display gets its first surface. */
+    @Test public void aPlayingVideoCardReleasesBeforeItsPlayerDisplayExists() {
+        try (ActivityController<Activity> host = Robolectric.buildActivity(Activity.class).setup()) {
+            Activity activity = host.get();
+            MediaSession session = new MediaSession(activity, "video");
+            MediaController controller = session.getController();
+            Shadows.shadowOf(controller).setPackageName(EmbeddedVideo.PACKAGE);
+            Shadows.shadowOf(controller).setPlaybackState(new PlaybackState.Builder()
+                    .setState(PlaybackState.STATE_PLAYING, 0, 1).build());
+            Shadows.shadowOf(controller).setMetadata(new MediaMetadata.Builder()
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, "Playing video").build());
+            Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class)).addController(controller);
+            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { });
+            try {
+                panel.start();
+                panel.stop();
+                panel.release();
+            } finally {
+                session.release();
+            }
+        }
+    }
+
     @Test public void onlyStoppedFailedOrResetPlaybackEndsAFloatingVideo() {
         for (int state : new int[]{PlaybackState.STATE_STOPPED, PlaybackState.STATE_NONE, PlaybackState.STATE_ERROR}) {
             assertTrue("state " + state, MediaPanel.videoPlaybackEnded(playback(state)));
