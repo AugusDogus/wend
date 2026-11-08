@@ -33,6 +33,14 @@ final class FrostedBackdrop {
         void onUnavailable();
     }
 
+    /** One capture in flight. Any thread may ask whether its pixels are already taken. */
+    static final class Capture {
+        private volatile boolean taken;
+
+        /** True once the screen pixels are taken, possibly before onCaptured is delivered. */
+        boolean isTaken() { return taken; }
+    }
+
     private static final int CAPTURE_WIDTH = 320;
     private final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -49,11 +57,13 @@ final class FrostedBackdrop {
         worker.post(this::warmUp);
     }
 
-    void capture(Activity activity, Listener listener) {
+    Capture capture(Activity activity, Listener listener) {
         int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
         int width = activity.getResources().getDisplayMetrics().widthPixels;
         int height = activity.getResources().getDisplayMetrics().heightPixels;
-        worker.post(() -> captureOnWorker(rotation, width, height, listener));
+        Capture capture = new Capture();
+        worker.post(() -> captureOnWorker(rotation, width, height, capture, listener));
+        return capture;
     }
 
     /** Releases the RenderScript context and stops the worker after any queued capture. */
@@ -67,7 +77,7 @@ final class FrostedBackdrop {
         thread.quitSafely();
     }
 
-    private void captureOnWorker(int rotation, int width, int height, Listener listener) {
+    private void captureOnWorker(int rotation, int width, int height, Capture capture, Listener listener) {
         if (Build.VERSION.SDK_INT != 29 || Process.myUid() != 1000) {
             Log.w("RoadHome", "Backdrop blur needs Android 10 and the platform signature; using translucent glass");
             main.post(listener::onUnavailable);
@@ -84,11 +94,12 @@ final class FrostedBackdrop {
                 return;
             }
             long captured = SystemClock.uptimeMillis();
+            capture.taken = true;
             main.post(listener::onCaptured);
-            Bitmap capture = (Bitmap) result;
+            Bitmap screen = (Bitmap) result;
             Bitmap pixels;
-            try { pixels = capture.copy(Bitmap.Config.ARGB_8888, true); }
-            finally { capture.recycle(); }
+            try { pixels = screen.copy(Bitmap.Config.ARGB_8888, true); }
+            finally { screen.recycle(); }
             if (pixels == null) throw new IllegalStateException("Could not copy backdrop pixels into a software bitmap");
             try { blur(pixels); }
             catch (RuntimeException error) { pixels.recycle(); throw error; }

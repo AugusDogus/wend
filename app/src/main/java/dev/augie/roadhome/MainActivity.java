@@ -187,7 +187,7 @@ public final class MainActivity extends Activity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        if (drawer != null) drawer.dismiss();
+        if (drawer != null) drawer.close(); // Home slides an open drawer away.
         hideSystemBars();
         // Moving an embedded task fullscreen can leave Home started. Its return intent
         // must restore Maps even when Android does not deliver another onStart.

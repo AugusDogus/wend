@@ -1,24 +1,15 @@
 package dev.augie.roadhome;
 
-import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.ActivityOptions;
-import android.app.Dialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.LauncherApps;
 import android.content.res.ColorStateList;
-import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.Drawable;
-import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.RippleDrawable;
-import android.graphics.drawable.TransitionDrawable;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.Process;
 import android.os.SystemClock;
 import android.text.Editable;
@@ -28,9 +19,6 @@ import android.text.TextWatcher;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewTreeObserver;
-import android.view.Window;
-import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -44,70 +32,47 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Full-width glass app drawer. One instance per activity is reused for every opening; it
- * shows AppCatalog's cached apps and search hides tiles instead of rebuilding them.
+ * Full-width glass app drawer on a BottomSheet. One instance per activity is reused for every
+ * opening; it shows AppCatalog's cached apps and search hides tiles instead of rebuilding them.
  */
 final class AppDrawer implements AppCatalog.Listener {
     private static final int COLUMNS = 5;
-    // A warm capture takes a few milliseconds. Never let a slow one hold the drawer back.
-    private static final long CAPTURE_DEADLINE_MS = 64;
-    private static final int BLUR_FADE_MS = 150;
 
     private final Activity activity;
     private final AppCatalog catalog;
-    private final FrostedBackdrop backdrop;
-    private final Handler main = new Handler(Looper.getMainLooper());
-    private final Dialog dialog;
-    private final LinearLayout sheet;
+    private final BottomSheet sheet;
     private final EditText search;
     private final TextView status;
     private final ScrollView scroll;
     private final AppGrid grid;
     private final Map<LauncherApp.Key, TextView> tiles = new HashMap<>();
-    private final Runnable captureDeadline = this::reveal;
-    /** Identifies the current opening, so a late capture from an earlier one is ignored. */
-    private Object opening;
-    private boolean revealed;
-    private boolean capturedBeforeReveal;
-    private boolean drawn;
-    private long openedAt;
 
     AppDrawer(Activity activity, AppCatalog catalog) {
         long started = SystemClock.uptimeMillis();
         this.activity = activity;
         this.catalog = catalog;
-        backdrop = new FrostedBackdrop(activity);
-        dialog = new Dialog(activity);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setOnDismissListener(ignored -> reset());
-        FrameLayout root = new FrameLayout(activity);
-        root.setBackgroundColor(0x22000000);
-        root.setOnClickListener(v -> dialog.dismiss());
-        sheet = new LinearLayout(activity);
-        sheet.setOrientation(LinearLayout.VERTICAL);
-        sheet.setClickable(true);
-        sheet.setPadding(Ui.dp(activity, 8), Ui.dp(activity, 4), Ui.dp(activity, 8), 0);
         LinearLayout header = new LinearLayout(activity);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(Ui.iconButton(activity, Ui.Icon.CLOSE, "Close apps", dialog::dismiss),
+        header.addView(Ui.iconButton(activity, Ui.Icon.CLOSE, "Close apps", this::close),
                 new LinearLayout.LayoutParams(Ui.dp(activity, 48), Ui.dp(activity, 48)));
         search = searchField();
         LinearLayout.LayoutParams searchLayout = new LinearLayout.LayoutParams(0, Ui.dp(activity, 48), 1);
         searchLayout.setMargins(Ui.dp(activity, 8), 0, Ui.dp(activity, 8), 0);
         header.addView(search, searchLayout);
         header.addView(new View(activity), new LinearLayout.LayoutParams(Ui.dp(activity, 48), 1));
-        sheet.addView(header, new LinearLayout.LayoutParams(-1, Ui.dp(activity, 64)));
+        FrameLayout body = new FrameLayout(activity);
+        grid = new AppGrid(activity, COLUMNS, Ui.dp(activity, 100));
+        grid.setPadding(0, 0, 0, Ui.dp(activity, 8));
+        scroll = new ScrollView(activity);
+        // Rows fade out under the header and at the bottom edge, hinting at more apps.
+        scroll.setVerticalFadingEdgeEnabled(true);
+        scroll.setFadingEdgeLength(Ui.dp(activity, 24));
+        scroll.addView(grid);
+        body.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         status = Ui.text(activity, "", 17, Ui.MUTED);
         status.setGravity(Gravity.CENTER);
-        sheet.addView(status, new LinearLayout.LayoutParams(-1, Ui.dp(activity, 48)));
-        grid = new AppGrid(activity, COLUMNS, Ui.dp(activity, 100));
-        scroll = new ScrollView(activity);
-        scroll.addView(grid);
-        sheet.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        root.addView(sheet, new FrameLayout.LayoutParams(-1, -1));
-        dialog.setContentView(root);
-        sheet.setFocusableInTouchMode(true);
-        sheet.requestFocus();
+        body.addView(status, new FrameLayout.LayoutParams(-1, Ui.dp(activity, 48), Gravity.TOP));
+        sheet = new BottomSheet(activity, "App drawer", header, body, this::reset);
         catalog.addListener(this);
         bind();
         Log.i("RoadHome", "App drawer prepared with " + tiles.size() + " apps in "
@@ -115,39 +80,19 @@ final class AppDrawer implements AppCatalog.Listener {
     }
 
     void show() {
-        if (opening != null) return;
-        Object current = new Object();
-        opening = current;
-        openedAt = SystemClock.uptimeMillis();
-        revealed = false;
-        capturedBeforeReveal = false;
-        drawn = false;
         catalog.retryIfFailed();
-        sheet.setBackground(clearGlass());
-        backdrop.capture(activity, new FrostedBackdrop.Listener() {
-            @Override public void onCaptured() {
-                if (opening != current) return;
-                capturedBeforeReveal = !revealed;
-                reveal();
-            }
-            @Override public void onBlurred(Bitmap bitmap) {
-                if (opening != current) return;
-                if (capturedBeforeReveal) frost(bitmap);
-                else Log.i("RoadHome", "Backdrop capture finished after the drawer appeared; "
-                        + "keeping clear glass so the blur cannot include the drawer");
-            }
-            @Override public void onUnavailable() { if (opening == current) reveal(); }
-        });
-        main.postDelayed(captureDeadline, CAPTURE_DEADLINE_MS);
+        sheet.show();
     }
 
+    /** Slides the drawer away, as the close button, Back, and Home do. */
+    void close() { sheet.close(); }
+
     /** Hides the drawer immediately, for example when an app opens over it. */
-    void dismiss() { if (dialog.isShowing()) dialog.dismiss(); else reset(); }
+    void dismiss() { sheet.dismiss(); }
 
     void release() {
-        dismiss();
         catalog.removeListener(this);
-        backdrop.release();
+        sheet.release();
     }
 
     @Override public void onAppsChanged(AppCatalog catalog) { bind(); }
@@ -219,64 +164,9 @@ final class AppDrawer implements AppCatalog.Listener {
         return options.toBundle();
     }
 
-    private void reveal() {
-        if (revealed || opening == null) return;
-        revealed = true;
-        main.removeCallbacks(captureDeadline);
-        if (BuildConfig.WINDOWED_MAPS && dialog.getWindow() != null) {
-            dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
-        }
-        dialog.show();
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-            window.setLayout(-1, -1);
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
-                    | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
-        }
-        logFirstFrame();
-    }
-
-    private void logFirstFrame() {
-        ViewTreeObserver observer = sheet.getViewTreeObserver();
-        observer.addOnDrawListener(new ViewTreeObserver.OnDrawListener() {
-            @Override public void onDraw() {
-                if (drawn) return;
-                drawn = true;
-                Log.i("RoadHome", "App drawer drew " + visibleTiles() + " apps "
-                        + (SystemClock.uptimeMillis() - openedAt) + " ms after opening");
-                ViewTreeObserver.OnDrawListener self = this;
-                // A draw listener cannot remove itself during dispatch.
-                main.post(() -> { if (observer.isAlive()) observer.removeOnDrawListener(self); });
-            }
-        });
-    }
-
-    private void frost(Bitmap bitmap) {
-        BitmapDrawable image = new BitmapDrawable(activity.getResources(), bitmap);
-        image.setGravity(Gravity.FILL);
-        TransitionDrawable glass = new TransitionDrawable(new Drawable[]{clearGlass(),
-                new LayerDrawable(new Drawable[]{image, new ColorDrawable(0xB8101922), Ui.glass(activity)})});
-        glass.setCrossFadeEnabled(true);
-        sheet.setBackground(glass);
-        glass.startTransition(drawn && ValueAnimator.areAnimatorsEnabled() ? BLUR_FADE_MS : 0);
-    }
-
-    private Drawable clearGlass() {
-        return new LayerDrawable(new Drawable[]{new ColorDrawable(0xEE101922), Ui.glass(activity)});
-    }
-
     private void reset() {
-        opening = null;
-        main.removeCallbacks(captureDeadline);
         search.setText("");
         search.clearFocus();
-        sheet.requestFocus();
         scroll.scrollTo(0, 0);
     }
 
