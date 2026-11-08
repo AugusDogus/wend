@@ -98,6 +98,7 @@ final class BottomSheet {
             @Override public void onBackPressed() { close(); }
         };
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        // Android delivers this asynchronously; it only matters if the system dismisses the dialog.
         dialog.setOnDismissListener(ignored -> reset());
         FrameLayout root = new FrameLayout(activity);
         scrim = new ImageView(activity);
@@ -178,13 +179,13 @@ final class BottomSheet {
         }
         hideKeyboard();
         long duration = Math.max(MIN_EXIT_MS, Math.round(EXIT_MS * (1 - offset / travel)));
-        animateTo(travel, duration, Phase.CLOSING, dialog::dismiss);
+        animateTo(travel, duration, Phase.CLOSING, this::dismiss);
     }
 
     /** Removes the sheet immediately, for example when an app opens over it. */
     void dismiss() {
         if (dialog.isShowing()) dialog.dismiss();
-        else reset();
+        reset();
     }
 
     void release() {
@@ -300,6 +301,7 @@ final class BottomSheet {
     }
 
     private void reset() {
+        if (phase == Phase.HIDDEN) return;
         main.removeCallbacks(captureDeadline);
         cancel(motion);
         cancel(frosting);
