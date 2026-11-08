@@ -453,6 +453,25 @@ final class EmbeddedMaps extends MapPanel {
                 new Rect(0, 0, getWidth(), getHeight()));
     }
 
+    @Override protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight);
+        // A new map width from Settings: Maps' root keeps the previous crop and input region,
+        // showing a black, untouchable strip, until it is fitted to the panel again.
+        if (oldWidth != 0 && oldHeight != 0) post(this::fitToResizedPanel);
+    }
+
+    private void fitToResizedPanel() {
+        if (!hostActive || state != State.READY || activityView == null || launching || floating.active()
+                || takeover != null || transition.active() || (motion != null && motion.pending())) return;
+        try {
+            MapsTask.Task existing = tasks.find();
+            if (existing != null && existing.displayId == activityView.getVirtualDisplayId()) revealSurface();
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.e("RoadHomeMap", "Could not fit Maps to its resized panel (" + getWidth() + "x" + getHeight()
+                    + "); part of the panel may stay black until Home shows Maps again", error);
+        }
+    }
+
     /** @return whether Android accepted the launch request */
     private boolean launchNew(int displayId) {
         Intent intent = getContext().getPackageManager().getLaunchIntentForPackage(PACKAGE);
