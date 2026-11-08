@@ -21,12 +21,20 @@ final class FloatingDrag {
     private float downX;
     private float downY;
     private boolean dragging;
+    /** Uptime from which a touch that starts can be a tap. */
+    private long tapsFrom = Long.MIN_VALUE;
 
     FloatingDrag(FloatingPlacement placement, int touchSlop, Listener listener) {
         this.placement = placement;
         this.touchSlop = touchSlop;
         this.listener = listener;
     }
+
+    /**
+     * A tap whose touch starts before {@code uptimeMillis} is taken but does nothing, because it
+     * was aimed at what the window has just covered. Drags still move the window.
+     */
+    void ignoreTapsUntil(long uptimeMillis) { tapsFrom = uptimeMillis; }
 
     /** @param bounds where the window is drawn when this touch starts; read only on ACTION_DOWN */
     boolean handle(MotionEvent event, Rect bounds) {
@@ -59,7 +67,7 @@ final class FloatingDrag {
                     velocity.computeCurrentVelocity(1000);
                     listener.released(current, placement.release(current,
                             velocity.getXVelocity(), velocity.getYVelocity()));
-                } else listener.tapped();
+                } else if (event.getDownTime() >= tapsFrom) listener.tapped();
                 recycle();
                 return true;
             case MotionEvent.ACTION_CANCEL:

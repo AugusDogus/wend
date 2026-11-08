@@ -65,6 +65,31 @@ public class FloatingDragTest {
         assertEquals("released BOTTOM_RIGHT", events.get(events.size() - 1));
     }
 
+    private void tap(long downTime) {
+        for (int action : new int[]{MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP}) {
+            MotionEvent event = MotionEvent.obtain(downTime, downTime + 60, action, 1000, 560, 0);
+            try { assertTrue(drag.handle(event, resting)); }
+            finally { event.recycle(); }
+        }
+    }
+
+    @Test public void aTapThatLandsBeforeTapsCountIsTakenButDoesNothing() {
+        // A second tap on the dock's Maps button can land where the video has just arrived.
+        drag.ignoreTapsUntil(5000);
+        tap(4999);
+        assertEquals(List.of(), events);
+        tap(5000);
+        assertEquals(List.of("tapped"), events);
+    }
+
+    @Test public void theWindowCanStillBeDraggedBeforeTapsCount() {
+        drag.ignoreTapsUntil(5000);
+        send(MotionEvent.ACTION_DOWN, 0, 1000, 560);
+        send(MotionEvent.ACTION_MOVE, 500, 400, 300);
+        send(MotionEvent.ACTION_UP, 1000, 400, 300);
+        assertEquals("released TOP_LEFT", events.get(events.size() - 1));
+    }
+
     @Test public void aCanceledDragStillSettlesIntoACorner() {
         send(MotionEvent.ACTION_DOWN, 0, 1000, 560);
         send(MotionEvent.ACTION_MOVE, 500, 400, 300);

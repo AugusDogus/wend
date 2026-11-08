@@ -13,8 +13,11 @@ import android.view.WindowManager;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
-/** Android 10 ActivityView's own container surface, never a foreign app's surface. */
-final class ActivityViewSurface {
+/**
+ * Android 10 ActivityView's own container surface, never a foreign app's surface. Not final only
+ * so JVM tests can attach it to a window that has no compositor surface.
+ */
+class ActivityViewSurface {
     private final SurfaceControl surface;
     private final SurfaceView parent;
     private final Method crop;

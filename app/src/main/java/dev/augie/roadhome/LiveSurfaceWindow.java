@@ -15,6 +15,7 @@ import android.graphics.PixelFormat;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -53,6 +54,11 @@ final class LiveSurfaceWindow {
     private static final int EMERGE_MS = 220;
     private static final int FADE_MS = 160;
     private static final int READY_MS = 700;
+    /**
+     * After a floating window first comes to rest, a tap this soon was aimed at what it covered,
+     * such as a second tap on the dock's Maps button where the video has just arrived.
+     */
+    static final int ENTRY_TAP_GRACE_MS = 500;
     private static final float EMERGE_SCALE = .9f;
     private final Activity host;
     private final String title;
@@ -291,7 +297,7 @@ final class LiveSurfaceWindow {
                 if (placement == null) whole(reached, true);
                 else if (emerging) emerge();
                 else if (entry == Entry.HELD_AT_CARD) { if (leaveWhenAttached) leaveCard(); }
-                else animateTo(Target.CORNER, MOTION_MS, motion, this::rest);
+                else animateTo(Target.CORNER, MOTION_MS, motion, this::entered);
             } catch (ReflectiveOperationException | RuntimeException error) { fail(error); }
         }
 
@@ -373,11 +379,17 @@ final class LiveSurfaceWindow {
 
         void rest() { touches.only(placement.rest(corner)); }
 
+        /** Its entry motion has settled: it takes touches, but not yet taps. */
+        void entered() {
+            rest();
+            drag.ignoreTapsUntil(SystemClock.uptimeMillis() + ENTRY_TAP_GRACE_MS);
+        }
+
         void leaveCard() {
             if (entry != Entry.HELD_AT_CARD || phase == Phase.CLOSED) return;
             if (phase == Phase.WAITING) { leaveWhenAttached = true; return; }
             if (target != Target.CARD || phase != Phase.RESTING) return;
-            animateTo(Target.CORNER, MOTION_MS, motion, this::rest);
+            animateTo(Target.CORNER, MOTION_MS, motion, this::entered);
         }
 
         void whole(Runnable then, boolean interactive) {
@@ -423,7 +435,7 @@ final class LiveSurfaceWindow {
         void emerge() {
             if (phase != Phase.RESTING || target != Target.HIDDEN) return;
             show(emergeFrom(), radius, 0, 0);
-            animateTo(Target.CORNER, EMERGE_MS, easeOut, this::rest);
+            animateTo(Target.CORNER, EMERGE_MS, easeOut, this::entered);
         }
 
         boolean touch(MotionEvent event) {

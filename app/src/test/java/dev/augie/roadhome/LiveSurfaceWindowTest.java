@@ -1,20 +1,34 @@
 package dev.augie.roadhome;
 
 import android.app.Activity;
+import android.app.ActivityView;
 import android.content.Intent;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.Region;
 import android.os.Looper;
+import android.os.SystemClock;
+import android.view.MotionEvent;
+import android.view.SurfaceControl;
 import android.view.View;
+import android.view.ViewTreeObserver;
+import android.view.WindowManager;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.GraphicsMode;
+import org.robolectric.shadow.api.Shadow;
+import org.robolectric.shadows.ShadowChoreographer;
+import org.robolectric.shadows.ShadowWindowManagerImpl;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -23,11 +37,17 @@ import static org.robolectric.Shadows.shadowOf;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 29)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 public class LiveSurfaceWindowTest {
     private final Activity host = Robolectric.buildActivity(Activity.class).setup().get();
     private final View card = new View(host);
     private final LiveSurfaceWindow window = new LiveSurfaceWindow(host, "Road Home test window", "RoadHomeTest");
     private final List<String> events = new ArrayList<>();
+
+    @Before public void drawFramesAtDisplayRate() {
+        // Otherwise Robolectric runs every animation frame at once, and nothing is caught moving.
+        ShadowChoreographer.setFrameDelay(Duration.ofMillis(16));
+    }
 
     private void open() {
         card.layout(0, 0, 320, 180);
@@ -144,10 +164,19 @@ public class LiveSurfaceWindowTest {
         window.cancel();
     }
 
-    @Test public void everyFloatingEntryKeepsPlayingWhileRoadHomeIsHidden() {
+    @Test public void everyFloatingEntryCountsAsFloatingFromOpeningUntilItRestsInItsCorner() throws Exception {
+        // EmbeddedVideo.suspend keeps a floating window, and its playing display, when Road Home stops.
         for (LiveSurfaceWindow.Entry entry : LiveSurfaceWindow.Entry.values()) {
-            openFloating(entry);
-            assertTrue(entry.name(), window.floating());
+            DrawnSurface surface = DrawnSurface.of(host);
+            openFloating(surface, entry);
+            assertTrue(entry + " before its first frame", window.floating());
+            commitFrame();
+            assertTrue(entry + " drawn at its card or hidden", window.floating());
+            window.leaveCard();
+            settle();
+            assertEquals(entry + " rests in its corner", PLACEMENT.rest(FloatingPlacement.Corner.BOTTOM_RIGHT),
+                    touchRegion());
+            assertTrue(entry + " in its corner", window.floating());
             window.cancel();
         }
         assertEquals(List.of("restored", "restored", "restored"), events);
@@ -163,15 +192,156 @@ public class LiveSurfaceWindowTest {
         assertEquals(1, events.size());
     }
 
-    @Test public void onlyAWholeDisplayCanHideForACorner() {
+    @Test public void aWholeDisplayNotYetDrawnCannotHideForACorner() {
         open();
-        assertFalse(window.hideForCorner(new FloatingPlacement(new Rect(0, 36, 1280, 720), 432, 243, 24),
-                FloatingPlacement.Corner.BOTTOM_RIGHT, null));
+        assertFalse(window.hideForCorner(PLACEMENT, FloatingPlacement.Corner.BOTTOM_RIGHT, null));
         window.emerge();
         assertTrue(window.active());
         assertFalse(window.floating());
         assertTrue(events.isEmpty());
         window.cancel();
+    }
+
+    @Test public void onlyAWholeDisplayCanHideForACorner() throws Exception {
+        DrawnSurface floatingSurface = DrawnSurface.of(host);
+        openFloating(floatingSurface, LiveSurfaceWindow.Entry.FROM_CARD);
+        commitFrame();
+        settle();
+        assertFalse("A floating window is already in its corner",
+                window.hideForCorner(PLACEMENT, FloatingPlacement.Corner.TOP_LEFT, listener()));
+        assertEquals(PLACEMENT.rest(FloatingPlacement.Corner.BOTTOM_RIGHT), touchRegion());
+        window.cancel();
+        events.clear();
+
+        DrawnSurface wholeSurface = DrawnSurface.of(host);
+        openWhole(wholeSurface);
+        commitFrame();
+        settle();
+        assertEquals(List.of("reached"), events);
+        assertTrue(window.hideForCorner(PLACEMENT, FloatingPlacement.Corner.TOP_LEFT, listener()));
+        assertTrue(window.floating());
+        assertEquals("Hidden: touches reach the app below", new Rect(), touchRegion());
+        window.emerge();
+        settle();
+        assertEquals(PLACEMENT.rest(FloatingPlacement.Corner.TOP_LEFT), touchRegion());
+        Rect shown = new Rect();
+        wholeSurface.last().round(shown);
+        assertEquals(PLACEMENT.rest(FloatingPlacement.Corner.TOP_LEFT), shown);
+        window.cancel();
+    }
+
+    @Test public void aFloatingWindowIgnoresTapsUntilShortlyAfterItArrives() throws Exception {
+        openFloating(DrawnSurface.of(host), LiveSurfaceWindow.Entry.FROM_CARD);
+        commitFrame();
+        settle();
+        Rect corner = PLACEMENT.rest(FloatingPlacement.Corner.BOTTOM_RIGHT);
+        assertEquals(corner, touchRegion());
+        // A second tap on the dock's Maps button, where the video has just arrived.
+        tap(corner.exactCenterX(), corner.exactCenterY());
+        assertEquals(List.of(), events);
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(LiveSurfaceWindow.ENTRY_TAP_GRACE_MS));
+        tap(corner.exactCenterX(), corner.exactCenterY());
+        assertEquals(List.of("tapped"), events);
+        window.cancel();
+    }
+
+    private static final FloatingPlacement PLACEMENT = new FloatingPlacement(new Rect(0, 36, 1280, 720), 432, 243, 24);
+
+    private LiveSurfaceWindow.Listener listener() {
+        return new LiveSurfaceWindow.Listener() {
+            @Override public void settled(FloatingPlacement.Corner corner) { events.add("settled " + corner); }
+            @Override public void tapped() { events.add("tapped"); }
+        };
+    }
+
+    private void openFloating(ActivityViewSurface surface, LiveSurfaceWindow.Entry entry) {
+        card.layout(0, 0, 320, 180);
+        window.openFloating(card, surface, new RectF(16, 122, 496, 392), new Point(1280, 720), PLACEMENT,
+                FloatingPlacement.Corner.BOTTOM_RIGHT, entry, listener(), () -> events.add("restored"));
+    }
+
+    private void openWhole(ActivityViewSurface surface) {
+        card.layout(0, 0, 320, 180);
+        window.open(card, surface, new RectF(16, 122, 496, 392), new Point(1280, 720),
+                () -> events.add("fallback"), () -> events.add("restored"), () -> events.add("reached"));
+    }
+
+    /** Lets any motion under way finish. */
+    private static void settle() { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400)); }
+
+    private View overlay() {
+        ShadowWindowManagerImpl manager = Shadow.extract(host.getSystemService(WindowManager.class));
+        List<View> views = manager.getViews();
+        return views.get(views.size() - 1);
+    }
+
+    /** Android commits the overlay window's first frame, so it can present the display. */
+    private void commitFrame() throws ReflectiveOperationException {
+        Method capture = ViewTreeObserver.class.getDeclaredMethod("captureFrameCommitCallbacks");
+        capture.setAccessible(true);
+        Object callbacks = capture.invoke(overlay().getViewTreeObserver());
+        assertTrue("The window waits for its first frame", callbacks instanceof List<?>);
+        for (Object callback : (List<?>) callbacks) {
+            if (callback instanceof Runnable) ((Runnable) callback).run();
+        }
+    }
+
+    /** What WindowManager lets the overlay window take: null for the whole window. */
+    private Rect touchRegion() throws ReflectiveOperationException {
+        Class<?> type = Class.forName("android.view.ViewTreeObserver$InternalInsetsInfo");
+        Object info = type.getConstructor().newInstance();
+        Method compute = ViewTreeObserver.class.getDeclaredMethod("dispatchOnComputeInternalInsets", type);
+        compute.setAccessible(true);
+        compute.invoke(overlay().getViewTreeObserver(), info);
+        Field insets = type.getDeclaredField("mTouchableInsets");
+        insets.setAccessible(true);
+        if (insets.getInt(info) == 0) return null;
+        Object region = type.getField("touchableRegion").get(info);
+        assertTrue(region instanceof Region);
+        return ((Region) region).getBounds();
+    }
+
+    private void touch(int action, long downTime, float x, float y) {
+        MotionEvent event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action, x, y, 0);
+        try { overlay().dispatchTouchEvent(event); }
+        finally { event.recycle(); }
+    }
+
+    private void tap(float x, float y) {
+        long down = SystemClock.uptimeMillis();
+        touch(MotionEvent.ACTION_DOWN, down, x, y);
+        touch(MotionEvent.ACTION_UP, down, x, y);
+    }
+
+    /**
+     * The presented display's own surface. Robolectric windows have no compositor surface, so it
+     * is attached without reparenting; every placement after that is the real one, recorded.
+     */
+    private static final class DrawnSurface extends ActivityViewSurface {
+        final List<RectF> drawn = new ArrayList<>();
+
+        private DrawnSurface(ActivityView view) throws ReflectiveOperationException { super(view); }
+
+        static DrawnSurface of(Activity host) throws ReflectiveOperationException {
+            ActivityView view = new ActivityView(host);
+            // What ActivityView holds once its SurfaceView is created.
+            Field root = ActivityView.class.getDeclaredField("mRootSurfaceControl");
+            root.setAccessible(true);
+            root.set(view, new SurfaceControl.Builder().setName("Road Home test display").build());
+            return new DrawnSurface(view);
+        }
+
+        @Override void attach(View destination, SurfacePlacement placement, float radius, float alpha) {
+            drawn.add(placement.visible());
+        }
+
+        @Override void place(SurfaceControl.Transaction transaction, SurfacePlacement placement, float radius,
+                float alpha) throws ReflectiveOperationException {
+            drawn.add(placement.visible());
+            super.place(transaction, placement, radius, alpha);
+        }
+
+        RectF last() { return drawn.get(drawn.size() - 1); }
     }
 
     @Test public void growingBeforeTheWindowIsReadyNeverReportsReachingTheWholeDisplay() {
