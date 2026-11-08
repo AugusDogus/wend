@@ -159,6 +159,37 @@ corner, default bottom right (the passenger side).
   floating video becomes fullscreen, instead of Maps floating. Road Home does
   not relaunch Maps on its own in either case.
 
+## Live Maps floats above the video app Road Home opens
+
+When Road Home opens the video app itself on the main display (a paused,
+stopped, or unavailable preview; the dock or drawer icon without a live video;
+or the launch-intent fallback when no video task exists), Maps floats above it
+the same way, with the same window, `floatingMapsCorner`, and `floatingMaps`
+switch. Before November 8 navigation disappeared whenever the video was paused
+(device feedback from both reports).
+
+- **Enter.** Maps moves from its panel to its corner (280 ms) as the video app
+  opens (`MainActivity.videoAppOpening`, then `EmbeddedMaps.floatAboveVideoApp`).
+- **While Road Home is stopped.** Maps' display stays powered and hidden behind
+  its window (`EmbeddedDisplayLifecycle`, presented elsewhere), its input portal
+  is empty, and the overlay takes only the floating rectangle; the video app
+  keeps every other touch.
+- **Leaves** with a fade when another app's task is created or comes to the
+  front, including Recents (`TaskFrontWatcher`, as for the floating video); the
+  video app and Maps themselves do not count. If app switches cannot be watched,
+  Maps does not float, so it can never stay above an unrelated app.
+- **Home**, or Road Home showing again because the video app left or failed to
+  open, returns Maps to its panel once Road Home's window can show it.
+- **Tap** brings Maps fullscreen as for any floating Maps. The video is a task
+  on the main display, not a Road Home presentation, so it does not float; it
+  stays beneath, and Home embeds it in the card again if it plays. Road Home is
+  stopped here and lays out nothing, so Maps' display is resized directly
+  (`EmbeddedDisplayLifecycle.resizeWhileHidden`) and Maps stays in its floating
+  window, under the frozen frame, until it moves: a display shown in no window
+  is missing from SurfaceFlinger's layer dump, so `MapFrame` could not see it lay
+  out. Without these, Maps moved at its panel size, the frozen frame held about
+  1.6 s and then showed panel-sized Maps for 0.8 s before its relayout.
+
 ## Swapping
 
 Tapping a floating window brings that app fullscreen and floats the other one
@@ -170,18 +201,22 @@ display, and decoder stay the same.
   its corner to fullscreen above Maps (the existing tap motion). Fully hidden
   under it, Road Home comes forward first and, after its next frame, the Maps
   task returns from behind it to its panel's virtual display, the same order as
-  Home. Once Maps has laid out at the panel's size (`MapFrame`, 900 ms at most),
+  Home. Once Maps has laid out at the panel's size (`MapFrame`, 500 ms at most;
+  after that it emerges as it is and finishes its layout inside the window),
   it emerges at its corner: 90% to 100% size and 0 to 1 opacity over 220 ms
-  with `window_ease_out`. About 0.8 s from tap to floating Maps on the emulator. With `floatingMaps` off,
+  with `window_ease_out`. About 0.8 s from tap to floating Maps on the fixture. With `floatingMaps` off,
   Maps just waits in its panel and Home shows it there. The video is now above
   Road Home rather than Maps, so the status bar fullscreen Maps kept disappears.
 - **Floating Maps over fullscreen video (tap Maps).** Maps grows from its corner
   until its whole panel display shows at pixel scale one, centered (never
   enlarged, so no stretched frames). A frozen frame then holds while, beneath
   it, Maps returns to its panel, the video hides, Maps' display is laid out at
-  the full screen size, and the existing task moves to display 0. When Maps'
-  buffers show the new width, the frozen frame crossfades away over 160 ms and
-  the video emerges at its corner. A paused video, or `floatingVideo` off,
+  the full screen size (900 ms at most), and the existing task moves to display
+  0. Only Maps stays in the frozen frame: the rest is black, as a frozen video
+  beside it read as a stalled player (device feedback). When Maps' buffers show
+  the new width, which they usually already do after the move (300 ms at most),
+  the frozen frame crossfades away over 160 ms and the video emerges at its
+  corner. A paused video, or `floatingVideo` off,
   returns the video to its card instead. Without a frozen frame (animations
   off, or the screenshot failed), the video still emerges only once the task
   has moved; before November 8 it emerged over Road Home first.
@@ -220,6 +255,63 @@ Changing the map width in Settings re-fits Maps' crop and input region to the
 resized panel. Before, after one Home at 60%, choosing 70% left a 119 px black
 strip at the panel's outer edge that took no touches, cutting off Maps' compass,
 search, and sound buttons, until the next Home.
+
+### Maps readiness in live guidance (device report RH-3)
+
+The report saw every swap wait out both 900 ms readiness deadlines with real
+Maps in guidance. SurfaceFlinger layer dumps during guidance (panel and full
+screen, sampled about every 45 ms on the device) showed the readiness rule
+does match there, but late, and that it could also match too early:
+
+- **Maps' own layout is slow on this host.** After its display changes size,
+  real Maps in guidance took 0.3 to 0.9 s to draw its window and map surface at
+  the new width (Maps' render thread logged frames of 0.7 to 3.7 s; host load
+  average 20 to 43 on 32 cores). In route preview it is lighter.
+- **Confirming it took three more dumps.** `MapFrame` wanted three matching
+  queries in a row. Each is a SurfaceFlinger dump served on its main thread,
+  50 to 130 ms here and up to a second during the display change, so the
+  confirmation alone could exceed the deadline. Buffers at the new width are
+  already on screen, so one matching query now reports Maps ready, and it logs
+  how long that took.
+- **A stale map surface.** Each time real Maps returns to its panel it keeps its
+  previous map SurfaceView, still holding a full-screen buffer, beside the new
+  one (three after about seven swaps). The old rule took any Maps SurfaceView at
+  the target width, so in full screen it reported Maps ready while the live map
+  was still panel-sized under the full-screen window (captured). It now uses the
+  newest map surface inside a Maps window, with that window. Tests use the
+  captured layers for guidance and for the fixture
+  (`app/src/test/resources/dev/augie/roadhome/mapframe/`).
+
+The hold limits: the swap to Maps waits up to 900 ms for the full-size layout
+before the move. A 700 ms limit was tried and made swaps slower at this load:
+Maps then moved before finishing and laid out a second time on the main display.
+After the move it waits at most 300 ms instead of 900 ms, then shows Maps as it
+is. Floating Maps waits at most 500 ms instead of 900 ms for its panel layout.
+
+Measured on `road-home-google-api29`, real Maps in guidance and YouTube, three
+swap pairs each, the old build (f5efa5a) and this one run back to back with the
+same script (`build/evidence/rh3/ab-old/`, `ab-new2/`):
+
+| | old, load 28 to 38 | new, load 30 to 34 |
+| --- | --- | --- |
+| Frozen frame on a swap to Maps (recording) | 0.91, ~1.0 to 1.3, 1.30 s | 0.88, 1.31, 1.39 s |
+| Cover to move (log) | 0.79, 0.88, 0.93 s | 0.60, 0.97, 1.01 s (one at the 900 ms limit) |
+| Move to Maps ready again (log) | 3 queries, not logged | 1 query, 8 to 65 ms |
+| Maps returned beneath the video to floating (log) | 0.74, 0.95, 1.08 s (two at 900 ms) | 0.56, 0.57, 0.63 s (500 ms limit) |
+
+On this host the frozen frame is dominated by Maps' own layout and Road Home's
+starved main thread, so it is not yet well under 0.5 s: on the map fixture the
+same swap holds about 0.85 s, of which 0.44 s is the logged wait. Overlapping
+Maps' layout with the growth motion is the next step: capture Road Home's own
+Maps display layer at the tap (`SurfaceControl.captureLayers`), grow that still
+image, and resize the display at once. Not done here.
+
+Device report BUG-1 (the dock expansion's "opening directly" fallback, then a
+black panel and a stale frame on Home) started from this deadline. With one
+query, three of three dock expansions under load 34 reached readiness (595,
+700, 786 ms) and every Home returned Maps live (`build/evidence/bug1/`); one of
+seven in the final matrices still fell back under load 43. The Home visuals
+after such a fallback were not reproduced and are unchanged.
 
 ### How it works
 
@@ -317,15 +409,17 @@ On the emulator (`build/evidence/floating-maps/` and `build/evidence/matrix/`):
   from repeated recordings plus the animator's frame log. Motion still runs on
   the main thread (`ValueAnimator`); a dedicated animation thread would make it
   immune to binder calls and Road Home's own drawing on the head unit.
-- The Maps swap holds a frozen frame for about 0.4 s on the fixture while Maps
-  lays out at the full size and moves. Real Maps may need longer; the frame is
-  bounded by the 900 ms readiness deadlines.
+- The Maps swap holds a frozen frame while Maps lays out at the full size and
+  moves: about 0.85 s on the fixture and 0.9 to 1.4 s with real Maps in
+  guidance on this loaded host (see [readiness](#maps-readiness-in-live-guidance-device-report-rh-3)),
+  at most 900 ms before the move and 300 ms after it, plus main-thread delays.
 - The stale map surface above is fixed for the swap by its order, not by a
   root cause in Android. Separately, early visits of the map fixture to display
   0 left extra fullscreen-sized SurfaceView layers under its window (seen with
   the dock path too; none appeared in the later runs). Both look like Android 10
   SurfaceView behavior across displays, possibly the stale-sized Maps frames
-  reported in `task-fixture/GOOGLE-APPS.md`; not reproduced with real Maps here.
+  reported in `task-fixture/GOOGLE-APPS.md`. Real Maps does keep one stale
+  full-screen map surface per return to the panel; readiness now ignores them.
 - With the video's live dock expansion, Maps visibly re-lays out inside its panel
   at the reveal before widening; that is the existing expansion, not the swap.
 - Software rendering stalls the main thread as Road Home stops, so recordings show
@@ -394,6 +488,51 @@ git-ignored `build/evidence/`):
 - Installing a new launcher APK while YouTube played in the card ended YouTube's
   embedded activity (task 253), as the README warns; YouTube was reopened from
   the dock. Move YouTube to fullscreen before replacing the APK.
+
+### Readiness and Maps above the video app, November 8 (second pass)
+
+Release and emulator unit tests (192 each, no failures), release, emulator and
+windowed assembly, and release lint (no errors, 52 warnings) pass
+(`build/evidence/gate-bb43c2a.log`). New tests cover the readiness rule on
+captured real-Maps guidance and fixture layers, including the stale full-screen
+map surface; ready on the first matching query; the 300 ms limit after a held
+move; blanking everything but Maps in the frozen frame; floating Maps within
+500 ms of returning beneath the video; and Maps floating above the video app:
+it stays while Road Home stops, another app ends it, Road Home showing again
+returns it, and its display grows directly only while Road Home is hidden.
+
+On `road-home-google-api29` (real Maps in guidance, YouTube), release build;
+every APK was installed with YouTube moved to the main display first, so its
+task (265) survived each install:
+
+- Paused card, Open YouTube: before, YouTube fullscreen with no navigation
+  (`item2-before/07-*`); now Maps floats in its remembered corner above paused,
+  stopped, and playing YouTube from the card and the dock (`item2/01-*`, `03a-*`,
+  `05b-*`). Maps' display stayed ON, its portal touch region was empty, and the
+  overlay took only `[24,24][372,325]` (`item2/01-dumpsys-input.txt`,
+  `01-displays.txt`).
+- Home from it returned Maps to its panel with no floating window or layer left
+  (`item2/02-*`); Home with YouTube playing embedded it live in the card
+  (`04b-*`). Settings (`07-*`) and Recents (`09-*`) coming forward closed the
+  float ("came to the front"); Maps' display stayed ON.
+- Tap on floating Maps above YouTube: Maps fullscreen over it, laid out before
+  the reveal, and Home returned it live (`item2/06-*`). Back in YouTube on the
+  main display did nothing, like Maps' RH-1 below, so the video app leaving on
+  its own was checked only through Home, Recents, and the unit tests. The
+  unavailable preview and the launch-intent fallback take the same path in
+  `AppLaunch` but were not opened on a device.
+- Swaps and timings: `rh3/` (layer dumps, `ab-old/`, `ab-new2/`, `after1/`),
+  dock-then-Home for BUG-1 (`bug1/`), and the full matrix of dock Maps, three
+  swap pairs, Home, Open YouTube live, Home, paused Open YouTube with Maps
+  floating, tap, and Home (`matrix-cf69d90/`, the build before the final one,
+  which differs only in its 700 ms limit; `state.txt` shows Road Home 269,
+  Maps 190, and YouTube 265 throughout, no pinned stack, no floating window or
+  layer after each Home, and Maps' PiP app-op still `ignore`).
+
+On `road-home-api29` (fixtures), emulator build: the same direct open and tap,
+dock Maps, both swaps, and Home (`fixture-cf69d90/`, `fixture-bb43c2a/`); map
+fixture task 101, instance `900e3e41898`, and its route marker were kept, and
+the video fixture task 107 survived three installs.
 
 ### Known issue: Back is dropped in fullscreen Maps on the emulators
 
