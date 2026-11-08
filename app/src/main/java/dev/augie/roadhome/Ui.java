@@ -33,7 +33,7 @@ final class Ui {
     /** Controls that cannot be used right now keep their place at this opacity. */
     static final float DISABLED_ALPHA = 0.38f;
 
-    enum Icon { MAP, MUSIC, APPS, SETTINGS, PLAY, PAUSE, PREVIOUS, NEXT, CLOSE, BACK, ADD, REMOVE, UP, DOWN, FORWARD }
+    enum Icon { APPS, SETTINGS, PLAY, PAUSE, PREVIOUS, NEXT, CLOSE, BACK, ADD, REMOVE, UP, DOWN, FORWARD }
 
     private Ui() { }
 
@@ -45,13 +45,6 @@ final class Ui {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color);
         drawable.setCornerRadius(dp(context, radius));
-        return drawable;
-    }
-
-    static GradientDrawable glass(Context context) {
-        GradientDrawable drawable = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{0x28FFFFFF, 0x24131D2C});
-        drawable.setCornerRadius(dp(context, 12));
         return drawable;
     }
 
@@ -197,18 +190,6 @@ final class Ui {
                         for (int y = 4; y <= 16; y += 6)
                             canvas.drawRoundRect(x, y, x + 3, y + 3, 1, 1, paint);
                     break;
-                case MAP:
-                    Path path = new Path();
-                    path.moveTo(12, 3); path.lineTo(21, 21); path.lineTo(12, 17);
-                    path.lineTo(3, 21); path.close();
-                    paint.setStyle(Paint.Style.STROKE); canvas.drawPath(path, paint); break;
-                case MUSIC:
-                    canvas.drawOval(3, 15, 10, 21, paint);
-                    canvas.drawOval(15, 12, 22, 18, paint);
-                    paint.setStyle(Paint.Style.STROKE);
-                    canvas.drawLine(9, 18, 9, 5, paint);
-                    canvas.drawLine(9, 5, 21, 2, paint);
-                    canvas.drawLine(21, 2, 21, 15, paint); break;
                 case SETTINGS:
                     paint.setStyle(Paint.Style.STROKE);
                     canvas.drawLine(3, 7, 21, 7, paint);
