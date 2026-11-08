@@ -3,6 +3,7 @@ package dev.augie.wend;
 import android.app.Activity;
 import android.app.ActivityOptions;
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.LauncherApps;
 import android.os.Bundle;
@@ -13,6 +14,7 @@ import android.widget.Toast;
 /**
  * Opens apps from the dock, the drawer and the media panel. Maps moves its existing task
  * fullscreen and the video app reuses its live-video task; neither is relaunched or duplicated.
+ * Each app it opens in Wend's own profile is remembered in {@link LauncherSettings#recentApps()}.
  */
 final class AppLaunch {
     private AppLaunch() { }
@@ -24,7 +26,10 @@ final class AppLaunch {
 
     static void open(Activity activity, String packageName) {
         if (EmbeddedVideo.PACKAGE.equals(packageName) && activity instanceof MainActivity
-                && ((MainActivity) activity).openVideoFullscreen(() -> openDirect(activity, packageName))) return;
+                && ((MainActivity) activity).openVideoFullscreen(() -> openDirect(activity, packageName))) {
+            opened(activity, packageName);
+            return;
+        }
         openDirect(activity, packageName);
     }
 
@@ -45,6 +50,7 @@ final class AppLaunch {
     private static void openDirect(Activity activity, String packageName) {
         if (EmbeddedMaps.PACKAGE.equals(packageName) && activity instanceof MainActivity) {
             ((MainActivity) activity).openMapsFullscreen();
+            opened(activity, packageName);
             return;
         }
         MainActivity home = activity instanceof MainActivity ? (MainActivity) activity : null;
@@ -54,8 +60,19 @@ final class AppLaunch {
             else home.externalAppOpening();
         }
         if (openExternal(activity, packageName)) {
+            opened(activity, packageName);
             if (home != null && video) home.videoOpened();
         } else if (home != null) home.externalAppFailed();
+    }
+
+    /**
+     * Puts an app Wend opened first in the drawer's recent apps. Apps in another profile are
+     * not recorded: like dock pins, recent apps name packages in Wend's own profile.
+     */
+    private static void opened(Activity activity, String packageName) {
+        LauncherSettings settings = new LauncherSettings(
+                activity.getSharedPreferences(LauncherSettings.PREFERENCES, Context.MODE_PRIVATE));
+        settings.setRecentApps(settings.recentApps().launched(packageName));
     }
 
     private static boolean openExternal(Activity activity, String packageName) {

@@ -25,6 +25,7 @@ final class LauncherSettings {
     private static final String MAP_PERCENT = "mapPercent";
     private static final String DOCK_PINS = "dockPins";
     private static final String MUSIC_APP = "musicApp";
+    private static final String RECENT_APPS = "recentApps";
     private static final String FLOATING_VIDEO = "floatingVideo";
     private static final String FLOATING_VIDEO_CORNER = "floatingVideoCorner";
     private static final String FLOATING_MAPS = "floatingMaps";
@@ -141,6 +142,25 @@ final class LauncherSettings {
         }
         preferences.edit().putString(MUSIC_APP, packageName).apply();
     }
+
+    /** The apps Wend opened most recently, newest first; empty until the first launch. */
+    RecentApps recentApps() {
+        String stored;
+        try {
+            stored = preferences.getString(RECENT_APPS, null);
+        } catch (ClassCastException error) {
+            Log.w(TAG, "Stored recent apps are unreadable; the drawer shows none until the next launch", error);
+            return RecentApps.empty();
+        }
+        RecentApps recent = RecentApps.parse(stored);
+        if (stored != null && !recent.serialize().equals(stored)) {
+            Log.w(TAG, "Ignored invalid, repeated or surplus recent apps in \"" + stored + "\"; the drawer shows "
+                    + recent.packages());
+        }
+        return recent;
+    }
+
+    void setRecentApps(RecentApps recent) { preferences.edit().putString(RECENT_APPS, recent.serialize()).apply(); }
 
     private FloatingPlacement.Corner readCorner(String key, FloatingPlacement.Corner fallback) {
         String stored;

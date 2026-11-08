@@ -112,6 +112,20 @@ public class LauncherSettingsTest {
         assertTrue(settings.dockPins(5).packages().isEmpty());
     }
 
+    @Test public void recentAppsSurviveARoundTripUnderTheirOwnKey() {
+        assertTrue(settings.recentApps().packages().isEmpty());
+        settings.setRecentApps(RecentApps.empty().launched("com.a.a").launched("com.b.b"));
+        assertEquals("com.b.b,com.a.a", preferences.getString("recentApps", null));
+        assertEquals(Arrays.asList("com.b.b", "com.a.a"), new LauncherSettings(preferences).recentApps().packages());
+    }
+
+    @Test public void unreadableRecentAppsReadAsNone() {
+        preferences.edit().putInt("recentApps", 3).commit();
+        assertTrue(settings.recentApps().packages().isEmpty());
+        preferences.edit().putString("recentApps", "com.a.a,bad name,com.a.a").commit();
+        assertEquals(Arrays.asList("com.a.a"), settings.recentApps().packages());
+    }
+
     @Test public void garbageStoredPinsKeepTheirValidEntries() {
         preferences.edit().putString("dockPins", "com.a.a,,bad name,com.a.a,com.b.b").commit();
         assertEquals(Arrays.asList("com.a.a", "com.b.b"), settings.dockPins(5).packages());
