@@ -106,6 +106,60 @@ public class MapTransitionTest {
         transition.cancel();
     }
 
+    /**
+     * Device report BUG-2 (fixtures): the frozen frame was the screen as last composited, which can
+     * still show Maps a few pixels short of its final size, so its top and left edges showed a strip
+     * of the frozen fullscreen video for over a second.
+     */
+    @Config(shadows = LaggingScreen.class, qualifiers = "w1280dp-h720dp-land-mdpi")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void aFrozenFrameOfMapsShowsOnlyMapsExactlyWhereItEnds() {
+        Activity host = Robolectric.buildActivity(Activity.class).setup().get();
+        View panel = new View(host);
+        host.setContentView(panel, new FrameLayout.LayoutParams(833, 720));
+        shadowOf(Looper.getMainLooper()).idle();
+        MapTransition transition = new MapTransition(host, panel);
+        Rect maps = new Rect(224, 0, 1057, 720);
+        // Maps' own display, read from its layers: all of its 833 x 720 pixels.
+        transition.holdThenCrossfade(new MapTransition.Still(() -> {
+            Bitmap display = Bitmap.createBitmap(833, 720, Bitmap.Config.ARGB_8888);
+            display.eraseColor(Screenshots.MAPS);
+            return display;
+        }, maps), () -> { }, () -> { });
+        Bitmap drawn = Bitmap.createBitmap(1280, 720, Bitmap.Config.ARGB_8888);
+        coverView(host).draw(new android.graphics.Canvas(drawn));
+        assertEquals("Maps' top left corner", Screenshots.MAPS, drawn.getPixel(224, 0));
+        assertEquals("Maps' left edge", Screenshots.MAPS, drawn.getPixel(226, 360));
+        assertEquals("Maps' top edge", Screenshots.MAPS, drawn.getPixel(640, 2));
+        assertEquals("Maps' bottom right corner", Screenshots.MAPS, drawn.getPixel(1056, 719));
+        assertEquals("Outside Maps is blank", android.graphics.Color.BLACK, drawn.getPixel(223, 360));
+        assertEquals("Outside Maps is blank", android.graphics.Color.BLACK, drawn.getPixel(1057, 360));
+        transition.cancel();
+    }
+
+    /** Without Maps' own layers, the screen as last composited still keeps nothing but Maps' place. */
+    @Config(shadows = LaggingScreen.class, qualifiers = "w1280dp-h720dp-land-mdpi")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void aFrozenFrameOfMapsWhoseLayersCannotBeReadKeepsOnlyItsPlaceOfTheScreen() {
+        Activity host = Robolectric.buildActivity(Activity.class).setup().get();
+        View panel = new View(host);
+        host.setContentView(panel, new FrameLayout.LayoutParams(833, 720));
+        shadowOf(Looper.getMainLooper()).idle();
+        MapTransition transition = new MapTransition(host, panel);
+        List<String> events = new ArrayList<>();
+        transition.holdThenCrossfade(new MapTransition.Still(() -> {
+            throw new IllegalStateException("Android captured none of the display's layers");
+        }, new Rect(224, 0, 1057, 720)), () -> events.add("covered"), () -> events.add("revealed"));
+        assertTrue("A frozen frame covers the move", transition.active());
+        Bitmap drawn = Bitmap.createBitmap(1280, 720, Bitmap.Config.ARGB_8888);
+        coverView(host).draw(new android.graphics.Canvas(drawn));
+        assertEquals(Screenshots.MAPS, drawn.getPixel(640, 360));
+        assertEquals("Outside Maps is blank", android.graphics.Color.BLACK, drawn.getPixel(100, 360));
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(250));
+        assertEquals(List.of("covered"), events);
+        transition.cancel();
+    }
+
     private static View coverView(Activity host) {
         org.robolectric.shadows.ShadowWindowManagerImpl manager =
                 org.robolectric.shadow.api.Shadow.extract(host.getSystemService(android.view.WindowManager.class));
@@ -122,6 +176,28 @@ public class MapTransitionTest {
             Bitmap frame = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
             frame.eraseColor(MAPS);
             return frame;
+        }
+    }
+
+    /**
+     * The screen as last composited while Maps grows over the fullscreen video from the bottom
+     * right: one frame short of its final size, as in the fixture recording A5.
+     */
+    @Implements(value = SurfaceControl.class, isInAndroidSdk = false)
+    public static class LaggingScreen extends ShadowSurfaceControl {
+        static final int VIDEO = 0xFFFFD000;
+
+        @Implementation protected static Bitmap screenshot(Rect crop, int width, int height, int rotation) {
+            Bitmap frame = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            frame.eraseColor(VIDEO);
+            new android.graphics.Canvas(frame).drawRect(new Rect(228, 4, 1057, 720), solid(Screenshots.MAPS));
+            return frame;
+        }
+
+        private static android.graphics.Paint solid(int color) {
+            android.graphics.Paint paint = new android.graphics.Paint();
+            paint.setColor(color);
+            return paint;
         }
     }
 }

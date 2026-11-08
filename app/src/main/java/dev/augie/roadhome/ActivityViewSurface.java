@@ -1,9 +1,12 @@
 package dev.augie.roadhome;
 
 import android.app.ActivityView;
+import android.graphics.Bitmap;
+import android.graphics.ColorSpace;
 import android.graphics.Rect;
 import android.graphics.Region;
 import android.os.Binder;
+import android.os.IBinder;
 import android.os.Process;
 import android.util.Log;
 import android.view.SurfaceControl;
@@ -106,6 +109,25 @@ class ActivityViewSurface {
             throw new IllegalStateException("Overlay window has no compositor surface yet");
         }
         return (SurfaceControl) target;
+    }
+
+    /**
+     * The display's own pixels at pixel scale one, read from its layers wherever, and at whatever
+     * scale, the compositor last drew them. Android 10's layer capture leaves out secure layers;
+     * the pixels stay in memory.
+     * @param crop the part of the display to read, in its own coordinates
+     */
+    Bitmap still(Rect crop) throws ReflectiveOperationException {
+        Object handle = SurfaceControl.class.getMethod("getHandle").invoke(surface);
+        Object buffer = SurfaceControl.class.getMethod("captureLayers", IBinder.class, Rect.class, float.class)
+                .invoke(null, handle, crop, 1f);
+        if (buffer == null) throw new IllegalStateException("Android captured none of the display's layers in " + crop);
+        Object pixels = buffer.getClass().getMethod("getGraphicBuffer").invoke(buffer);
+        Object space = buffer.getClass().getMethod("getColorSpace").invoke(buffer);
+        Object bitmap = Bitmap.class.getMethod("wrapHardwareBuffer", Class.forName("android.graphics.GraphicBuffer"),
+                ColorSpace.class).invoke(null, pixels, space);
+        if (!(bitmap instanceof Bitmap)) throw new IllegalStateException("The display's captured layers are not a bitmap");
+        return (Bitmap) bitmap;
     }
 
     /** Temporarily puts our live display above Maps; disables its input portal during motion. */

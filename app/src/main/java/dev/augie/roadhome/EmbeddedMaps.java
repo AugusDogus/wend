@@ -372,7 +372,15 @@ final class EmbeddedMaps extends MapPanel {
             ScreenTakeover started = new ScreenTakeover(next, overVideoApp != null
                     ? ScreenTakeover.Above.VIDEO_APP : ScreenTakeover.Above.LIVE_VIDEO);
             takeover = started;
-            transition.holdThenCrossfade(() -> {
+            // Only Maps stays in the frozen frame, black around it: a frozen video beside it reads
+            // as a stall. Read from Maps' own layers, as the screen can still be a frame short of
+            // the growth's end and showed the video at Maps' edges.
+            RectF centered = SurfacePlacement.centered(getWidth(), getHeight(), screen.x, screen.y).visible();
+            Rect panel = new Rect(0, 0, getWidth(), getHeight());
+            MapTransition.Still maps = new MapTransition.Still(() -> new ActivityViewSurface(activityView,
+                    ActivityViewSurface.PreviewInput.FORWARDED).still(panel), new Rect(Math.round(centered.left),
+                    Math.round(centered.top), Math.round(centered.right), Math.round(centered.bottom)));
+            transition.holdThenCrossfade(maps, () -> {
                 if (takeover != started) return;
                 // Under the frozen frame: the video steps aside, and Maps lays out at the full
                 // screen size on its own display first, as the dock expansion does. Moved at its
@@ -388,10 +396,6 @@ final class EmbeddedMaps extends MapPanel {
                 takeoverFrame = new MapFrame(screen.x, () -> post(this::moveTakeover));
                 postDelayed(takeoverDeadline, TAKEOVER_LAYOUT_MS);
             }, next::revealed);
-            // Only Maps stays in the frozen frame; a frozen video around it reads as a stall.
-            RectF centered = SurfacePlacement.centered(getWidth(), getHeight(), screen.x, screen.y).visible();
-            transition.concealOutside(new Rect(Math.round(centered.left), Math.round(centered.top),
-                    Math.round(centered.right), Math.round(centered.bottom)));
         });
     }
 

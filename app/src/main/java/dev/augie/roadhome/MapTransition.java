@@ -46,7 +46,7 @@ final class MapTransition {
 
     /** @param revealed runs once Maps shows with no cover left above it; never if canceled */
     void move(boolean expanding, Runnable moveTask, Runnable revealed) {
-        prepare(expanding, moveTask, Completion.CROSSFADE, revealed);
+        prepare(expanding, moveTask, Completion.CROSSFADE, revealed, null);
     }
 
     /**
@@ -55,14 +55,39 @@ final class MapTransition {
      * @param revealed runs once Maps shows with no cover left above it; never if canceled
      */
     void holdThenCrossfade(Runnable covered, Runnable revealed) {
-        prepare(true, covered, Completion.HELD_CROSSFADE, revealed);
+        prepare(true, covered, Completion.HELD_CROSSFADE, revealed, null);
+    }
+
+    /**
+     * One display's own pixels for a frozen frame, whatever the compositor last showed of it, such
+     * as Maps still one frame short of the size it grows to.
+     */
+    static final class Still {
+        interface Capture { Bitmap capture() throws ReflectiveOperationException; }
+
+        final Capture capture;
+        /** Where the display shows, unscaled, once it stops moving; the frozen frame is black around it. */
+        final Rect at;
+
+        Still(Capture capture, Rect at) {
+            this.capture = capture;
+            this.at = new Rect(at);
+        }
+    }
+
+    /**
+     * As {@link #holdThenCrossfade(Runnable, Runnable)}, with only {@code still} in the frozen frame.
+     * If it cannot be captured, the screen as last composited stands in, black outside its place.
+     */
+    void holdThenCrossfade(Still still, Runnable covered, Runnable revealed) {
+        prepare(true, covered, Completion.HELD_CROSSFADE, revealed, still);
     }
 
     /** Keep the original pixels stationary until the native window animator is ready. */
-    void hold(Runnable moveTask) { prepare(true, moveTask, Completion.HANDOFF, () -> { }); }
+    void hold(Runnable moveTask) { prepare(true, moveTask, Completion.HANDOFF, () -> { }, null); }
 
     /** Keep the final cropped frame still while Maps lays out, then remove it without fading. */
-    void settle(Runnable moveTask) { prepare(false, moveTask, Completion.REVEAL, () -> { }); }
+    void settle(Runnable moveTask) { prepare(false, moveTask, Completion.REVEAL, () -> { }, null); }
 
     /**
      * Maps has moved: keep the frozen frame until Maps shows its new size, which it usually
@@ -75,7 +100,9 @@ final class MapTransition {
         else if (cover != null && cover.phase == Phase.WAITING_FOR_FRAME) cover.awaitFrame(MOVED_FRAME_MS);
     }
 
-    private void prepare(boolean expanding, Runnable moveTask, Completion completion, Runnable revealed) {
+    /** @param still the only pixels to freeze, or null for the whole screen */
+    private void prepare(boolean expanding, Runnable moveTask, Completion completion, Runnable revealed,
+            Still still) {
         cancel();
         if (!ValueAnimator.areAnimatorsEnabled() || windows == null || !panel.isLaidOut()) {
             moveUncovered(moveTask, completion, revealed);
@@ -85,14 +112,28 @@ final class MapTransition {
         try {
             int width = host.getResources().getDisplayMetrics().widthPixels;
             int height = host.getResources().getDisplayMetrics().heightPixels;
-            int rotation = host.getWindowManager().getDefaultDisplay().getRotation();
-            // This Android 10 overload excludes secure layers. No capture is stored or exported.
-            Object result = SurfaceControl.class.getDeclaredMethod("screenshot", Rect.class,
-                    int.class, int.class, int.class).invoke(null, new Rect(0, 0, width, height),
-                    width, height, rotation);
-            if (!(result instanceof Bitmap)) throw new IllegalStateException("No transition snapshot returned");
-            snapshot = (Bitmap) result;
-            Cover next = new Cover(snapshot, expanding ? width : panel.getWidth(), moveTask, completion, revealed);
+            RectF drawnAt = new RectF(0, 0, width, height);
+            if (still != null) {
+                try {
+                    snapshot = still.capture.capture();
+                    drawnAt = new RectF(still.at);
+                } catch (ReflectiveOperationException | RuntimeException error) {
+                    Log.w("RoadHome", "Could not capture Maps' display alone for its frozen frame; holding the"
+                            + " screen as last composited instead, black outside " + still.at.toShortString()
+                            + ", where a few pixels of what Maps covered can show at its edges", error);
+                }
+            }
+            if (snapshot == null) {
+                int rotation = host.getWindowManager().getDefaultDisplay().getRotation();
+                // This Android 10 overload excludes secure layers. No capture is stored or exported.
+                Object result = SurfaceControl.class.getDeclaredMethod("screenshot", Rect.class,
+                        int.class, int.class, int.class).invoke(null, new Rect(0, 0, width, height),
+                        width, height, rotation);
+                if (!(result instanceof Bitmap)) throw new IllegalStateException("No transition snapshot returned");
+                snapshot = (Bitmap) result;
+            }
+            Cover next = new Cover(snapshot, drawnAt, expanding ? width : panel.getWidth(), moveTask, completion, revealed);
+            if (still != null) next.concealOutside(still.at);
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(width, height,
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -153,7 +194,7 @@ final class MapTransition {
 
     private final class Cover extends View {
         private final Bitmap snapshot;
-        private final RectF screen;
+        private final RectF drawnAt;
         private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
         private final Paint blank = new Paint();
         private final Rect concealed = new Rect();
@@ -167,14 +208,16 @@ final class MapTransition {
         private Phase phase = Phase.PENDING;
         private final Runnable deadline = this::deadlinePassed;
 
-        Cover(Bitmap snapshot, int destinationWidth, Runnable moveTask, Completion completion, Runnable revealed) {
+        /** @param drawnAt where the snapshot is drawn, unscaled */
+        Cover(Bitmap snapshot, RectF drawnAt, int destinationWidth, Runnable moveTask, Completion completion,
+                Runnable revealed) {
             super(host);
             this.snapshot = snapshot;
+            this.drawnAt = drawnAt;
             this.destinationWidth = destinationWidth;
             this.moveTask = moveTask;
             this.completion = completion;
             this.revealed = revealed;
-            screen = new RectF(0, 0, snapshot.getWidth(), snapshot.getHeight());
             // The empty video card is black in Road Home as well.
             blank.setColor(Color.BLACK);
             setClickable(true);
@@ -236,7 +279,7 @@ final class MapTransition {
 
         @Override protected void onDraw(Canvas canvas) {
             if (phase == Phase.DISPOSED) return;
-            canvas.drawBitmap(snapshot, null, screen, paint);
+            canvas.drawBitmap(snapshot, null, drawnAt, paint);
             if (!concealed.isEmpty()) canvas.drawRect(concealed, blank);
             if (kept == null) return;
             canvas.save();
