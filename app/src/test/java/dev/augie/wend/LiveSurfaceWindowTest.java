@@ -337,6 +337,62 @@ public class LiveSurfaceWindowTest {
         assertFalse(window.active());
     }
 
+    /** Below the fullscreen control, as Android 10 puts a PiP's media action. */
+    private static final Rect PLAY_PAUSE = new Rect(CORNER.centerX() - 24, CORNER.bottom - 48,
+            CORNER.centerX() + 24, CORNER.bottom);
+
+    @Test public void thePlaybackControlPlaysOrPausesAndKeepsTheControlsUp() throws Exception {
+        List<String> toggles = new ArrayList<>();
+        window.playback(FloatingMenu.Playback.PLAYING, () -> toggles.add("pause"));
+        restingFloating();
+        tap(900, 560);
+        waitFor(FloatingDrag.DOUBLE_TAP_MS);
+        waitFor(LiveSurfaceWindow.MENU_MS - 1000);
+        tap(PLAY_PAUSE.exactCenterX(), PLAY_PAUSE.exactCenterY());
+        assertEquals(List.of("pause"), toggles);
+        // The session reports the pause; the control now offers play.
+        window.playback(FloatingMenu.Playback.PAUSED, () -> toggles.add("play"));
+        waitFor(1500);
+        assertTrue("A press restarts the controls' fade", window.controlsShown());
+        tap(PLAY_PAUSE.exactCenterX(), PLAY_PAUSE.exactCenterY());
+        assertEquals(List.of("pause", "play"), toggles);
+        assertEquals("Only playback changed", List.of(), events);
+        window.cancel();
+    }
+
+    @Test public void aWindowWithoutMediaHasNoPlaybackControl() throws Exception {
+        restingFloating();
+        tap(900, 560);
+        waitFor(FloatingDrag.DOUBLE_TAP_MS);
+        tap(PLAY_PAUSE.exactCenterX(), PLAY_PAUSE.exactCenterY());
+        waitFor(FloatingDrag.DOUBLE_TAP_MS);
+        assertFalse("That tap was on the dimmed window, which hides the controls", window.controlsShown());
+        window.cancel();
+    }
+
+    /** Feedback: the floating video disappeared when it ended, so another could not be chosen. */
+    @Test public void anEndedVideoKeepsFloatingAndOffersPlayUntilItPlaysAgain() throws Exception {
+        List<String> toggles = new ArrayList<>();
+        window.playback(FloatingMenu.Playback.PLAYING, () -> toggles.add("pause"));
+        restingFloating();
+        assertFalse(window.controlsShown());
+        window.playback(FloatingMenu.Playback.ENDED, () -> toggles.add("play"));
+        assertTrue(window.floating());
+        assertTrue("It offers play at once", window.controlsShown());
+        waitFor(LiveSurfaceWindow.MENU_MS * 3);
+        assertTrue("and keeps offering it", window.controlsShown());
+        tap(PLAY_PAUSE.exactCenterX(), PLAY_PAUSE.exactCenterY());
+        assertEquals(List.of("play"), toggles);
+        window.playback(FloatingMenu.Playback.PLAYING, () -> toggles.add("pause"));
+        waitFor(LiveSurfaceWindow.MENU_MS + 500);
+        assertFalse("Playing again, the controls fade", window.controlsShown());
+        // A double tap still brings it fullscreen, where another video can be chosen.
+        tap(900, 560);
+        tap(900, 560);
+        assertEquals(List.of("fullscreen"), events);
+        window.cancel();
+    }
+
     @Test public void aWindowDraggedOffTheBottomLeavesDownwardAndCloses() throws Exception {
         DrawnSurface surface = restingFloating();
         long down = SystemClock.uptimeMillis();

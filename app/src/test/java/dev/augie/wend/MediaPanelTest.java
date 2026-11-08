@@ -366,23 +366,6 @@ public class MediaPanelTest {
         }
     }
 
-    @Test public void onlyStoppedFailedOrResetPlaybackEndsAFloatingVideo() {
-        for (int state : new int[]{PlaybackState.STATE_STOPPED, PlaybackState.STATE_NONE, PlaybackState.STATE_ERROR}) {
-            assertTrue("state " + state, MediaPanel.videoPlaybackEnded(playback(state)));
-        }
-        // A pause keeps the last frame floating; buffering and skipping are still playback.
-        for (int state : new int[]{PlaybackState.STATE_PLAYING, PlaybackState.STATE_PAUSED,
-                PlaybackState.STATE_BUFFERING, PlaybackState.STATE_CONNECTING,
-                PlaybackState.STATE_SKIPPING_TO_NEXT, PlaybackState.STATE_FAST_FORWARDING}) {
-            assertFalse("state " + state, MediaPanel.videoPlaybackEnded(playback(state)));
-        }
-        assertTrue("A session without playback has nothing playing", MediaPanel.videoPlaybackEnded(null));
-    }
-
-    private static PlaybackState playback(int state) {
-        return new PlaybackState.Builder().setState(state, 0, state == PlaybackState.STATE_PLAYING ? 1 : 0).build();
-    }
-
     /** What a paused session offers, as the video fixture's (518) and YouTube's paused sessions do. */
     private static final long PLAYABLE = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
             | PlaybackState.ACTION_PLAY_PAUSE;

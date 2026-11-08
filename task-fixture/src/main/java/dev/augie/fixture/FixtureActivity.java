@@ -37,6 +37,8 @@ public final class FixtureActivity extends Activity implements SurfaceHolder.Cal
     private AudioManager audio;
     private AudioFocusRequest focus;
     private boolean selected;
+    /** A media stop, as at a video's end, reports STATE_STOPPED until it plays again. */
+    private boolean stopped;
     private boolean ready;
     private boolean route;
     private boolean autoPip;
@@ -100,7 +102,7 @@ public final class FixtureActivity extends Activity implements SurfaceHolder.Cal
         session.setCallback(new MediaSession.Callback() {
             @Override public void onPlay() { play(); }
             @Override public void onPause() { pause(); }
-            @Override public void onStop() { pause(); }
+            @Override public void onStop() { stop(); }
         });
         session.setActive(true);
         player = new MediaPlayer();
@@ -141,6 +143,7 @@ public final class FixtureActivity extends Activity implements SurfaceHolder.Cal
     private void play() {
         if (!ready) return;
         selected = true;
+        stopped = false;
         metadata();
         if (audio.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) player.start();
         update();
@@ -151,6 +154,14 @@ public final class FixtureActivity extends Activity implements SurfaceHolder.Cal
         update();
     }
 
+    /** As YouTube at the end of a video: stopped, back at its start, and still selected. */
+    private void stop() {
+        if (ready && player.isPlaying()) player.pause();
+        if (ready) player.seekTo(0);
+        stopped = true;
+        update();
+    }
+
     private void update() {
         boolean playing = ready && player != null && player.isPlaying();
         status.setText("Task " + getTaskId() + " / instance " + instance
@@ -158,10 +169,11 @@ public final class FixtureActivity extends Activity implements SurfaceHolder.Cal
                 + "\nRoute " + route + " / selected " + selected + " / playing " + playing
                 + " / automatic PiP " + autoPip + " / focus " + focusChange);
         if (session != null) session.setPlaybackState(new PlaybackState.Builder()
-                .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+                .setState(playing ? PlaybackState.STATE_PLAYING
+                                : stopped ? PlaybackState.STATE_STOPPED : PlaybackState.STATE_PAUSED,
                         ready ? player.getCurrentPosition() : 0, playing ? 1 : 0)
                 .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
-                        | PlaybackState.ACTION_PLAY_PAUSE).build());
+                        | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_STOP).build());
     }
 
     private void button(LinearLayout root, String label, Runnable action) {
