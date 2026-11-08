@@ -113,7 +113,8 @@ final class WindowedMaps extends MapPanel {
         }
     }
 
-    @Override void openFullscreen() {
+    // The archived windowed experiment keeps video in its card; covering never runs.
+    @Override void openFullscreen(Covering covering) {
         if (!ready) return;
         returning.cancel();
         animation.cancel();

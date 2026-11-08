@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.ActivityManager;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.Rect;
 import android.media.MediaDescription;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
@@ -36,6 +37,7 @@ final class MediaPanel extends LinearLayout {
     private final ImageButton next;
     private MediaController controller;
     private MediaController videoController;
+    private boolean started;
     private final MediaSessionSubscriptions subscriptions = new MediaSessionSubscriptions(handler, this::refresh);
     private final MediaSessionManager.OnActiveSessionsChangedListener sessionListener = this::select;
 
@@ -47,7 +49,7 @@ final class MediaPanel extends LinearLayout {
         setBackgroundColor(android.graphics.Color.TRANSPARENT);
         int padding = Ui.dp(context, 12);
         setPadding(padding, padding, padding, padding);
-        video = new EmbeddedVideo(context);
+        video = new EmbeddedVideo(context, this::videoPresentationEnded);
         LayoutParams videoLayout = new LayoutParams(-1, -2);
         videoLayout.bottomMargin = Ui.dp(context, 16);
         addView(video, videoLayout);
@@ -99,7 +101,13 @@ final class MediaPanel extends LinearLayout {
     void suspendVideo() { video.suspend(); }
     void videoOpened() { video.fullscreenOpened(); }
 
+    /** Keeps a playing video visible above fullscreen Maps; returns the card it left, or null. */
+    Rect floatVideo(FloatingPlacement.Corner corner, LiveVideoWindow.CornerListener settled) {
+        return video.floatAboveMaps(corner, settled);
+    }
+
     void start() {
+        started = true;
         if (sessions == null) {
             title.setText(R.string.media_service_unavailable);
             artist.setText(R.string.open_music_directly);
@@ -117,7 +125,15 @@ final class MediaPanel extends LinearLayout {
     }
 
     void stop() {
+        started = false;
         video.suspend();
+        // A floating video still needs its session's pause, title, and end updates.
+        if (!video.floating()) unsubscribe();
+    }
+
+    private void videoPresentationEnded() { if (!started) unsubscribe(); }
+
+    private void unsubscribe() {
         if (sessions != null) sessions.removeOnActiveSessionsChangedListener(sessionListener);
         subscriptions.clear();
         bind(null);

@@ -11,15 +11,32 @@ import android.view.View;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
-/** Keeps the Android 10 map display awake while its host window is hidden. */
-final class MapDisplayLifecycle implements SurfaceHolder.Callback {
+/**
+ * Decides what an Android 10 ActivityView display does while Road Home's window is hidden.
+ * The stock callback powers the display off, which stops the embedded task rendering.
+ */
+final class EmbeddedDisplayLifecycle implements SurfaceHolder.Callback {
+    enum WhenHidden {
+        /** Hide the container but keep the display on, retaining the task's rendered window. */
+        STAY_AWAKE,
+        /** Stock ActivityView behavior: power the display off until the host returns. */
+        POWER_OFF
+    }
+
     private final ActivityView view;
+    private final WhenHidden whenHidden;
+    private final SurfaceHolder holder;
     private final SurfaceHolder.Callback original;
     private final Field rootSurface;
     private final Method clearInput;
+    private boolean hostSurface;
+    private boolean applied;
+    private boolean elsewhere;
+    private Runnable hostReady;
 
-    MapDisplayLifecycle(ActivityView view) throws ReflectiveOperationException {
+    EmbeddedDisplayLifecycle(ActivityView view, WhenHidden whenHidden) throws ReflectiveOperationException {
         this.view = view;
+        this.whenHidden = whenHidden;
         Field callback = ActivityView.class.getDeclaredField("mSurfaceCallback");
         callback.setAccessible(true);
         Object value = callback.get(view);
@@ -31,7 +48,9 @@ final class MapDisplayLifecycle implements SurfaceHolder.Callback {
         rootSurface.setAccessible(true);
         clearInput = ActivityView.class.getDeclaredMethod("cleanTapExcludeRegion");
         clearInput.setAccessible(true);
-        SurfaceHolder holder = ((SurfaceView) view.getChildAt(0)).getHolder();
+        holder = ((SurfaceView) view.getChildAt(0)).getHolder();
+        hostSurface = holder.getSurface() != null && holder.getSurface().isValid();
+        applied = hostSurface;
         holder.removeCallback(original);
         holder.addCallback(this);
     }
@@ -74,12 +93,39 @@ final class MapDisplayLifecycle implements SurfaceHolder.Callback {
         originalDisplay.release();
     }
 
+    /**
+     * Another window now parents the display's root surface. Until {@link #returnToHost},
+     * host surface changes neither reparent, hide, nor power off the display.
+     */
+    void presentElsewhere() { elsewhere = true; }
+
+    boolean hostSurfaceReady() { return hostSurface; }
+
+    /** Runs once Road Home's window has a surface again, immediately if it already has one. */
+    void whenHostReady(Runnable ready) {
+        hostReady = null;
+        if (hostSurface) ready.run();
+        else hostReady = ready;
+    }
+
+    /**
+     * Applies the host surface state from while the display was presented elsewhere. A present
+     * host is always re-announced: its surface and tap-exclude region may have been recreated.
+     */
+    void returnToHost() {
+        if (!elsewhere) return;
+        elsewhere = false;
+        hostReady = null;
+        if (hostSurface) created();
+        else if (applied) destroyed();
+    }
+
     @Override public void surfaceCreated(SurfaceHolder holder) {
-        original.surfaceCreated(holder);
-        if (view.getVirtualDisplayId() == Display.INVALID_DISPLAY) return;
-        try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
-            transaction.setAlpha(surface(), 1).apply();
-        }
+        hostSurface = true;
+        if (!elsewhere) { created(); return; }
+        Runnable ready = hostReady;
+        hostReady = null;
+        if (ready != null) ready.run();
     }
 
     @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
@@ -87,22 +133,45 @@ final class MapDisplayLifecycle implements SurfaceHolder.Callback {
     }
 
     @Override public void surfaceDestroyed(SurfaceHolder holder) {
+        hostSurface = false;
+        if (!elsewhere) { destroyed(); return; }
+        // The display keeps rendering into the other window; only the host's input geometry goes.
+        clearInput();
+    }
+
+    private void created() {
+        applied = true;
+        original.surfaceCreated(holder);
+        if (whenHidden != WhenHidden.STAY_AWAKE || view.getVirtualDisplayId() == Display.INVALID_DISPLAY) return;
+        try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+            transaction.setAlpha(surface(), 1).apply();
+        }
+    }
+
+    private void destroyed() {
+        applied = false;
+        if (whenHidden == WhenHidden.POWER_OFF) { original.surfaceDestroyed(holder); return; }
         if (view.getVirtualDisplayId() == Display.INVALID_DISPLAY) return;
         // ActivityView's original callback powers off the display. That pauses
         // Maps and discards its rendered window. Hide the container instead,
         // retaining the map task and buffers until the host surface returns.
         try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
             transaction.setAlpha(surface(), 0).apply();
-            // Keep the IME transform too. Sending null while Maps remains
-            // resumed triggers Android 10 InputMethodManager's null-Matrix bug.
-            clearInput.invoke(view);
-        } catch (ReflectiveOperationException error) {
-            throw new IllegalStateException("Could not suspend Maps input geometry", error);
+        }
+        // Keep the IME transform too. Sending null while Maps remains
+        // resumed triggers Android 10 InputMethodManager's null-Matrix bug.
+        clearInput();
+    }
+
+    private void clearInput() {
+        try { clearInput.invoke(view); }
+        catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Could not suspend embedded display input geometry", error);
         }
     }
 
     void release() {
-        SurfaceHolder holder = ((SurfaceView) view.getChildAt(0)).getHolder();
+        hostReady = null;
         holder.removeCallback(this);
         holder.addCallback(original);
     }
@@ -111,9 +180,9 @@ final class MapDisplayLifecycle implements SurfaceHolder.Callback {
         try {
             Object value = rootSurface.get(view);
             if (value instanceof SurfaceControl) return (SurfaceControl) value;
-            throw new IllegalStateException("Map display has no container surface");
+            throw new IllegalStateException("Embedded display has no container surface");
         } catch (IllegalAccessException error) {
-            throw new IllegalStateException("Could not access the map display container", error);
+            throw new IllegalStateException("Could not access the embedded display container", error);
         }
     }
 }

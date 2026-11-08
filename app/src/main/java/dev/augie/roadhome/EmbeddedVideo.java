@@ -26,8 +26,11 @@ final class EmbeddedVideo extends FrameLayout {
     private State state = State.EMPTY;
     private ActivityView player;
     private ActivityViewSurface playerSurface;
+    private EmbeddedDisplayLifecycle playerLifecycle;
     private final Activity host;
-    private final LiveVideoWindow expansion;
+    private final LiveVideoWindow window;
+    private final TaskFrontWatcher appSwitches = new TaskFrontWatcher(this::appMovedToFront);
+    private final Runnable presentationEnded;
     private final TextView status;
     private final ImageView thumbnail;
     private final Point displaySize = new Point();
@@ -39,10 +42,12 @@ final class EmbeddedVideo extends FrameLayout {
     private long preparationStarted;
     private VideoSurface.Bounds previousBounds;
 
-    EmbeddedVideo(Activity context) {
+    /** @param presentationEnded runs whenever a fullscreen or floating presentation has finished */
+    EmbeddedVideo(Activity context, Runnable presentationEnded) {
         super(context);
         host = context;
-        expansion = new LiveVideoWindow(context);
+        this.presentationEnded = presentationEnded;
+        window = new LiveVideoWindow(context);
         context.getSystemService(WindowManager.class).getDefaultDisplay().getRealSize(displaySize);
         setBackgroundColor(android.graphics.Color.BLACK);
         setClipChildren(true);
@@ -72,7 +77,13 @@ final class EmbeddedVideo extends FrameLayout {
             thumbnail.setImageDrawable(new Ui.Symbol(Ui.Icon.PLAY, Ui.MUTED));
         }
         thumbnail.setVisibility(presentation == VideoCardState.THUMBNAIL ? VISIBLE : GONE);
-        if (expansion.active()) return;
+        if (window.active()) {
+            // A paused floating video keeps its last frame; only a cleared or ended session removes it.
+            if (window.floating() && presentation == VideoCardState.HIDDEN) {
+                window.dismiss("its media session ended or cleared its title");
+            }
+            return;
+        }
         if (presentation != VideoCardState.PLAYING) {
             cancelPreparation();
             if (state == State.SHOWN) state = State.READY;
@@ -88,8 +99,11 @@ final class EmbeddedVideo extends FrameLayout {
 
     void resume() {
         hostActive = true;
-        if (expansion.active()) {
-            expansion.collapse();
+        window.hostShown();
+        if (window.active()) {
+            // Home returns a floating video to its card once Road Home's window can show it.
+            if (window.floating() && playerLifecycle != null) playerLifecycle.whenHostReady(window::collapse);
+            else window.collapse();
             return;
         }
         maybeLaunch();
@@ -97,41 +111,96 @@ final class EmbeddedVideo extends FrameLayout {
 
     void suspend() {
         hostActive = false;
-        expansion.cancel();
+        // Floating above the app that replaced Road Home: keep the window and keep playing.
+        if (window.floating()) return;
+        window.cancel();
         cancelPreparation();
         if (state == State.SHOWN) state = State.READY;
         coverPlayer();
     }
 
+    boolean floating() { return window.floating(); }
+
     boolean openFullscreen(Runnable open) {
-        if (expansion.active()) return true;
+        if (window.active()) return true;
         if (state != State.SHOWN || playerSurface == null || previousBounds == null
                 || presentation != VideoCardState.PLAYING || !hostActive) return false;
         cancelPreparation();
-        RectF source = new RectF(previousBounds.left, previousBounds.top,
-                previousBounds.left + previousBounds.width, previousBounds.top + previousBounds.height);
-        expansion.open(this, playerSurface, source, displaySize.x, displaySize.y, open, () -> {
-            cancelPreparation();
-            if (hostActive && presentation == VideoCardState.PLAYING) inspectSurface();
-            else {
-                if (state == State.SHOWN) state = State.READY;
-                coverPlayer();
-                status.setVisibility(GONE);
-                setVisibility(presentation == VideoCardState.HIDDEN ? GONE : VISIBLE);
-            }
-        });
-        if (expansion.active()) postDelayed(inspect, 300);
+        window.open(this, playerSurface, source(previousBounds), displaySize.x, displaySize.y, open,
+                this::presentationRestored);
+        if (window.active()) postDelayed(inspect, 300);
         return true;
+    }
+
+    /**
+     * Keeps live, playing video in a small window above Maps as Maps covers Road Home.
+     * The task, display, and decoder are untouched.
+     *
+     * @return the card's screen area the video left, or null to keep today's behavior
+     */
+    Rect floatAboveMaps(FloatingPlacement.Corner corner, LiveVideoWindow.CornerListener settled) {
+        if (window.active() || state != State.SHOWN || playerSurface == null || previousBounds == null
+                || presentation != VideoCardState.PLAYING || !hostActive) return null;
+        if (playerLifecycle == null) {
+            Log.w("RoadHomeVideo", "Floating video unavailable without the video display lifecycle; keeping it in its card");
+            return null;
+        }
+        try { appSwitches.start(); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("RoadHomeVideo", "Floating video unavailable: app switches cannot be observed; keeping it in its card", error);
+            return null;
+        }
+        cancelPreparation();
+        // Before Road Home stops: its hidden window must not power off the playing display.
+        playerLifecycle.presentElsewhere();
+        window.openFloating(this, playerSurface, source(previousBounds), displaySize.x, displaySize.y,
+                corner, settled, this::presentationRestored);
+        if (!window.active()) {
+            appSwitches.stop();
+            playerLifecycle.returnToHost();
+            return null;
+        }
+        Log.i("RoadHomeVideo", "Floating live video above Maps in the " + corner + " corner");
+        postDelayed(inspect, 500);
+        int[] location = new int[2];
+        getLocationOnScreen(location);
+        return new Rect(location[0], location[1], location[0] + getWidth(), location[1] + getHeight());
+    }
+
+    private void presentationRestored() {
+        appSwitches.stop();
+        if (playerLifecycle != null) playerLifecycle.returnToHost();
+        cancelPreparation();
+        if (hostActive && presentation == VideoCardState.PLAYING) inspectSurface();
+        else {
+            if (state == State.SHOWN) state = State.READY;
+            coverPlayer();
+            status.setVisibility(GONE);
+            setVisibility(presentation == VideoCardState.HIDDEN ? GONE : VISIBLE);
+        }
+        presentationEnded.run();
+    }
+
+    private void appMovedToFront(String packageName, int displayId) {
+        if (!window.floating()) return;
+        if (packageName.equals(host.getPackageName()) || packageName.equals(EmbeddedMaps.PACKAGE)) return;
+        if (packageName.equals(PACKAGE) && player != null && displayId == player.getVirtualDisplayId()) return;
+        window.dismiss(packageName + " came to the front on display " + displayId);
+    }
+
+    private static RectF source(VideoSurface.Bounds bounds) {
+        return new RectF(bounds.left, bounds.top, bounds.left + bounds.width, bounds.top + bounds.height);
     }
 
     void fullscreenOpened() {
         // Run after the expansion restores its surface parent. The task is already on display 0.
         // Removing the now-empty virtual display clears Android 10's stale input-window entry.
         post(() -> {
-            if (hostActive || state == State.CLOSED) return;
+            if (hostActive || state == State.CLOSED || window.active()) return;
             cancelPreparation();
             if (player != null) {
                 player.setCallback(null);
+                releaseLifecycle();
                 player.release();
                 removeView(player);
                 player = null;
@@ -156,7 +225,7 @@ final class EmbeddedVideo extends FrameLayout {
     }
 
     private void maybeLaunch() {
-        if (expansion.active()) return;
+        if (window.active()) return;
         if (!hostActive || presentation != VideoCardState.PLAYING) return;
         if (state == State.EMPTY) {
             state = State.WAITING;
@@ -165,6 +234,11 @@ final class EmbeddedVideo extends FrameLayout {
                 player.setPivotX(0);
                 player.setPivotY(0);
                 player.setClipBounds(new Rect());
+                try {
+                    playerLifecycle = new EmbeddedDisplayLifecycle(player, EmbeddedDisplayLifecycle.WhenHidden.POWER_OFF);
+                } catch (ReflectiveOperationException | RuntimeException error) {
+                    Log.w("RoadHomeVideo", "Video display lifecycle unavailable; video cannot float above Maps", error);
+                }
                 addView(player, 0, new LayoutParams(displaySize.x, displaySize.y));
                 player.setCallback(new ActivityView.StateCallback() {
                     @Override public void onActivityViewReady(ActivityView view) {
@@ -186,7 +260,7 @@ final class EmbeddedVideo extends FrameLayout {
                         } catch (ReflectiveOperationException | RuntimeException error) { fail(error); }
                     }
                     @Override public void onActivityViewDestroyed(ActivityView view) {
-                        expansion.cancel();
+                        window.cancel();
                         playerSurface = null;
                         state = State.CLOSED;
                     }
@@ -209,29 +283,31 @@ final class EmbeddedVideo extends FrameLayout {
         } catch (ReflectiveOperationException | RuntimeException error) { fail(error); }
     }
 
+    /** Geometry is followed while Road Home shows the card or a floating window shows the video. */
+    private boolean observing() { return hostActive || window.floating(); }
+
     private void inspectSurface() {
-        if (!hostActive || (state != State.PREPARING && state != State.SHOWN)) return;
+        if (!observing() || (state != State.PREPARING && state != State.SHOWN)) return;
         int requestGeneration = generation;
-        boolean presenting = expansion.active();
+        boolean presenting = window.active();
         geometryReader.execute(() -> {
             try {
                 VideoSurface.Bounds bounds = VideoSurface.read(displaySize.x, displaySize.y, presenting);
                 post(() -> {
-                    if (requestGeneration != generation || !hostActive) return;
-                    if (expansion.active()) {
+                    if (requestGeneration != generation || !observing()) return;
+                    if (window.active()) {
                         if (bounds != null) {
                             previousBounds = bounds;
-                            expansion.updateSource(new RectF(bounds.left, bounds.top,
-                                    bounds.left + bounds.width, bounds.top + bounds.height));
+                            window.updateSource(source(bounds));
                         }
-                        postDelayed(inspect, 300);
+                        postDelayed(inspect, window.floating() ? 500 : 300);
                         return;
                     }
                     applyBounds(bounds);
                 });
             } catch (IOException | ReflectiveOperationException | RuntimeException | LinkageError error) {
                 post(() -> {
-                    if (requestGeneration == generation && hostActive) fail(error);
+                    if (requestGeneration == generation && observing()) fail(error);
                 });
             }
         });
@@ -286,19 +362,26 @@ final class EmbeddedVideo extends FrameLayout {
     private void fail(Throwable error) {
         cancelPreparation();
         state = State.FAILED;
-        expansion.cancel();
+        window.cancel();
         coverPlayer();
         status.setText(PLAYER_UNAVAILABLE);
         Log.e("RoadHome", "Could not embed the playing YouTube video surface", error);
     }
 
+    private void releaseLifecycle() {
+        if (playerLifecycle != null) playerLifecycle.release();
+        playerLifecycle = null;
+    }
+
     void release() {
         hostActive = false;
-        expansion.cancel();
+        window.release();
+        appSwitches.stop();
         cancelPreparation();
         geometryReader.shutdownNow();
         if (player != null) {
             player.setCallback(null);
+            releaseLifecycle();
             player.release();
             playerSurface = null;
         }

@@ -24,7 +24,7 @@ final class EmbeddedMaps extends MapPanel {
     private enum State { WAITING, READY, CLOSED }
     private State state = State.WAITING;
     private ActivityView activityView;
-    private MapDisplayLifecycle displayLifecycle;
+    private EmbeddedDisplayLifecycle displayLifecycle;
     private EmbeddedMapMotion motion;
     private final MapsTask tasks;
     private final MapTransition transition;
@@ -60,7 +60,8 @@ final class EmbeddedMaps extends MapPanel {
         }
         try {
             activityView = new ActivityView(context);
-            displayLifecycle = new MapDisplayLifecycle(activityView);
+            displayLifecycle = new EmbeddedDisplayLifecycle(activityView,
+                    EmbeddedDisplayLifecycle.WhenHidden.STAY_AWAKE);
             addView(activityView, 0, new LayoutParams(-1, -1));
             try { motion = new EmbeddedMapMotion(context, this, activityView); }
             catch (ReflectiveOperationException | RuntimeException error) {
@@ -109,7 +110,7 @@ final class EmbeddedMaps extends MapPanel {
         if (motion != null && motion.pending()) return;
         cancelPendingTransition();
         if (launching) return;
-        openOnDisplay(activityView.getVirtualDisplayId());
+        openOnDisplay(activityView.getVirtualDisplayId(), () -> null);
     }
 
     void resume() {
@@ -129,9 +130,10 @@ final class EmbeddedMaps extends MapPanel {
         launching = false;
     }
 
-    void openFullscreen() { cancelPendingTransition(); openOnDisplay(0); }
+    @Override void openFullscreen(Covering covering) { cancelPendingTransition(); openOnDisplay(0, covering); }
 
-    private void openOnDisplay(int displayId) {
+    /** @param covering is told once, as Maps visibly starts covering Road Home on display 0 */
+    private void openOnDisplay(int displayId, Covering covering) {
         if (launching) return;
         preventSystemPictureInPicture();
         try {
@@ -153,17 +155,21 @@ final class EmbeddedMaps extends MapPanel {
                         }
                     };
                     if (motion != null) {
-                        if (displayId == 0) motion.expand(move);
+                        if (displayId == 0) motion.expand(move, covering);
                         else motion.returnHome(existing.id, move);
-                    } else transition.move(displayId == 0, move);
+                    } else transition.move(displayId == 0, () -> {
+                        move.run();
+                        if (displayId == 0) transition.conceal(covering.starting());
+                    });
                 } else {
                     if (existing.windowingMode != 1 || displayId == 0) tasks.move(existing, displayId);
+                    if (displayId == 0) covering.starting();
                     if (displayId != 0) revealSurface();
                     status.setVisibility(View.GONE);
                 }
                 return;
             }
-            launchNew(displayId);
+            if (launchNew(displayId) && displayId == 0) covering.starting();
         } catch (ReflectiveOperationException | RuntimeException error) {
             Log.e("RoadHome", "Could not reuse Maps task on display " + displayId, error);
             showError("Maps could not be restored. Existing tasks were left intact. Open Maps from Recents to recover your route.");
@@ -192,11 +198,12 @@ final class EmbeddedMaps extends MapPanel {
                 new Rect(0, 0, getWidth(), getHeight()));
     }
 
-    private void launchNew(int displayId) {
+    /** @return whether Android accepted the launch request */
+    private boolean launchNew(int displayId) {
         Intent intent = getContext().getPackageManager().getLaunchIntentForPackage(PACKAGE);
         if (intent == null) {
             showError("Google Maps is not installed. Install Maps, then tap Open Maps.");
-            return;
+            return false;
         }
         try {
             if (displayId == 0) {
@@ -218,10 +225,12 @@ final class EmbeddedMaps extends MapPanel {
             }
             status.setVisibility(View.GONE);
             Log.i("RoadHome", "Requested Maps launch after no task was found, display " + displayId);
+            return true;
         } catch (RuntimeException error) {
             launching = false;
             Log.e("RoadHome", "Could not launch Google Maps in ActivityView", error);
             showError("Maps could not open in this panel. Tap Open Maps to retry, or open it from Apps.");
+            return false;
         }
     }
 

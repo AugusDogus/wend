@@ -4,6 +4,7 @@ import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
@@ -89,6 +90,14 @@ final class MapTransition {
 
     boolean active() { return cover != null; }
 
+    /**
+     * Blanks part of the frozen frame whose live content has just moved to another window,
+     * such as a video leaving its card, so the cover never shows it twice.
+     */
+    void conceal(Rect area) {
+        if (cover != null && area != null && !area.isEmpty()) cover.conceal(area);
+    }
+
     boolean pending() { return cover != null && cover.phase == Phase.PENDING; }
 
     void cancel() {
@@ -101,6 +110,8 @@ final class MapTransition {
         private final Bitmap snapshot;
         private final RectF screen;
         private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
+        private final Paint blank = new Paint();
+        private final Rect concealed = new Rect();
         private final int destinationWidth;
         private final Runnable moveTask;
         private final Completion completion;
@@ -118,7 +129,14 @@ final class MapTransition {
             this.moveTask = moveTask;
             this.completion = completion;
             screen = new RectF(0, 0, snapshot.getWidth(), snapshot.getHeight());
+            // The empty video card is black in Road Home as well.
+            blank.setColor(Color.BLACK);
             setClickable(true);
+        }
+
+        void conceal(Rect area) {
+            concealed.union(area);
+            invalidate();
         }
 
         void start() {
@@ -156,7 +174,9 @@ final class MapTransition {
         }
 
         @Override protected void onDraw(Canvas canvas) {
-            if (phase != Phase.DISPOSED) canvas.drawBitmap(snapshot, null, screen, paint);
+            if (phase == Phase.DISPOSED) return;
+            canvas.drawBitmap(snapshot, null, screen, paint);
+            if (!concealed.isEmpty()) canvas.drawRect(concealed, blank);
         }
 
         void dispose() {

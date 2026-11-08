@@ -5,6 +5,7 @@ import android.graphics.Rect;
 import android.graphics.Region;
 import android.os.Binder;
 import android.os.Process;
+import android.util.Log;
 import android.view.SurfaceControl;
 import android.view.SurfaceView;
 import android.view.View;
@@ -22,8 +23,11 @@ final class ActivityViewSurface {
     private final Method reparent;
     private final Method surfaceControl;
     private final Method setInput;
+    /** Hidden Android 10 SurfaceFlinger corner radius; null leaves square corners. */
+    private final Method cornerRadius;
     private final Object portal;
     private final Region touchableRegion;
+    private final Rect cropped = new Rect();
 
     ActivityViewSurface(ActivityView view) throws ReflectiveOperationException {
         Field field = ActivityView.class.getDeclaredField("mRootSurfaceControl");
@@ -46,6 +50,7 @@ final class ActivityViewSurface {
         position = SurfaceControl.Transaction.class.getMethod("setPosition", SurfaceControl.class, float.class, float.class);
         reparent = SurfaceControl.Transaction.class.getMethod("reparent", SurfaceControl.class, SurfaceControl.class);
         surfaceControl = SurfaceView.class.getMethod("getSurfaceControl");
+        cornerRadius = optionalCornerRadius();
         Class<?> handle = Class.forName("android.view.InputWindowHandle");
         portal = handle.getConstructor(Class.forName("android.view.InputApplicationHandle"),
                 Class.forName("android.view.IWindow"), int.class).newInstance(null, null, -1);
@@ -65,14 +70,30 @@ final class ActivityViewSurface {
         setInput = SurfaceControl.Transaction.class.getMethod("setInputWindowInfo", SurfaceControl.class, handle);
     }
 
+    private static Method optionalCornerRadius() {
+        try {
+            return SurfaceControl.Transaction.class.getMethod("setCornerRadius", SurfaceControl.class, float.class);
+        } catch (NoSuchMethodException error) {
+            Log.w("RoadHomeSurface", "SurfaceFlinger corner radius is unavailable; floating video keeps square corners", error);
+            return null;
+        }
+    }
+
+    /** The compositor surface of the window that hosts {@code view}. */
+    static SurfaceControl windowSurface(View view) throws ReflectiveOperationException {
+        Object root = View.class.getMethod("getViewRootImpl").invoke(view);
+        Object target = Class.forName("android.view.ViewRootImpl").getMethod("getSurfaceControl").invoke(root);
+        if (!(target instanceof SurfaceControl) || !((SurfaceControl) target).isValid()) {
+            throw new IllegalStateException("Overlay window has no compositor surface yet");
+        }
+        return (SurfaceControl) target;
+    }
+
     /** Temporarily puts our live display above Maps; disables its input portal during motion. */
     void attach(View destination, float scale, float x, float y, Rect bounds)
             throws ReflectiveOperationException {
         try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
-            Object root = View.class.getMethod("getViewRootImpl").invoke(destination);
-            Object target = Class.forName("android.view.ViewRootImpl").getMethod("getSurfaceControl").invoke(root);
-            if (!(target instanceof SurfaceControl)) throw new IllegalStateException("Video overlay has no surface");
-            reparent.invoke(transaction, surface, target);
+            reparent.invoke(transaction, surface, windowSurface(destination));
             SurfaceControl.Transaction.class.getMethod("setLayer", SurfaceControl.class, int.class)
                     .invoke(transaction, surface, 1);
             touchableRegion.setEmpty();
@@ -89,11 +110,25 @@ final class ActivityViewSurface {
         }
     }
 
+    /** Queues a placement in a caller's transaction so other layers can move in the same frame. */
+    void place(SurfaceControl.Transaction transaction, SurfacePlacement placement, float radius, float alpha)
+            throws ReflectiveOperationException {
+        placement.crop(cropped);
+        transform(transaction, placement.scale, placement.x, placement.y, cropped);
+        // SurfaceFlinger rounds the crop in layer space, so the radius is unscaled here.
+        round(transaction, radius / placement.scale);
+        transaction.setAlpha(surface, alpha);
+    }
+
     private void transform(SurfaceControl.Transaction transaction, float scale, float x, float y, Rect bounds)
             throws ReflectiveOperationException {
         matrix.invoke(transaction, surface, scale, 0f, 0f, scale);
         position.invoke(transaction, surface, x, y);
         crop.invoke(transaction, surface, bounds);
+    }
+
+    private void round(SurfaceControl.Transaction transaction, float radius) throws ReflectiveOperationException {
+        if (cornerRadius != null) cornerRadius.invoke(transaction, surface, radius);
     }
 
     void restore() throws ReflectiveOperationException {
@@ -103,6 +138,7 @@ final class ActivityViewSurface {
                     .invoke(transaction, surface, 0);
             matrix.invoke(transaction, surface, 1f, 0f, 0f, 1f);
             position.invoke(transaction, surface, 0f, 0f);
+            round(transaction, 0);
             transaction.setAlpha(surface, 0).apply();
         }
     }
@@ -112,9 +148,33 @@ final class ActivityViewSurface {
             reparent(transaction, parent);
             transaction.setLayer(surface, 0);
             transform(transaction, scale, x, y, bounds);
+            round(transaction, 0);
             touchableRegion.set(bounds);
             updateInput(transaction);
             transaction.setAlpha(surface, 1).apply();
+        }
+    }
+
+    /** Whether Road Home's window currently has the card surface a preview can return to. */
+    boolean hostAvailable() throws ReflectiveOperationException {
+        Object target = surfaceControl.invoke(parent);
+        return target instanceof SurfaceControl && ((SurfaceControl) target).isValid();
+    }
+
+    /**
+     * Hides the display without input. It returns to the card surface when Road Home has one;
+     * otherwise ActivityView reparents it when that surface is next created.
+     */
+    void restoreHidden() throws ReflectiveOperationException {
+        try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+            if (hostAvailable()) {
+                reparent(transaction, parent);
+                transaction.setLayer(surface, 0);
+            }
+            round(transaction, 0);
+            touchableRegion.setEmpty();
+            updateInput(transaction);
+            transaction.setAlpha(surface, 0).apply();
         }
     }
 

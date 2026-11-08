@@ -2,6 +2,7 @@ package dev.augie.roadhome;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Looper;
 import android.util.DisplayMetrics;
@@ -10,10 +11,15 @@ import android.view.WindowManager;
 import android.widget.LinearLayout;
 
 public final class MainActivity extends Activity {
+    /** "layout" preference: live video keeps playing in a floating window over fullscreen Maps. */
+    static final String FLOATING_VIDEO = "floatingVideo";
+    /** "layout" preference: the corner the floating video last settled in. */
+    static final String FLOATING_VIDEO_CORNER = "floatingVideoCorner";
     private MapPanel maps;
     private MediaPanel media;
     private LinearLayout content;
     private LauncherSettings settings;
+    private SharedPreferences preferences;
     private Dock dock;
     private int dockCapacity;
     private FrostedBackdrop backdrop;
@@ -22,7 +28,8 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        settings = new LauncherSettings(getSharedPreferences(LauncherSettings.PREFERENCES, MODE_PRIVATE));
+        preferences = getSharedPreferences(LauncherSettings.PREFERENCES, MODE_PRIVATE);
+        settings = new LauncherSettings(preferences);
         AppCatalog.get(this); // Loads apps in the background so the drawer opens with them.
         backdrop = new FrostedBackdrop(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -81,7 +88,14 @@ public final class MainActivity extends Activity {
     }
 
     private void openMusic() { AppLaunch.open(this, media.musicPackage()); }
-    void openMapsFullscreen() { maps.openFullscreen(); }
+    void openMapsFullscreen() {
+        maps.openFullscreen(() -> {
+            if (!preferences.getBoolean(FLOATING_VIDEO, true)) return null;
+            return media.floatVideo(FloatingPlacement.Corner.parse(
+                    preferences.getString(FLOATING_VIDEO_CORNER, null), FloatingPlacement.Corner.BOTTOM_RIGHT),
+                    corner -> preferences.edit().putString(FLOATING_VIDEO_CORNER, corner.name()).apply());
+        });
+    }
     boolean openVideoFullscreen(Runnable open) { return media.openVideoFullscreen(open); }
     // A virtual display can keep Home started behind another fullscreen app on Android 10.
     // Remove native Maps overlays explicitly instead of relying on onStop.

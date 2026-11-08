@@ -22,6 +22,7 @@ final class EmbeddedMapMotion {
     private MapFrame frame;
     private Phase phase = Phase.IDLE;
     private Runnable deadline;
+    private MapPanel.Covering covering;
     private int generation;
 
     EmbeddedMapMotion(Activity host, View panel, ActivityView view) throws ReflectiveOperationException {
@@ -37,9 +38,10 @@ final class EmbeddedMapMotion {
     boolean pending() { return expanding() || returning.pending(); }
     boolean expanding() { return phase != Phase.IDLE || cover.active(); }
 
-    void expand(Runnable move) {
+    void expand(Runnable move, MapPanel.Covering covering) {
         cancel();
-        if (!ValueAnimator.areAnimatorsEnabled() || !panel.isLaidOut()) { move.run(); return; }
+        this.covering = covering;
+        if (!ValueAnimator.areAnimatorsEnabled() || !panel.isLaidOut()) { move.run(); covering(); return; }
         phase = Phase.PREPARING;
         int request = generation;
         cover.hold(() -> {
@@ -66,7 +68,10 @@ final class EmbeddedMapMotion {
             ActivityViewSurface surface = new ActivityViewSurface(view);
             // Source matches the card dimensions, giving scale=1 throughout the animation.
             expanding.open(panel, surface, new RectF(0, 0, panel.getWidth(), panel.getHeight()),
-                    screen.x, screen.y, cover::cancel, () -> finish(move));
+                    screen.x, screen.y, () -> {
+                        cover.cancel();
+                        covering();
+                    }, () -> finish(move));
         } catch (ReflectiveOperationException | RuntimeException error) {
             Log.w("RoadHomeMap", "Embedded map surface animation unavailable; opening directly", error);
             finish(move);
@@ -77,6 +82,9 @@ final class EmbeddedMapMotion {
         stopWaiting();
         phase = Phase.IDLE;
         move.run();
+        // A slow expansion signals only after the blocking task move, so motion that starts
+        // now is not starved of its first frames. A live expansion signaled when it began.
+        covering();
         cover.settleHeld();
         // SurfaceExpansion restores the root parent before this layout runs.
         panel.post(this::restoreSize);
@@ -90,8 +98,16 @@ final class EmbeddedMapMotion {
                 location[1] + panel.getHeight()), move);
     }
 
+    private void covering() {
+        MapPanel.Covering once = covering;
+        covering = null;
+        // A slow expansion still holds Road Home's frozen frame; blank what just left it.
+        if (once != null) cover.conceal(once.starting());
+    }
+
     void cancel() {
         generation++;
+        covering = null;
         phase = Phase.IDLE;
         stopWaiting();
         expanding.cancel();

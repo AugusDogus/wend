@@ -53,6 +53,62 @@ public class LiveVideoWindowTest {
         assertFalse(window.active());
     }
 
+    private void openFloating() {
+        card.layout(0, 0, 320, 180);
+        window.openFloating(card, null, new RectF(16, 122, 496, 392), 1280, 720,
+                FloatingPlacement.Corner.BOTTOM_RIGHT, corner -> events.add("settled " + corner),
+                () -> events.add("restored"));
+    }
+
+    @Test public void aFloatingWindowThatNeverGetsAFrameRestoresWithoutOpeningAnything() {
+        openFloating();
+        assertTrue(window.floating());
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2));
+        assertEquals(List.of("restored"), events);
+        assertFalse(window.active());
+        assertNull(shadowOf(host).getNextStartedActivity());
+    }
+
+    @Test public void homeBeforeTheFloatingWindowIsReadyReturnsToTheCard() {
+        openFloating();
+        window.collapse();
+        assertEquals(List.of("restored"), events);
+        assertFalse(window.floating());
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2));
+        assertEquals(1, events.size());
+    }
+
+    @Test public void anEndedSessionDismissesTheFloatingWindowOnce() {
+        openFloating();
+        window.dismiss("the test session ended");
+        window.dismiss("the test session ended");
+        window.collapse();
+        assertEquals(List.of("restored"), events);
+        assertFalse(window.active());
+    }
+
+    @Test public void aFloatingWindowLeavesHomeToAndroidUntilItIsFullscreen() {
+        openFloating();
+        host.sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS).putExtra("reason", "homekey"));
+        shadowOf(Looper.getMainLooper()).idle();
+        assertNull(shadowOf(host).getNextStartedActivity());
+        window.cancel();
+    }
+
+    @Test public void homeStillReachesRoadHomeAfterADismissalUntilRoadHomeIsShown() {
+        open();
+        window.dismiss("the test session ended");
+        assertFalse(window.active());
+        // The last touch can still be on the video's display, where Home would do nothing.
+        host.sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS).putExtra("reason", "homekey"));
+        shadowOf(Looper.getMainLooper()).idle();
+        assertEquals(MainActivity.class.getName(), shadowOf(host).getNextStartedActivity().getComponent().getClassName());
+        window.hostShown();
+        host.sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS).putExtra("reason", "homekey"));
+        shadowOf(Looper.getMainLooper()).idle();
+        assertNull(shadowOf(host).getNextStartedActivity());
+    }
+
     @Test public void onlySystemHomeNotificationReturnsToPhysicalHome() {
         open();
         host.sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS).putExtra("reason", "recentapps"));
