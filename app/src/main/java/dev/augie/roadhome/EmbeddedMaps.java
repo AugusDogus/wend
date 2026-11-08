@@ -137,8 +137,14 @@ final class EmbeddedMaps extends MapPanel {
         if (motion != null && motion.pending()) return;
         cancelPendingTransition();
         if (launching) return;
-        openOnDisplay(activityView.getVirtualDisplayId(), () -> null);
+        openOnDisplay(activityView.getVirtualDisplayId(), INTO_PANEL);
     }
+
+    /** Maps returning to its panel covers nothing of Road Home. */
+    private static final Covering INTO_PANEL = new Covering() {
+        @Override public Rect starting() { return null; }
+        @Override public void abandoned() { }
+    };
 
     void resume() {
         hostActive = true;
@@ -374,10 +380,14 @@ final class EmbeddedMaps extends MapPanel {
 
     @Override void openFullscreen(Covering covering) { cancelPendingTransition(); openOnDisplay(0, covering); }
 
-    /** @param covering is told once, as Maps visibly starts covering Road Home on display 0 */
-    private void openOnDisplay(int displayId, Covering covering) {
+    /**
+     * @param request is told once, as Maps visibly starts covering Road Home on display 0, and
+     *     told again if Maps then fails to move
+     */
+    private void openOnDisplay(int displayId, Covering request) {
         if (launching) return;
         preventSystemPictureInPicture();
+        CoverOnce covering = new CoverOnce(request);
         try {
             MapsTask.Task existing = tasks.find();
             if (existing != null) {
@@ -385,15 +395,18 @@ final class EmbeddedMaps extends MapPanel {
                     launching = true;
                     Runnable move = () -> {
                         launching = false;
-                        if (state == State.CLOSED) return;
+                        if (state == State.CLOSED) { covering.abandoned(); return; }
                         try {
                             tasks.move(existing, displayId);
                             if (displayId != 0) revealSurface();
                             status.setVisibility(View.GONE);
                         } catch (ReflectiveOperationException | RuntimeException error) {
                             transition.cancel();
-                            Log.e("RoadHome", "Could not move Maps task " + existing.id, error);
+                            Log.e("RoadHome", "Could not move Maps task " + existing.id + " from display "
+                                    + existing.displayId + " to " + displayId + "; Maps stays where it was"
+                                    + " and the panel offers Open Maps", error);
                             showError("Maps could not be restored. Open Maps from Recents to recover your route.");
+                            covering.abandoned();
                         }
                     };
                     if (motion != null) {
@@ -473,6 +486,30 @@ final class EmbeddedMaps extends MapPanel {
             Log.e("RoadHome", "Could not launch Google Maps in ActivityView", error);
             showError("Maps could not open in this panel. Tap Open Maps to retry, or open it from Apps.");
             return false;
+        }
+    }
+
+    /**
+     * Starts covering at most once and never after the move failed; undoes it if the move fails
+     * after it started, as when the live expansion floats the video before the task moves.
+     */
+    static final class CoverOnce implements Covering {
+        private enum State { WAITING, COVERING, ABANDONED }
+        private final Covering covering;
+        private State state = State.WAITING;
+
+        CoverOnce(Covering covering) { this.covering = covering; }
+
+        @Override public Rect starting() {
+            if (state != State.WAITING) return null;
+            state = State.COVERING;
+            return covering.starting();
+        }
+
+        @Override public void abandoned() {
+            State was = state;
+            state = State.ABANDONED;
+            if (was == State.COVERING) covering.abandoned();
         }
     }
 

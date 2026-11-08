@@ -150,6 +150,42 @@ public class EmbeddedMapsTest {
         maps.release();
     }
 
+    @Test public void aFailedMoveToFullscreenNeverFloatsTheVideo() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        tasks.failMoves = true;
+        maps.openFullscreen(covering());
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+        assertEquals(List.of(), events);
+        assertEquals("Maps could not be restored. Open Maps from Recents to recover your route.", panelMessage(maps));
+        maps.release();
+    }
+
+    @Test public void aVideoThatFloatedAsMapsStartedReturnsIfMapsThenFailsToMove() {
+        EmbeddedMaps.CoverOnce once = new EmbeddedMaps.CoverOnce(covering());
+        assertEquals(new Rect(1, 2, 3, 4), once.starting());
+        assertNull("Covering starts once", once.starting());
+        once.abandoned();
+        once.abandoned();
+        assertEquals(List.of("starting", "abandoned"), events);
+    }
+
+    @Test public void aMoveThatFailsBeforeCoveringStartsNeverStartsIt() {
+        EmbeddedMaps.CoverOnce once = new EmbeddedMaps.CoverOnce(covering());
+        once.abandoned();
+        assertNull(once.starting());
+        assertEquals(List.of(), events);
+    }
+
+    private MapPanel.Covering covering() {
+        return new MapPanel.Covering() {
+            @Override public Rect starting() { events.add("starting"); return new Rect(1, 2, 3, 4); }
+            @Override public void abandoned() { events.add("abandoned"); }
+        };
+    }
+
     private LiveSurfaceWindow.Listener listener() {
         return new LiveSurfaceWindow.Listener() {
             @Override public void settled(FloatingPlacement.Corner corner) { events.add("settled"); }
@@ -161,12 +197,14 @@ public class EmbeddedMapsTest {
     private static final class FakeTasks extends MapsTask {
         final List<String> calls = new ArrayList<>();
         MapsTask.Task maps;
+        boolean failMoves;
 
         FakeTasks(Activity host) { super(host); }
 
         @Override MapsTask.Task find() { return maps; }
 
         @Override void move(MapsTask.Task task, int displayId) {
+            if (failMoves) throw new IllegalStateException("Moving Maps task " + task.id + " failed: -96");
             calls.add("move to " + displayId);
             maps = new MapsTask.Task(task.id, displayId, 1);
         }

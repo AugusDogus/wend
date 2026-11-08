@@ -2,6 +2,7 @@ package dev.augie.roadhome;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.Looper;
 import android.util.DisplayMetrics;
@@ -104,9 +105,13 @@ public final class MainActivity extends Activity {
     }
 
     void openMapsFullscreen() {
-        maps.openFullscreen(() -> {
-            FloatingPlacement.Corner corner = videoCorner();
-            return corner == null ? null : media.floatVideo(corner, floatingVideo);
+        maps.openFullscreen(new MapPanel.Covering() {
+            @Override public Rect starting() {
+                FloatingPlacement.Corner corner = videoCorner();
+                return corner == null ? null : media.floatVideo(corner, floatingVideo);
+            }
+            // Road Home still shows: a video that floated for Maps returns to its card.
+            @Override public void abandoned() { media.homeVideo(); }
         });
     }
 
