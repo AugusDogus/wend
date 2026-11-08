@@ -144,6 +144,8 @@ final class MediaPanel extends LinearLayout {
         video.yieldToMaps(corner, listener);
     }
     void emergeVideo() { video.emergeAboveMaps(); }
+    /** The video card's video pauses, such as when its floating window is closed. */
+    void pauseVideo() { if (videoController != null) videoController.getTransportControls().pause(); }
 
     void start() {
         started = true;

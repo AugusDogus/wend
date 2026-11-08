@@ -26,6 +26,8 @@ final class FloatingPlacement {
     static final int VIDEO_WIDTH_DP = 288, VIDEO_HEIGHT_DP = 162;
     // A normal scroll's deceleration per millisecond: a release travels v * 0.499 px.
     private static final float DECELERATION = 0.998f;
+    /** Android 10's PipMotionHelper.DISMISS_OFFSCREEN_FRACTION. */
+    private static final float DISMISS_OFFSCREEN_FRACTION = .3f;
     private final Rect area;
     private final int width;
     private final int height;
@@ -45,11 +47,39 @@ final class FloatingPlacement {
         return new Rect(left, top, left + width, top + height);
     }
 
-    /** Moves exactly with the finger, but keeps the whole window on screen. */
+    /**
+     * Moves exactly with the finger. The window stays on screen except through the bottom edge,
+     * where Android 10's PiP is dragged away to close it.
+     */
     Rect dragged(Rect start, float dx, float dy) {
         int left = clamp(Math.round(start.left + dx), area.left, area.right - width);
-        int top = clamp(Math.round(start.top + dy), area.top, area.bottom - height);
+        int top = clamp(Math.round(start.top + dy), area.top, area.bottom);
         return new Rect(left, top, left + width, top + height);
+    }
+
+    /** The same window moved straight down until it is wholly below the bottom edge. */
+    Rect below(Rect bounds) {
+        Rect moved = new Rect(bounds);
+        moved.offsetTo(bounds.left, area.bottom);
+        return moved;
+    }
+
+    /** Released this far below the bottom edge, the window closes, as Android 10's PiP does. */
+    boolean offscreenDismisses(Rect bounds) {
+        return bounds.bottom - area.bottom >= DISMISS_OFFSCREEN_FRACTION * height;
+    }
+
+    /**
+     * A mostly downward fling closes the window when the finger went down or came up in the
+     * bottom row of resting windows, as Android 10's PiP does; from higher up it only moves there.
+     * @param downY where the finger went down, in screen px
+     * @param upY where it came up
+     * @param minVelocity px/s below which a release is not a fling
+     */
+    boolean flingDismisses(float downY, float upY, float velocityX, float velocityY, float minVelocity) {
+        float bottomRow = rest(Corner.BOTTOM_LEFT).top;
+        return velocityY >= minVelocity && Math.abs(velocityY) > Math.abs(velocityX)
+                && (downY >= bottomRow || upY >= bottomRow);
     }
 
     /** Projects the release momentum forward, then picks the corner closest to where it lands. */

@@ -13,8 +13,8 @@ final class FloatingOutline {
     // Neutral gray separates the window from both day (light) and night (dark) map tiles.
     private static final float[] EDGE = {.5f, .5f, .5f};
     private static final float EDGE_ALPHA = .35f;
-    /** Below the floating surface, which its window places at layer 1. */
-    private static final int LAYER = -1;
+    /** Below the floating surface. */
+    private static final int LAYER = ActivityViewSurface.BELOW_WINDOW - 1;
     private final SurfaceControl layer;
     private final Method position;
     private final Method crop;

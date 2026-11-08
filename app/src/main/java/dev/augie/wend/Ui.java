@@ -33,7 +33,7 @@ final class Ui {
     /** Controls that cannot be used right now keep their place at this opacity. */
     static final float DISABLED_ALPHA = 0.38f;
 
-    enum Icon { APPS, SETTINGS, PLAY, PAUSE, PREVIOUS, NEXT, CLOSE, BACK, ADD, REMOVE, UP, DOWN, FORWARD }
+    enum Icon { APPS, SETTINGS, PLAY, PAUSE, PREVIOUS, NEXT, CLOSE, BACK, ADD, REMOVE, UP, DOWN, FORWARD, FULLSCREEN }
 
     private Ui() { }
 
@@ -175,6 +175,12 @@ final class Ui {
                     paint.setStyle(Paint.Style.STROKE);
                     canvas.drawLine(6, 6, 18, 18, paint);
                     canvas.drawLine(18, 6, 6, 18, paint); break;
+                case FULLSCREEN:
+                    paint.setStyle(Paint.Style.STROKE);
+                    polyline(canvas, 4, 9, 4, 4, 9, 4);
+                    polyline(canvas, 15, 4, 20, 4, 20, 9);
+                    polyline(canvas, 20, 15, 20, 20, 15, 20);
+                    polyline(canvas, 9, 20, 4, 20, 4, 15); break;
                 case PLAY: triangle(canvas, 7, 4, 20, 12, 7, 20); break;
                 case PAUSE:
                     canvas.drawRoundRect(6, 4, 10, 20, 1, 1, paint);

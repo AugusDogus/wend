@@ -34,8 +34,10 @@ final class LiveSurfaceWindow {
     interface Listener {
         /** A drag released the floating window, which now rests in {@code corner}. */
         void settled(FloatingPlacement.Corner corner);
-        /** The floating window was tapped. */
-        void tapped();
+        /** A double tap, or the fullscreen control: the window's app takes the screen. */
+        void fullscreen();
+        /** The close control, or a drag or fling off the bottom edge: the window is closing. */
+        void closed();
     }
 
     /** How a floating window first appears. */
@@ -60,6 +62,10 @@ final class LiveSurfaceWindow {
      */
     static final int ENTRY_TAP_GRACE_MS = 500;
     private static final float EMERGE_SCALE = .9f;
+    /** A shown menu fades after this long, as Android 10's PiP menu does after about 3 s. */
+    static final int MENU_MS = 3000;
+    /** A downward release this fast, in dp/s, from the bottom corners is a fling that closes the window. */
+    private static final int DISMISS_FLING_DP = 500;
     private final Activity host;
     private final String title;
     private final String tag;
@@ -220,10 +226,15 @@ final class LiveSurfaceWindow {
 
     void cancel() { if (running != null) running.finish(false); }
 
+    /** Whether a floating window shows its controls. */
+    boolean controlsShown() { return running != null && running.overlay.menuShown(); }
+
     void updateSource(RectF source) { if (running != null) running.updateSource(source); }
 
     private final class Running {
-        final View overlay = new View(host);
+        final FloatingChrome overlay = new FloatingChrome(host);
+        final float density = host.getResources().getDisplayMetrics().density;
+        final Runnable hideMenu = () -> menu(false);
         final View card;
         final ActivityViewSurface surface;
         final SurfacePlacement whole;
@@ -255,6 +266,8 @@ final class LiveSurfaceWindow {
         boolean leaveWhenAttached;
         /** A released window travels to its corner and takes touches where it is drawn. */
         boolean snapping;
+        /** Where a window closed by a drag off the bottom edge leaves to, or null to fade in place. */
+        SurfacePlacement away;
 
         Running(View card, ActivityViewSurface surface, RectF source, Point display, Entry entry,
                 Listener listener, Runnable fallback, Runnable restored) {
@@ -268,7 +281,6 @@ final class LiveSurfaceWindow {
             whole = SurfacePlacement.centered(display.x, display.y, screen.x, screen.y);
             wholeInput = new Rect(0, 0, display.x, display.y);
             radius = Ui.dp(host, 12);
-            overlay.setBackgroundColor(Color.TRANSPARENT);
         }
 
         /** Floating geometry and gestures, set when it first floats. */
@@ -277,10 +289,16 @@ final class LiveSurfaceWindow {
             this.corner = corner;
             this.listener = listener;
             drag = new FloatingDrag(placement, ViewConfiguration.get(host).getScaledTouchSlop(),
-                    new FloatingDrag.Listener() {
+                    DISMISS_FLING_DP * density, new FloatingDrag.Listener() {
                         @Override public void moved(Rect bounds) { dragged(bounds); }
-                        @Override public void released(Rect bounds, FloatingPlacement.Corner next) { snap(next); }
-                        @Override public void tapped() { Running.this.listener.tapped(); }
+                        @Override public void released(Rect bounds, FloatingPlacement.Corner next) {
+                            overlay.dismissTarget(false);
+                            snap(next);
+                        }
+                        @Override public void dismissed(Rect bounds) { closeDragged(bounds); }
+                        @Override public boolean pressed(float x, float y) { return press(x, y); }
+                        @Override public void tapped() { if (resting()) menu(!overlay.menuShown()); }
+                        @Override public void doubleTapped() { if (resting()) fullscreen(); }
                     });
         }
 
@@ -333,6 +351,7 @@ final class LiveSurfaceWindow {
                 case CARD: return SurfacePlacement.fit(source, cardOnScreen());
                 case CORNER: return SurfacePlacement.fit(source, placement.rest(corner));
                 case WHOLE: return whole;
+                case GONE: return away != null ? away : current;
                 default: return current;
             }
         }
@@ -340,6 +359,11 @@ final class LiveSurfaceWindow {
         void animateTo(Target next, int duration, TimeInterpolator interpolator, Runnable end) {
             // A failed placement just before this closed the window; nothing is left to move.
             if (phase == Phase.CLOSED) return;
+            if (next != Target.CORNER) {
+                // Its controls belong to the window resting in its corner.
+                menu(false);
+                if (drag != null) drag.cancelTap();
+            }
             // Reversing a motion part way only travels back the distance already covered.
             float covered = phase == Phase.MOVING && origin == next ? animator.getAnimatedFraction() : 1;
             stopAnimator();
@@ -473,7 +497,53 @@ final class LiveSurfaceWindow {
 
         void dragged(Rect bounds) {
             phase = Phase.DRAGGING;
+            // As Android 10's PiP: the menu goes, and the dismiss target shows where to drop it.
+            menu(false);
+            overlay.dismissTarget(true);
             show(SurfacePlacement.fit(source, bounds), radius, 1, 1);
+        }
+
+        boolean resting() { return target == Target.CORNER && phase == Phase.RESTING; }
+
+        /** Shows the menu over the resting window, fading it after {@link #MENU_MS}; or hides it. */
+        void menu(boolean shown) {
+            overlay.removeCallbacks(hideMenu);
+            if (!shown) { overlay.menu(false, null, radius, true); return; }
+            overlay.menu(true, placement.rest(corner), radius, true);
+            overlay.postDelayed(hideMenu, MENU_MS);
+        }
+
+        /** A tap on a shown control acts at once. */
+        boolean press(float x, float y) {
+            if (!resting() || !overlay.menuShown()) return false;
+            FloatingMenu.Control control = FloatingMenu.at(x, y, placement.rest(corner),
+                    FloatingMenu.Playback.NONE, density);
+            if (control == null) return false;
+            switch (control) {
+                case FULLSCREEN: fullscreen(); break;
+                case CLOSE: close(null); break;
+                default: break;
+            }
+            return true;
+        }
+
+        void fullscreen() {
+            menu(false);
+            listener.fullscreen();
+        }
+
+        void closeDragged(Rect bounds) {
+            overlay.dismissTarget(false);
+            // It leaves downward from where it was dropped, as Android 10's PiP does.
+            close(SurfacePlacement.fit(source, placement.below(bounds)));
+        }
+
+        /** @param to where it leaves to as it fades, or null to fade where it is */
+        void close(SurfacePlacement to) {
+            if (phase == Phase.CLOSED || target == Target.GONE) return;
+            away = to;
+            listener.closed();
+            dismiss("the driver closed it");
         }
 
         void snap(FloatingPlacement.Corner next) {
@@ -548,6 +618,9 @@ final class LiveSurfaceWindow {
             // presented display, where Home does nothing. Keep routing until Wend shows.
             if (!hidden) stopRoutingHome();
             stopAnimator();
+            overlay.removeCallbacks(hideMenu);
+            overlay.release();
+            if (drag != null) drag.cancelTap();
             if (touches != null) {
                 try { touches.release(); }
                 catch (RuntimeException error) { Log.e(tag, "Could not release the floating window touch area", error); }

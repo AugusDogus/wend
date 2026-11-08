@@ -524,7 +524,8 @@ public class EmbeddedMapsTest {
     private LiveSurfaceWindow.Listener listener() {
         return new LiveSurfaceWindow.Listener() {
             @Override public void settled(FloatingPlacement.Corner corner) { events.add("settled"); }
-            @Override public void tapped() { events.add("tapped"); }
+            @Override public void fullscreen() { events.add("fullscreen"); }
+            @Override public void closed() { events.add("closed"); }
         };
     }
 

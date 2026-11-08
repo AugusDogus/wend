@@ -8,6 +8,8 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 29)
@@ -33,10 +35,36 @@ public class FloatingPlacementTest {
         assertEquals(new Rect(507, 332, 939, 575), moved);
     }
 
-    @Test public void draggingNeverLeavesTheVisibleArea() {
+    @Test public void draggingLeavesTheVisibleAreaOnlyThroughTheBottomEdge() {
+        // As Android 10's PiP: the bottom edge is where a window is dragged away to close it.
         Rect start = placement.rest(Corner.BOTTOM_RIGHT);
-        assertEquals(new Rect(848, 477, 1280, 720), placement.dragged(start, 400, 400));
+        assertEquals(new Rect(848, 553, 1280, 796), placement.dragged(start, 400, 100));
+        assertEquals("At most wholly below the screen", new Rect(848, 720, 1280, 963),
+                placement.dragged(start, 400, 2000));
         assertEquals(new Rect(0, 36, 432, 279), placement.dragged(start, -2000, -2000));
+    }
+
+    @Test public void aWindowReleasedAtLeastThirtyPercentBelowTheScreenIsDismissed() {
+        // 30% of 243 px is 72.9 px below the bottom edge at 720.
+        Rect start = placement.rest(Corner.BOTTOM_RIGHT);
+        assertTrue(placement.offscreenDismisses(placement.dragged(start, 0, 24 + 73)));
+        assertFalse(placement.offscreenDismisses(placement.dragged(start, 0, 24 + 72)));
+        assertFalse(placement.offscreenDismisses(start));
+    }
+
+    @Test public void aDownwardFlingFromTheBottomRowIsDismissed() {
+        Rect bottom = placement.rest(Corner.BOTTOM_RIGHT);
+        Rect top = placement.rest(Corner.TOP_RIGHT);
+        // Down and up are the finger's y; velocities in px/s, against a 750 px/s fling.
+        assertTrue(placement.flingDismisses(bottom.centerY(), bottom.centerY() + 40, 0, 1500, 750));
+        assertFalse("Too slow to be a fling",
+                placement.flingDismisses(bottom.centerY(), bottom.centerY() + 40, 0, 600, 750));
+        assertFalse("Thrown sideways", placement.flingDismisses(bottom.centerY(), bottom.centerY(), 2500, 1500, 750));
+        assertFalse("Thrown up", placement.flingDismisses(bottom.centerY(), bottom.centerY() - 40, 0, -1500, 750));
+        assertFalse("Thrown down from the top row, it only moves to the bottom row",
+                placement.flingDismisses(top.centerY(), top.centerY() + 120, 0, 1500, 750));
+        assertTrue("Unless the finger ends in the bottom row",
+                placement.flingDismisses(top.centerY(), bottom.top + 10, 0, 1500, 750));
     }
 
     @Test public void aSlowReleaseSnapsToTheNearestCorner() {
