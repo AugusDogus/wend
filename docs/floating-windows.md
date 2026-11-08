@@ -134,10 +134,11 @@ display, and decoder stay the same.
 
 - **Floating video over fullscreen Maps (tap the video).** The video grows from
   its corner to fullscreen above Maps (the existing tap motion). Fully hidden
-  under it, the Maps task returns to its panel's virtual display, which brings
-  Road Home forward behind the video. Once Maps has laid out at the panel's size
-  (`MapFrame`, 900 ms at most), it emerges at its corner: 90% to 100% size and
-  0 to 1 opacity over 220 ms with `window_ease_out`. With `floatingMaps` off,
+  under it, Road Home comes forward first and, after its next frame, the Maps
+  task returns from behind it to its panel's virtual display, the same order as
+  Home. Once Maps has laid out at the panel's size (`MapFrame`, 900 ms at most),
+  it emerges at its corner: 90% to 100% size and 0 to 1 opacity over 220 ms
+  with `window_ease_out`. About 0.8 s from tap to floating Maps on the emulator. With `floatingMaps` off,
   Maps just waits in its panel and Home shows it there. The video is now above
   Road Home rather than Maps, so the status bar fullscreen Maps kept disappears.
 - **Floating Maps over fullscreen video (tap Maps).** Maps grows from its corner
@@ -158,6 +159,12 @@ the screen, and yet end above Maps. The swap therefore uses the same
 frozen-frame-and-crossfade handoff as Maps' other transitions (`MapTransition`),
 held until the task has moved. Centering Maps first keeps the map's center where
 fullscreen Maps puts it, so the crossfade barely ghosts.
+
+Also found on the emulator: when Maps moved to its panel display while still
+visible, the fixture's map SurfaceView sometimes kept its fullscreen-sized buffer
+in the panel (seen twice in about 15 swaps, once inside floating Maps). Moving it from
+behind Road Home, as Home does, fixed it: 8 of 8 swaps then showed the panel-size
+surface with no readiness timeout (`swap-surface/run-*.png`).
 
 Found on the emulator: moving Maps to display 0 straight from its panel-sized
 display left Road Home resumed and visible behind fullscreen Maps (no pause or
@@ -227,8 +234,9 @@ On the emulator (`build/evidence/floating-maps/` and `build/evidence/matrix/`):
 - Open video with Maps floating (`01`, `04` and sheets), Home (`03`, `05-home-v2`
   and both `-sheet` files), drag and snap of floating Maps and its remembered
   corner (`06-*`, `07`).
-- Floating video tapped over fullscreen Maps (`10-swap-to-video*`), with
-  `floatingMaps` off (`12-*`), Home after it (`11`).
+- Floating video tapped over fullscreen Maps (`10-swap-to-video*` before the
+  return-order fix, `13-swap-to-video-v2*` after), with `floatingMaps` off
+  (`12-*`), Home after it (`11`).
 - Floating Maps tapped over fullscreen video (`20-*` crossfade before the fix,
   `22-swap-to-maps-v2*` after), Home after it (`21`).
 - Matrix (`steps.txt` has each step's tasks, windows, and log lines):
@@ -239,6 +247,11 @@ On the emulator (`build/evidence/floating-maps/` and `build/evidence/matrix/`):
   floating Maps (`E2-clear-title.png`); route marker and automatic PiP through
   four swaps, dock, and Home with no pinned stack (`E3-route-pip.png`); floating
   video drag regression (`F-video-drag.png`).
+- The final build (`build/evidence/final/`): a full cycle with leak checks
+  (`steps.txt`, `before.txt`, `after.txt`) and Home shortly after tapping the
+  floating video (`H-home-mid-swap.png`). The device tool's Home key arrives
+  0.5 to 1 s after it is sent, so that swap had already finished; Home during a
+  swap is covered by code paths only.
 - Leak checks before and after the cycles (`D-before.txt`, `D-after.txt`,
   `E3-before.txt`, `E3-after.txt`): Maps task 75 (instance `5330feab4f0`),
   video task 95 (instance `716c39772b0`), Home task 94, the same two Road Home
@@ -257,13 +270,12 @@ On the emulator (`build/evidence/floating-maps/` and `build/evidence/matrix/`):
 - The Maps swap holds a frozen frame for about 0.4 s on the fixture while Maps
   lays out at the full size and moves. Real Maps may need longer; the frame is
   bounded by the 900 ms readiness deadlines.
-- Once, after a swap to the video with `floatingMaps` off, the fixture's map
-  SurfaceView kept its fullscreen-sized buffer in the panel until Maps next
-  changed size; two repeats were correct. Separately, every visit of the map
-  fixture to display 0 left an extra fullscreen-sized SurfaceView layer under its
-  window (seen with the dock path too). Both look like Android 10 SurfaceView
-  behavior across displays, possibly the stale-sized Maps frames reported in
-  `task-fixture/GOOGLE-APPS.md`; not reproduced with real Maps here.
+- The stale map surface above is fixed for the swap by its order, not by a
+  root cause in Android. Separately, early visits of the map fixture to display
+  0 left extra fullscreen-sized SurfaceView layers under its window (seen with
+  the dock path too; none appeared in the later runs). Both look like Android 10
+  SurfaceView behavior across displays, possibly the stale-sized Maps frames
+  reported in `task-fixture/GOOGLE-APPS.md`; not reproduced with real Maps here.
 - With the video's live dock expansion, Maps visibly re-lays out inside its panel
   at the reveal before widening; that is the existing expansion, not the swap.
 - Software rendering stalls the main thread as Road Home stops, so recordings show
