@@ -25,7 +25,7 @@ public class VideoCardCoverTest {
 
     /** Device reports RH-4 and BUG-3: no artwork drew a black card with a 16 px glyph. */
     @Test public void withoutArtworkAPausedCardIsAPlayControlOnASubtleSurface() {
-        cover.show(VideoCardState.THUMBNAIL, null);
+        cover.show(VideoCardCover.Control.PLAY, null);
         Bitmap card = draw();
         int surface = card.getPixel(4, card.getHeight() - 4);
         assertNotEquals("Never a black box", Color.BLACK, surface);
@@ -41,14 +41,14 @@ public class VideoCardCoverTest {
 
     @Test public void aStillOfTheLiveVideoWinsOverArtworkAndFillsTheCard() {
         Bitmap artwork = solid(480, 360, Color.RED);
-        cover.show(VideoCardState.THUMBNAIL, artwork);
+        cover.show(VideoCardCover.Control.PLAY, artwork);
         assertEquals("Artwork is center-cropped to fill the card", Color.RED, draw().getPixel(2, 2));
         cover.keep(solid(320, 180, Color.BLUE));
         Bitmap card = draw();
         assertEquals(Color.BLUE, card.getPixel(2, 2));
         assertEquals(Color.BLUE, card.getPixel(317, 177));
         assertNotEquals("A paused still shows the play control", Color.BLUE, card.getPixel(160 + 30, 90));
-        cover.show(VideoCardState.PLAYING, artwork);
+        cover.show(VideoCardCover.Control.NONE, artwork);
         assertEquals("While the live video is on its way back, no control", Color.BLUE, draw().getPixel(160 + 30, 90));
         cover.keep(null);
         assertEquals("Without a still, the artwork again", Color.RED, draw().getPixel(2, 2));

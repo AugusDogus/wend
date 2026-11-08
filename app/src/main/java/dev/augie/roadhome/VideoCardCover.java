@@ -14,9 +14,18 @@ import android.view.View;
 /**
  * What the video card shows whenever its live video is not there: the last live frame, else the
  * session's artwork, else a quiet surface with the video app's icon. A paused or stopped video
- * adds a 48 dp play control. It owns the stills it is given, never the session's artwork.
+ * that its session can play adds a 48 dp play control. It owns the stills it is given, never the
+ * session's artwork.
  */
 final class VideoCardCover extends View {
+    /** What the card promises over its picture. A tap on the card opens the video either way. */
+    enum Control {
+        /** A paused or stopped video that its session can play. */
+        PLAY,
+        /** A playing video on its way back, or a session that cannot play from here, as when YouTube stopped it. */
+        NONE
+    }
+
     private static final int CONTROL_DP = 48;
     private static final int GLYPH_DP = 24;
     private static final int ICON_DP = 24;
@@ -30,7 +39,7 @@ final class VideoCardCover extends View {
     private final Drawable glyph = new Ui.Symbol(Ui.Icon.PLAY, Ui.TEXT);
     private final Rect source = new Rect();
     private final RectF destination = new RectF();
-    private VideoCardState presentation = VideoCardState.THUMBNAIL;
+    private Control promised = Control.PLAY;
     private Bitmap artwork;
     private Bitmap still;
     /** The still last handed to the renderer, which may hold it until that frame retires. */
@@ -43,13 +52,9 @@ final class VideoCardCover extends View {
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
     }
 
-    /**
-     * @param presentation a paused or stopped video shows the play control; a playing one is on its
-     *     way back and shows none
-     * @param artwork the session's own picture, used when there is no still; never recycled here
-     */
-    void show(VideoCardState presentation, Bitmap artwork) {
-        this.presentation = presentation;
+    /** @param artwork the session's own picture, used when there is no still; never recycled here */
+    void show(Control control, Bitmap artwork) {
+        promised = control;
         this.artwork = artwork;
         if (still == null && artwork == null) loadIcon();
         invalidate();
@@ -99,7 +104,7 @@ final class VideoCardCover extends View {
                 canvas.drawBitmap(icon, inset, inset, pictures);
             }
         }
-        if (presentation != VideoCardState.THUMBNAIL) return;
+        if (promised != Control.PLAY) return;
         float centerX = getWidth() / 2f, centerY = getHeight() / 2f;
         control.setColor(picture != null ? CONTROL_OVER_PICTURE : CONTROL_ON_SURFACE);
         canvas.drawCircle(centerX, centerY, Ui.dp(getContext(), CONTROL_DP) / 2f, control);

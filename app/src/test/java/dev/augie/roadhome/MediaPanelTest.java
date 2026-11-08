@@ -255,6 +255,58 @@ public class MediaPanelTest {
         }
     }
 
+    /**
+     * Device report BUG-5 (real apps): after Home, YouTube stopped and deactivated its session
+     * (STATE_STOPPED, only ACTION_PLAY_FROM_URI), and the card's still kept a play control that
+     * nothing could act on. Tapping the card still opens the video.
+     */
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Config(qualifiers = "w853dp-h480dp-land-hdpi")
+    @Test public void aVideoWhoseSessionCannotPlayShowsNoPlayControlAndStillOpensOnATap() {
+        try (ActivityController<Activity> host = Robolectric.buildActivity(Activity.class).setup()) {
+            Activity activity = host.get();
+            MediaSession session = new MediaSession(activity, "video");
+            MediaController controller = session.getController();
+            Shadows.shadowOf(controller).setPackageName(EmbeddedVideo.PACKAGE);
+            Shadows.shadowOf(controller).setPlaybackState(new PlaybackState.Builder()
+                    .setState(PlaybackState.STATE_STOPPED, 0, 0)
+                    .setActions(PlaybackState.ACTION_PLAY_FROM_URI).build());
+            Shadows.shadowOf(controller).setMetadata(new MediaMetadata.Builder()
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, "Stopped video").build());
+            Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class)).addController(controller);
+            List<String> opened = new ArrayList<>();
+            MediaPanel panel = new MediaPanel(activity, () -> { }, () -> opened.add("video"), () -> { });
+            activity.setContentView(panel, new ViewGroup.LayoutParams(357, 720));
+            try {
+                panel.start();
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                View card = panel.getChildAt(0);
+                assertEquals(View.VISIBLE, card.getVisibility());
+                Bitmap drawn = draw(card);
+                int surface = drawn.getPixel(4, drawn.getHeight() - 4);
+                assertEquals("No play control", surface, drawn.getPixel(drawn.getWidth() / 2 + 30, drawn.getHeight() / 2));
+                assertEquals("No play glyph", surface, drawn.getPixel(drawn.getWidth() / 2, drawn.getHeight() / 2));
+                tapCorners(card);
+                assertEquals(List.of("video", "video", "video"), opened);
+                // The session can play again, as a paused one can.
+                Shadows.shadowOf(controller).executeOnPlaybackStateChanged(new PlaybackState.Builder()
+                        .setState(PlaybackState.STATE_PAUSED, 0, 0).setActions(PLAYABLE).build());
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                drawn = draw(card);
+                assertNotEquals("The play control is back", surface,
+                        drawn.getPixel(drawn.getWidth() / 2 + 30, drawn.getHeight() / 2));
+            } finally {
+                panel.stop(); panel.release(); session.release();
+            }
+        }
+    }
+
+    private static Bitmap draw(View view) {
+        Bitmap drawn = Bitmap.createBitmap(view.getWidth(), view.getHeight(), Bitmap.Config.ARGB_8888);
+        view.draw(new Canvas(drawn));
+        return drawn;
+    }
+
     @Test public void onlyStoppedFailedOrResetPlaybackEndsAFloatingVideo() {
         for (int state : new int[]{PlaybackState.STATE_STOPPED, PlaybackState.STATE_NONE, PlaybackState.STATE_ERROR}) {
             assertTrue("state " + state, MediaPanel.videoPlaybackEnded(playback(state)));
@@ -272,11 +324,15 @@ public class MediaPanelTest {
         return new PlaybackState.Builder().setState(state, 0, state == PlaybackState.STATE_PLAYING ? 1 : 0).build();
     }
 
+    /** What a paused session offers, as the video fixture's (518) and YouTube's paused sessions do. */
+    private static final long PLAYABLE = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+            | PlaybackState.ACTION_PLAY_PAUSE;
+
     private static MediaController paused(MediaSession session, String packageName) {
         MediaController controller = session.getController();
         Shadows.shadowOf(controller).setPackageName(packageName);
         Shadows.shadowOf(controller).setPlaybackState(new PlaybackState.Builder()
-                .setState(PlaybackState.STATE_PAUSED, 0, 0).build());
+                .setState(PlaybackState.STATE_PAUSED, 0, 0).setActions(PLAYABLE).build());
         return controller;
     }
 }

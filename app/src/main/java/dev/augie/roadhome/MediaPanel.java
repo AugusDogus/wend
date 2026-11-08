@@ -244,7 +244,13 @@ final class MediaPanel extends LinearLayout {
                 videoPlayback != null && videoPlayback.getState() == PlaybackState.STATE_PLAYING);
         Bitmap videoArt = videoDescription == null ? null : videoDescription.getIconBitmap();
         if (videoArt == null && videoMetadata != null) videoArt = videoMetadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
-        video.update(videoState, videoDescription == null ? null : videoDescription.getTitle(), videoArt);
+        // The card's play control promises only what the session can do: YouTube's stopped,
+        // deactivated session cannot play from here, and a tap on the card opens the video.
+        long videoActions = videoPlayback == null ? 0 : videoPlayback.getActions();
+        VideoCardCover.Control control = videoState == VideoCardState.THUMBNAIL
+                && (videoActions & (PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PLAY_PAUSE)) != 0
+                ? VideoCardCover.Control.PLAY : VideoCardCover.Control.NONE;
+        video.update(videoState, control, videoDescription == null ? null : videoDescription.getTitle(), videoArt);
         if (videoState != VideoCardState.HIDDEN && videoPlaybackEnded(videoPlayback)) {
             video.playbackEnded(videoPlayback == null ? "has no playback state"
                     : "is in playback state " + videoPlayback.getState());

@@ -90,8 +90,11 @@ final class EmbeddedVideo extends FrameLayout {
         super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
     }
 
-    /** @param title identifies the video; a still of another one is dropped */
-    void update(VideoCardState presentation, CharSequence title, Bitmap artwork) {
+    /**
+     * @param control what the card promises over its picture while the live video is not there
+     * @param title identifies the video; a still of another one is dropped
+     */
+    void update(VideoCardState presentation, VideoCardCover.Control control, CharSequence title, Bitmap artwork) {
         this.presentation = presentation;
         String video = title == null ? null : title.toString();
         if (!TextUtils.equals(video, stillTitle)) {
@@ -99,7 +102,7 @@ final class EmbeddedVideo extends FrameLayout {
             stills.interrupt();
             cover.keep(null);
         }
-        cover.show(presentation, artwork);
+        cover.show(control, artwork);
         if (window.active()) {
             // A paused floating video keeps its last frame. A cleared or ended session removes it,
             // as does stopped playback (playbackEnded).
