@@ -183,13 +183,27 @@ switch. Before November 8 navigation disappeared whenever the video was paused
   open, returns Maps to its panel once Road Home's window can show it.
 - **Tap** brings Maps fullscreen as for any floating Maps. The video is a task
   on the main display, not a Road Home presentation, so it does not float; it
-  stays beneath, and Home embeds it in the card again if it plays. Road Home is
-  stopped here and lays out nothing, so Maps' display is resized directly
-  (`EmbeddedDisplayLifecycle.resizeWhileHidden`) and Maps stays in its floating
-  window, under the frozen frame, until it moves: a display shown in no window
-  is missing from SurfaceFlinger's layer dump, so `MapFrame` could not see it lay
-  out. Without these, Maps moved at its panel size, the frozen frame held about
-  1.6 s and then showed panel-sized Maps for 0.8 s before its relayout.
+  stays beneath, and Home embeds it in the card again if it plays. Maps stays in
+  its floating window, under the frozen frame, until it moves: a display shown
+  in no window is missing from SurfaceFlinger's layer dump, so `MapFrame` could
+  not see it lay out. Its display and its view both take the full screen size
+  (`EmbeddedDisplayLifecycle.resize`), because Road Home may be stopped and lay
+  out nothing, or still have its window. Without these, Maps moved at its panel
+  size, the frozen frame held about 1.6 s and then showed panel-sized Maps for
+  0.8 s before its relayout.
+- **Road Home's own state does not matter during that tap.** Android 10 can
+  leave Road Home resumed under the video app (when the video moved there from
+  Road Home's own display) and stop it only as the tap's frozen frame goes up,
+  or stop it whenever the video app idles. Before November 8 that stop called
+  the takeover off: Maps was left on Road Home's unshown panel display with no
+  window, so navigation disappeared (fixture report BUG-1, reproduced again on
+  the old build), or, with a stopped Road Home, floating Maps stayed whole,
+  centered, and untouchable (review R1). Road Home's stop is now expected for
+  the whole takeover above the video app.
+- **Called off** only by Home, by Road Home showing again (the video app left),
+  or by another app coming to the front during the takeover (review R2). Each
+  removes the frozen frame at once, never moves Maps, and returns Maps to its
+  panel: in view after Home, or hidden behind the other app.
 
 ## Swapping
 
@@ -214,7 +228,16 @@ display, and decoder stay the same.
   it, Maps returns to its panel, the video hides, Maps' display is laid out at
   the full screen size (900 ms at most), and the existing task moves to display
   0. Only Maps stays in the frozen frame: the rest is black, as a frozen video
-  beside it read as a stalled player (device feedback). When Maps' buffers show
+  beside it read as a stalled player (device feedback). The frozen Maps is read
+  from Maps' own display layers (`ActivityViewSurface.still`, Android 10's
+  `SurfaceControl.captureLayers`) and drawn unscaled exactly where it ends.
+  Before November 8 it was cut out of a screenshot, which can still show the
+  growth one frame short of its end, so a 4 to 22 px strip of the frozen video
+  showed at Maps' top and left edges for over a second (fixture report BUG-2).
+  If Maps' layers cannot be read, the screenshot stands in, black outside Maps'
+  place, as before. If another app stops Road Home during this tap, the takeover
+  ends with its frozen frame at once instead of holding it 1.5 s over that app.
+  When Maps' buffers show
   the new width, which they usually already do after the move (300 ms at most),
   the frozen frame crossfades away over 160 ms and the video emerges at its
   corner. A paused video, or `floatingVideo` off,
@@ -321,8 +344,12 @@ Maps each have one. It adds the held entry, the emerging entry, `focus` (grow to
 the whole display without input), `hideForCorner`/`emerge` (a fullscreen video
 becomes a floating one while covered), and `returnOverCard`. `MapPanel.Takeover`
 names the three moments of the Maps direction (covered, revealed, failed), and
-`MapTransition.holdThenCrossfade` holds its frame until the task has moved.
-`MainActivity` routes both directions and Home.
+`MapTransition.holdThenCrossfade` holds its frame, a `MapTransition.Still` of
+Maps' own layers, until the task has moved. `EmbeddedMaps.ScreenTakeover`
+remembers whether the tapped Maps floated above the live video or above the
+video app, which decides what Road Home's stop means: above the live video it
+means another app came forward and ends the takeover; above the video app it is
+expected. `MainActivity` routes both directions and Home.
 
 ## The video card
 
@@ -339,10 +366,16 @@ left a black box (device reports RH-4, RH-5, BUG-3, and design feedback).
   screen.
 - **Cover.** Whenever the live video is not shown in the card, the card shows,
   in this order: a recent still of the live video, the session's artwork, or a
-  placeholder (Road Home's panel color, the video app's 24 dp icon at the top
-  left, and a 48 dp play control). A paused or stopped video adds the 48 dp play
-  control over the still or artwork; a playing video on its way back shows none.
-  YouTube 21.43 supplies no artwork, so the still is what the driver sees.
+  placeholder (Road Home's panel color and the video app's 24 dp icon at the top
+  left). A paused or stopped video adds a 48 dp play control when its session
+  can play (its `PlaybackState` actions include `ACTION_PLAY` or
+  `ACTION_PLAY_PAUSE`); a playing video on its way back shows none. YouTube
+  stops and deactivates its session about 1.3 s after it leaves the screen
+  paused, offering only `ACTION_PLAY_FROM_URI`: the panel's play button is then
+  disabled, so before November 8 the card's control promised a play that did
+  nothing (real-app report BUG-5). Such a card shows its picture alone, and a
+  tap on it still opens the video. YouTube 21.43 supplies no artwork, so the
+  still is what the driver sees.
 - **When the cover shows.** As playback pauses or stops in the card, while Road
   Home is stopped and as it re-acquires the video on Home (BUG-3), while the
   video floats or plays fullscreen, and while it travels back into the card. It
@@ -658,6 +691,90 @@ video, the fixture emulator, and the closing floating-window matrix. The device
 tool's scroll failed twice with `injectInputEvent returned false` (also with
 `--debug`), so device work stopped there, with "Video over fullscreen Maps"
 still off on that emulator (`after/07-device-state-at-stop.txt`).
+
+### The takeover above the video app, the frozen frame, and the card's control, November 8 (fourth pass)
+
+Release and emulator unit tests (233 each, no failures), release, emulator and
+windowed assembly, and release lint (no errors; 53 warnings, one more
+`PrivateApi` warning than before, for the `GraphicBuffer` class the layer
+capture reads) pass for each of the four commits. Each new test was seen
+failing first against the code before its fix:
+
+- `EmbeddedMapsTest`, a floating window that really reaches its corner and
+  grows whole (Robolectric windows given a compositor surface): a tap above the
+  video app with Road Home's window still there and Road Home stopping
+  mid-takeover; Road Home never stopping; Road Home stopping mid-takeover, and
+  between the growth and the frozen frame's first frame; another app coming
+  forward mid-takeover and before the frozen frame starts; Road Home showing
+  again; Home; and another app stopping Road Home during a tap above the live
+  video. Each ends with Maps moved once, nothing floating and no frozen frame,
+  or with Maps unmoved in its panel at the panel's size and no frozen frame.
+- `MapTransitionTest`: with the screen one frame short of the growth's end, the
+  frozen frame still has Maps' pixels at its exact edges and black beside them;
+  without Maps' layers it falls back to the screen, black outside Maps.
+- `MediaPanelTest`: a stopped session offering only `ACTION_PLAY_FROM_URI` shows
+  no play control and a tap still opens the video; the control returns when the
+  session can play. The empty panel's subtitle is measured unclipped at 357 px
+  ("Choose something in your music app" measured 4 characters cut; it is now
+  "Choose something to play"). The paused sessions these tests use now offer
+  play, as the fixture's (actions 518) and YouTube's do.
+
+On `road-home-api29` (fixtures, emulator build; evidence under this worktree's
+git-ignored `build/evidence/`):
+
+- Before (`bug1-before/`): the original repro (playing card, pause, tap the
+  card, tap floating Maps after the grace) lost Maps on the first try: Road Home
+  was resumed under the video app, Maps' display grew to 1280 px through Road
+  Home's layout, Road Home stopped 140 ms later, the display shrank back, the
+  frozen frame timed out, and the Maps task stayed on Road Home's display with
+  no window (`r1-repro.mp4`, `r1-after-tap-maps-lost.png`,
+  `r1-stacks-after.txt`).
+- After (`bug1-after/`, `final-fixture/`): eight runs. In seven, the same
+  repro, Road Home was resumed at the tap (once after an 11 s wait) and stopped
+  30 to 250 ms after Maps' display grew, the moment that lost Maps before; in
+  one (`run6-stopped`) Road Home stopped as the video app opened, before the
+  tap. Every run moved task 101 to the main display, fullscreen, with Maps
+  reported laid out at 1280 px first and no overlay window left
+  (`logcat-5556.txt`, `roadhome-log-runs.txt`). Runs 1 to 6 used the first
+  commit's build, run 7 the second's, and run 8 the final build.
+- BUG-2 (`bug2-after/`): two swaps to Maps from the fullscreen video, 20 frozen
+  frames. None had a saturated colour of the video's test pattern in the 24 px
+  beside Maps' left edge, or the video's dark background in the 14 px under its
+  top edge; every frozen frame of the report's A5 recording has up to 540 and
+  1,132 such sampled pixels there. Crops of both edges show Maps flush against
+  black (`edge-before-after.png`, `swap2-edge.png`). The log has no fallback
+  warning, so Maps' layers were read every time.
+
+On `road-home-google-api29` (real Maps in guidance and YouTube, release build;
+`real-before/`, `real-after/`):
+
+- The previous build did not lose Maps in the one run tried here: Android
+  stopped Road Home 5 s after YouTube opened, before the tap
+  (`real-before/r1-*`).
+- Final build: three runs of paused card, tap the card, tap floating Maps. In
+  two, Road Home was resumed under YouTube at the tap and stopped 80 and 110 ms
+  after Maps' display grew, the case that lost Maps on the fixture; in the third
+  (from the stopped card) it stopped 1.2 s after YouTube opened. Each moved Maps
+  task 190 to the main display in guidance (`item1-run*`,
+  `logcat-5554-before-and-after.txt`). The frozen frame showed Maps' panel alone
+  on black (`item1-run3-frozen-frame.png`).
+- BUG-5: after Home, YouTube's session was `STATE_STOPPED` with actions 8192,
+  and the card showed its still without a play control
+  (`bug5-card-7s-after-home.png`); a tap on it opened YouTube with Maps floating
+  (`item1-run2-card-opened-youtube.png`). The fixture's paused session (actions
+  518) keeps the control (`final-fixture/00-home-paused-card-playable.png`).
+- The empty panel after the APK replacement showed "Choose something to play"
+  in full at the 70% layout (`bug5-home-card.png`).
+- Regression (`regression/`): dock Maps with the video floating, the swap to
+  the video, the swap to Maps, Home, a tap on the playing card, and Home. Maps
+  task 190 and YouTube task 274 survived every step and the APK replacement,
+  no floating window or frozen frame remained, YouTube kept playing in its
+  card, and Maps' PiP app-op stayed `ignore`.
+
+Not exercised on a device: another app coming forward during a takeover, and
+Home during one (the frozen frame swallows touches and the device tool cannot
+time a key into the second it lasts), and the screenshot fallback of the
+frozen frame. These rest on the unit tests.
 
 ### Known issue: Back is dropped in fullscreen Maps on the emulators
 
