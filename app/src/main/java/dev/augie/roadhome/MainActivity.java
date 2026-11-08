@@ -1,11 +1,9 @@
 package dev.augie.roadhome;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Looper;
-import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.view.View;
 import android.view.WindowManager;
@@ -18,12 +16,15 @@ public final class MainActivity extends Activity {
     private LauncherSettings settings;
     private Dock dock;
     private int dockCapacity;
+    private FrostedBackdrop backdrop;
     private AppDrawer drawer;
+    private SettingsSheet settingsSheet;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         settings = new LauncherSettings(getSharedPreferences(LauncherSettings.PREFERENCES, MODE_PRIVATE));
         AppCatalog.get(this); // Loads apps in the background so the drawer opens with them.
+        backdrop = new FrostedBackdrop(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemBars();
         LinearLayout root = new LinearLayout(this);
@@ -49,11 +50,19 @@ public final class MainActivity extends Activity {
         root.addView(content, body);
         maps = BuildConfig.WINDOWED_MAPS ? new WindowedMaps(this) : new EmbeddedMaps(this);
         media = new MediaPanel(this, this::openMusic);
+        // The dock and the map side are places in the car, not reading order, so the row of
+        // panels never mirrors; each panel still lays out its own content for the locale.
+        root.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+        for (View panel : new View[]{dock, maps, media}) panel.setLayoutDirection(View.LAYOUT_DIRECTION_LOCALE);
         arrangePanels();
         setContentView(root);
-        // Build the drawer and its tiles when the launcher is idle, not on the first tap.
+        // Build the sheets and their tiles when the launcher is idle, not on the first tap.
         Looper.myQueue().addIdleHandler(() -> {
-            if (drawer == null && !isDestroyed()) drawer = new AppDrawer(this, AppCatalog.get(this));
+            if (drawer == null && !isDestroyed()) drawer = new AppDrawer(this, AppCatalog.get(this), backdrop);
+            return false;
+        });
+        Looper.myQueue().addIdleHandler(() -> {
+            if (settingsSheet == null && !isDestroyed()) settingsSheet = createSettingsSheet();
             return false;
         });
     }
@@ -67,7 +76,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showApps() {
-        if (drawer == null) drawer = new AppDrawer(this, AppCatalog.get(this));
+        if (drawer == null) drawer = new AppDrawer(this, AppCatalog.get(this), backdrop);
         drawer.show();
     }
 
@@ -97,49 +106,30 @@ public final class MainActivity extends Activity {
     }
 
     private void showSettings() {
-        boolean onRight = settings.mapSide() == LauncherSettings.MapSide.RIGHT;
-        String[] choices = {onRight ? "Move Maps to the left" : "Move Maps to the right",
-                "Map size", "Android settings", "Choose home app"};
-        showLauncherDialog(new AlertDialog.Builder(this).setTitle("Road Home").setItems(choices, (dialog, which) -> {
-            switch (which) {
-                case 0:
-                    settings.setMapSide(onRight ? LauncherSettings.MapSide.LEFT : LauncherSettings.MapSide.RIGHT);
-                    arrangePanels();
-                    break;
-                case 1: chooseMapSize(); break;
-                case 2: startActivity(new Intent(Settings.ACTION_SETTINGS)); break;
-                case 3: startActivity(new Intent(Settings.ACTION_HOME_SETTINGS)); break;
-                default: throw new IllegalArgumentException("Unexpected settings selection: " + which);
-            }
-        }).setNegativeButton("Close", null).create());
+        if (settingsSheet == null) settingsSheet = createSettingsSheet();
+        settingsSheet.show();
     }
 
-    private void chooseMapSize() {
-        int selected = settings.mapWidth() == LauncherSettings.MapWidth.BALANCED ? 0 : 1;
-        showLauncherDialog(new AlertDialog.Builder(this).setTitle("Map size")
-                .setSingleChoiceItems(new String[]{"Balanced (60%)", "More map (70%)"}, selected, (dialog, which) -> {
-                    settings.setMapWidth(which == 0 ? LauncherSettings.MapWidth.BALANCED : LauncherSettings.MapWidth.MORE_MAP);
-                    arrangePanels();
-                    dialog.dismiss();
-                }).setNegativeButton("Close", null).create());
-    }
-
-    private void showLauncherDialog(AlertDialog dialog) {
-        if (BuildConfig.WINDOWED_MAPS && dialog.getWindow() != null) {
-            dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
-        }
-        dialog.show();
+    private SettingsSheet createSettingsSheet() {
+        SettingsSheet.Host host = new SettingsSheet.Host() {
+            @Override public void onLayoutChanged() { arrangePanels(); }
+            @Override public void onDockChanged(DockPins pins) { dock.setPins(pins); }
+        };
+        return new SettingsSheet(this, backdrop, AppCatalog.get(this), settings, dockCapacity, host);
     }
 
     @Override protected void onStart() { super.onStart(); overridePendingTransition(0, 0); maps.resume(); media.start(); }
     @Override protected void onStop() {
         if (drawer != null) drawer.dismiss();
+        if (settingsSheet != null) settingsSheet.dismiss();
         maps.suspend();
         media.stop();
         super.onStop();
     }
     @Override protected void onDestroy() {
         if (drawer != null) drawer.release();
+        if (settingsSheet != null) settingsSheet.release();
+        backdrop.release();
         dock.release();
         media.release();
         maps.release();
@@ -148,7 +138,9 @@ public final class MainActivity extends Activity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        if (drawer != null) drawer.close(); // Home slides an open drawer away.
+        // Home slides an open sheet away.
+        if (drawer != null) drawer.close();
+        if (settingsSheet != null) settingsSheet.close();
         hideSystemBars();
         // Moving an embedded task fullscreen can leave Home started. Its return intent
         // must restore Maps even when Android does not deliver another onStart.

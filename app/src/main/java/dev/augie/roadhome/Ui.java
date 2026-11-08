@@ -13,8 +13,10 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 final class Ui {
@@ -23,8 +25,15 @@ final class Ui {
     static final int TEXT = Color.rgb(241, 246, 251);
     static final int MUTED = Color.rgb(168, 185, 204);
     static final int ACCENT = Color.rgb(132, 191, 255);
+    /** Pressed-state ripple, an accent tint. */
+    static final int RIPPLE = 0x3384BFFF;
+    /** A settings card on sheet glass, and the hairlines between its rows. */
+    static final int CARD = 0x14FFFFFF;
+    static final int DIVIDER = 0x17FFFFFF;
+    /** Controls that cannot be used right now keep their place at this opacity. */
+    static final float DISABLED_ALPHA = 0.38f;
 
-    enum Icon { MAP, MUSIC, APPS, SETTINGS, PLAY, PAUSE, PREVIOUS, NEXT, CLOSE }
+    enum Icon { MAP, MUSIC, APPS, SETTINGS, PLAY, PAUSE, PREVIOUS, NEXT, CLOSE, BACK, ADD, REMOVE, UP, DOWN, FORWARD }
 
     private Ui() { }
 
@@ -62,12 +71,44 @@ final class Ui {
         return view;
     }
 
+    static Typeface medium() { return Typeface.create("sans-serif-medium", Typeface.NORMAL); }
+
+    /** A rounded group of settings rows that clips their press ripples to its corners. */
+    static LinearLayout card(Context context) {
+        LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(surface(context, CARD, 14));
+        card.setClipToOutline(true);
+        return card;
+    }
+
+    /** A small muted heading above a card, aligned with the card's text. */
+    static TextView sectionLabel(Context context, String label) {
+        TextView view = text(context, label, 14, MUTED);
+        view.setTypeface(medium());
+        view.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        view.setPaddingRelative(dp(context, 16), 0, dp(context, 16), 0);
+        return view;
+    }
+
+    /** A press ripple clipped to a visible shape. */
+    static RippleDrawable pressable(Drawable shape) {
+        return new RippleDrawable(ColorStateList.valueOf(RIPPLE), shape, null);
+    }
+
+    /**
+     * A press ripple over a transparent background, clipped to rounded corners. The mask must
+     * be explicit: Android masks a ripple by its content, and transparent content hides it.
+     */
+    static RippleDrawable ripple(Context context, int radius) {
+        return new RippleDrawable(ColorStateList.valueOf(RIPPLE), null, surface(context, Color.WHITE, radius));
+    }
+
     static TextView action(Context context, String label, Runnable action) {
         TextView button = text(context, label, 16, ACCENT);
         button.setGravity(Gravity.CENTER);
         button.setMinHeight(dp(context, 48));
-        button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x3384BFFF),
-                surface(context, PANEL, 12), null));
+        button.setBackground(pressable(surface(context, PANEL, 12)));
         button.setOnClickListener(v -> action.run());
         button.setFocusable(true);
         button.setAccessibilityDelegate(new android.view.View.AccessibilityDelegate() {
@@ -85,8 +126,7 @@ final class Ui {
         button.setScaleType(ImageView.ScaleType.FIT_CENTER);
         button.setImageDrawable(new Symbol(icon, TEXT));
         button.setContentDescription(label);
-        button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x3384BFFF),
-                surface(context, Color.TRANSPARENT, 16), null));
+        button.setBackground(ripple(context, 16));
         int padding = dp(context, 12);
         button.setPadding(padding, padding, padding, padding);
         button.setMinimumWidth(dp(context, 48));
@@ -101,6 +141,8 @@ final class Ui {
 
         Symbol(Icon icon, int color) {
             this.icon = icon;
+            // Directional glyphs point the other way in right-to-left layouts.
+            setAutoMirrored(icon == Icon.BACK || icon == Icon.FORWARD);
             paint.setColor(color);
             paint.setStrokeWidth(2);
             paint.setStrokeCap(Paint.Cap.ROUND);
@@ -112,8 +154,30 @@ final class Ui {
             float size = Math.min(getBounds().width(), getBounds().height());
             canvas.translate(getBounds().centerX() - size / 2, getBounds().centerY() - size / 2);
             canvas.scale(size / 24, size / 24);
+            if (isAutoMirrored() && getLayoutDirection() == View.LAYOUT_DIRECTION_RTL) canvas.scale(-1, 1, 12, 12);
             paint.setStyle(Paint.Style.FILL);
             switch (icon) {
+                case BACK:
+                    paint.setStyle(Paint.Style.STROKE);
+                    canvas.drawLine(19, 12, 5, 12, paint);
+                    polyline(canvas, 11, 6, 5, 12, 11, 18); break;
+                case FORWARD:
+                    paint.setStyle(Paint.Style.STROKE);
+                    polyline(canvas, 9, 6, 15, 12, 9, 18); break;
+                case UP:
+                    paint.setStyle(Paint.Style.STROKE);
+                    polyline(canvas, 6, 15, 12, 9, 18, 15); break;
+                case DOWN:
+                    paint.setStyle(Paint.Style.STROKE);
+                    polyline(canvas, 6, 9, 12, 15, 18, 9); break;
+                case ADD:
+                    paint.setStyle(Paint.Style.STROKE);
+                    canvas.drawLine(12, 5, 12, 19, paint);
+                    canvas.drawLine(5, 12, 19, 12, paint); break;
+                case REMOVE:
+                    paint.setStyle(Paint.Style.STROKE);
+                    canvas.drawCircle(12, 12, 8.5f, paint);
+                    canvas.drawLine(8, 12, 16, 12, paint); break;
                 case CLOSE:
                     paint.setStyle(Paint.Style.STROKE);
                     canvas.drawLine(6, 6, 18, 18, paint);
@@ -154,6 +218,12 @@ final class Ui {
                     canvas.drawCircle(16, 17, 3, paint); break;
             }
             canvas.restore();
+        }
+
+        private void polyline(Canvas canvas, float a, float b, float c, float d, float e, float f) {
+            Path path = new Path();
+            path.moveTo(a, b); path.lineTo(c, d); path.lineTo(e, f);
+            canvas.drawPath(path, paint);
         }
 
         private void triangle(Canvas canvas, float a, float b, float c, float d, float e, float f) {

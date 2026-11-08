@@ -29,6 +29,8 @@ public class LauncherSettingsTest {
     @Test public void aNewInstallUsesTheDefaults() {
         assertEquals(LauncherSettings.MapSide.RIGHT, settings.mapSide());
         assertEquals(LauncherSettings.MapWidth.MORE_MAP, settings.mapWidth());
+        assertTrue(settings.floatingVideo());
+        assertTrue(settings.floatingMaps());
         assertEquals(DockPins.defaults(5).packages(), settings.dockPins(5).packages());
     }
 
@@ -61,10 +63,20 @@ public class LauncherSettingsTest {
 
     @Test public void wronglyTypedValuesFallBackToTheDefaults() {
         preferences.edit().putString("mapsOnRight", "left").putString("mapPercent", "60")
-                .putInt("dockPins", 3).commit();
+                .putBoolean("floatingVideo", true).putInt("floatingMaps", 0).putInt("dockPins", 3).commit();
         assertEquals(LauncherSettings.MapSide.RIGHT, settings.mapSide());
         assertEquals(LauncherSettings.MapWidth.MORE_MAP, settings.mapWidth());
+        assertTrue(settings.floatingMaps());
         assertEquals(DockPins.defaults(5).packages(), settings.dockPins(5).packages());
+    }
+
+    @Test public void floatingWindowSwitchesUseTheirSharedKeys() {
+        settings.setFloatingVideo(false);
+        settings.setFloatingMaps(false);
+        assertFalse(preferences.getBoolean("floatingVideo", true));
+        assertFalse(preferences.getBoolean("floatingMaps", true));
+        assertFalse(settings.floatingVideo());
+        assertFalse(settings.floatingMaps());
     }
 
     @Test public void dockPinsSurviveARoundTrip() {

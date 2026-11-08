@@ -17,8 +17,20 @@ import android.graphics.drawable.GradientDrawable;
  * Until the blur arrives, a denser tint keeps moving map detail from showing through.
  */
 final class SheetGlass extends Drawable {
+    /** How much of the blurred screen shows through the tint once it arrives. */
+    enum Density {
+        /** For icon grids: the launcher stays recognizable through the glass. */
+        LIGHT(0xB8),
+        /** For reading: over bright map tiles, muted text keeps about 5:1 contrast. */
+        DENSE(0xE0);
+
+        final int frostedAlpha;
+
+        Density(int frostedAlpha) { this.frostedAlpha = frostedAlpha; }
+    }
+
     private static final int CLEAR_ALPHA = 0xEE;
-    private static final int FROSTED_ALPHA = 0xB8;
+    private final int frostedAlpha;
     private final int displayWidth;
     private final int displayHeight;
     private final Paint image = new Paint(Paint.FILTER_BITMAP_FLAG);
@@ -31,7 +43,8 @@ final class SheetGlass extends Drawable {
     private float frost;
     private float screenTop;
 
-    SheetGlass(int displayWidth, int displayHeight) {
+    SheetGlass(int displayWidth, int displayHeight, Density density) {
+        frostedAlpha = density.frostedAlpha;
         this.displayWidth = displayWidth;
         this.displayHeight = displayHeight;
         edge.setColor(0x1FFFFFFF);
@@ -66,7 +79,7 @@ final class SheetGlass extends Drawable {
             screen.set(bounds.left, top, bounds.left + displayWidth, top + displayHeight);
             canvas.drawBitmap(backdrop, null, screen, image);
         }
-        int alpha = Math.round(CLEAR_ALPHA + (FROSTED_ALPHA - CLEAR_ALPHA) * frost);
+        int alpha = Math.round(CLEAR_ALPHA + (frostedAlpha - CLEAR_ALPHA) * frost);
         tint.setColor(Color.argb(alpha, 0x10, 0x19, 0x22));
         canvas.drawRect(bounds, tint);
         sheen.draw(canvas);

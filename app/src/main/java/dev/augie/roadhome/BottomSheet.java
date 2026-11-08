@@ -39,6 +39,12 @@ final class BottomSheet {
     interface Listener {
         /** The window is gone; reset transient state such as a search query. */
         void onDismissed();
+
+        /** Back was pressed; return true to handle it, for example by leaving a sub-page. */
+        default boolean onBack() { return false; }
+
+        /** The sheet started sliding away or is being removed; the launcher shows next. */
+        default void onClosing() { }
     }
 
     private enum Phase { HIDDEN, CAPTURING, OPENING, OPEN, DRAGGING, SETTLING, CLOSING }
@@ -84,18 +90,20 @@ final class BottomSheet {
     private float offset;
     private float dragOrigin;
 
-    BottomSheet(Activity activity, String name, View header, View body, Listener listener) {
+    /** {@code backdrop} may be shared by several sheets; its owner releases it. */
+    BottomSheet(Activity activity, FrostedBackdrop backdrop, SheetGlass.Density density, String name,
+            View header, View body, Listener listener) {
         this.activity = activity;
+        this.backdrop = backdrop;
         this.name = name;
         this.listener = listener;
-        backdrop = new FrostedBackdrop(activity);
         DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
         drag = new SheetDrag(metrics.density);
         gap = Ui.dp(activity, TOP_GAP_DP);
         travel = metrics.heightPixels - gap;
         displayWidth = metrics.widthPixels;
         dialog = new Dialog(activity) {
-            @Override public void onBackPressed() { close(); }
+            @Override public void onBackPressed() { if (!listener.onBack()) close(); }
         };
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         // Android delivers this asynchronously; it only matters if the system dismisses the dialog.
@@ -112,7 +120,7 @@ final class BottomSheet {
             @Override public void onDrag(float distance) { setOffset(drag.follow(dragOrigin + distance)); }
             @Override public void onDragEnd(float velocity) { finishDrag(velocity); }
         });
-        glass = new SheetGlass(metrics.widthPixels, metrics.heightPixels);
+        glass = new SheetGlass(metrics.widthPixels, metrics.heightPixels, density);
         panel.setBackground(glass);
         int corner = Ui.dp(activity, CORNER_DP);
         panel.setOutlineProvider(new ViewOutlineProvider() {
@@ -178,20 +186,19 @@ final class BottomSheet {
             default: break;
         }
         hideKeyboard();
+        listener.onClosing();
         long duration = Math.max(MIN_EXIT_MS, Math.round(EXIT_MS * (1 - offset / travel)));
         animateTo(travel, duration, Phase.CLOSING, this::dismiss);
     }
 
     /** Removes the sheet immediately, for example when an app opens over it. */
     void dismiss() {
+        if (phase != Phase.HIDDEN && phase != Phase.CLOSING) listener.onClosing();
         if (dialog.isShowing()) dialog.dismiss();
         reset();
     }
 
-    void release() {
-        dismiss();
-        backdrop.release();
-    }
+    void release() { dismiss(); }
 
     private void showWindow() {
         if (BuildConfig.WINDOWED_MAPS && dialog.getWindow() != null) {

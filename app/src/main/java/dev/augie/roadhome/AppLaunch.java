@@ -28,6 +28,20 @@ final class AppLaunch {
         openDirect(activity, packageName);
     }
 
+    /** Opens an Android screen such as Settings over the launcher. */
+    static void openSystemScreen(Activity activity, Intent intent, String name) {
+        MainActivity home = activity instanceof MainActivity ? (MainActivity) activity : null;
+        if (home != null) home.externalAppOpening();
+        try {
+            activity.startActivity(intent, mainDisplay(activity));
+        } catch (ActivityNotFoundException | SecurityException error) {
+            Log.e("RoadHome", "Cannot open " + name + " with " + intent, error);
+            Toast.makeText(activity, "Android could not open " + name + ". Open it from the Android settings app.",
+                    Toast.LENGTH_LONG).show();
+            if (home != null) home.externalAppFailed();
+        }
+    }
+
     private static void openDirect(Activity activity, String packageName) {
         if (EmbeddedMaps.PACKAGE.equals(packageName) && activity instanceof MainActivity) {
             ((MainActivity) activity).openMapsFullscreen();

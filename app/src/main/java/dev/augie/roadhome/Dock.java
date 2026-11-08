@@ -3,10 +3,7 @@ package dev.augie.roadhome;
 import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.content.res.ColorStateList;
-import android.graphics.Color;
 import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.RippleDrawable;
 import android.os.Process;
 import android.util.Log;
 import android.view.Gravity;
@@ -123,8 +120,7 @@ final class Dock extends LinearLayout implements AppCatalog.Listener {
     private ImageButton button(String packageName) {
         ImageButton button = new ImageButton(getContext());
         button.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x3384BFFF),
-                Ui.surface(getContext(), Color.TRANSPARENT, 16), null));
+        button.setBackground(Ui.ripple(getContext(), 16));
         int padding = Ui.dp(getContext(), 4);
         button.setPadding(padding, padding, padding, padding);
         button.setOnClickListener(v -> actions.openApp(packageName));
@@ -138,7 +134,8 @@ final class Dock extends LinearLayout implements AppCatalog.Listener {
     }
 
     private LayoutParams slot() {
-        LayoutParams layout = new LayoutParams(Ui.dp(getContext(), DockLayout.BUTTON_DP), Ui.dp(getContext(), DockLayout.BUTTON_DP));
+        int size = Ui.dp(getContext(), DockLayout.BUTTON_DP);
+        LayoutParams layout = new LayoutParams(size, size);
         layout.topMargin = Ui.dp(getContext(), DockLayout.GAP_DP);
         return layout;
     }

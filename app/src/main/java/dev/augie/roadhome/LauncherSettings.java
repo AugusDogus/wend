@@ -24,6 +24,9 @@ final class LauncherSettings {
     private static final String MAPS_ON_RIGHT = "mapsOnRight";
     private static final String MAP_PERCENT = "mapPercent";
     private static final String DOCK_PINS = "dockPins";
+    // Read directly by the floating window code; keep these names.
+    private static final String FLOATING_VIDEO = "floatingVideo";
+    private static final String FLOATING_MAPS = "floatingMaps";
     private static final String TAG = "RoadHome";
 
     private final SharedPreferences preferences;
@@ -39,7 +42,8 @@ final class LauncherSettings {
         try {
             percent = preferences.getInt(MAP_PERCENT, MapWidth.MORE_MAP.percent);
         } catch (ClassCastException error) {
-            Log.w(TAG, "Stored map width is not a number; using " + MapWidth.MORE_MAP.percent + "% until it is chosen again", error);
+            Log.w(TAG, "Stored map width is not a number; using " + MapWidth.MORE_MAP.percent
+                    + "% until it is chosen again", error);
             return MapWidth.MORE_MAP;
         }
         for (MapWidth width : MapWidth.values()) if (width.percent == percent) return width;
@@ -48,6 +52,16 @@ final class LauncherSettings {
     }
 
     void setMapWidth(MapWidth width) { preferences.edit().putInt(MAP_PERCENT, width.percent).apply(); }
+
+    /** Whether playing video floats in a small window while Maps is fullscreen. */
+    boolean floatingVideo() { return readBoolean(FLOATING_VIDEO, true); }
+
+    void setFloatingVideo(boolean enabled) { preferences.edit().putBoolean(FLOATING_VIDEO, enabled).apply(); }
+
+    /** Whether Maps floats in a small window while a video is fullscreen. */
+    boolean floatingMaps() { return readBoolean(FLOATING_MAPS, true); }
+
+    void setFloatingMaps(boolean enabled) { preferences.edit().putBoolean(FLOATING_MAPS, enabled).apply(); }
 
     /** The stored pins, limited to {@code capacity}; the defaults if none were ever saved. */
     DockPins dockPins(int capacity) {
@@ -72,7 +86,8 @@ final class LauncherSettings {
         try {
             return preferences.getBoolean(key, fallback);
         } catch (ClassCastException error) {
-            Log.w(TAG, "Stored setting " + key + " is not on/off; using " + fallback + " until it is chosen again", error);
+            Log.w(TAG, "Stored setting " + key + " is not on/off; using " + fallback
+                    + " until it is chosen again", error);
             return fallback;
         }
     }
