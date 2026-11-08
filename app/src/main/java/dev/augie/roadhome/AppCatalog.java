@@ -19,7 +19,9 @@ import android.util.Log;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Launcher-scope catalog of launchable apps, modeled on Launcher3's LauncherModel. It loads
@@ -46,6 +48,8 @@ final class AppCatalog {
     // Main-thread state. Apps are only nonempty when the status is READY.
     private Status status = Status.LOADING;
     private List<LauncherApp> apps = Collections.emptyList();
+    /** The apps that pins can name, by package. */
+    private Map<String, LauncherApp> pinnable = Collections.emptyMap();
     // Worker-thread state.
     private final AppList model;
     private boolean loaded;
@@ -83,6 +87,12 @@ final class AppCatalog {
 
     /** Sorted by label; unmodifiable. Empty until the first load completes. */
     List<LauncherApp> apps() { return apps; }
+
+    /** Dock pins name packages in Road Home's own profile; apps in a work profile cannot be pinned. */
+    static boolean canPin(LauncherApp app) { return Process.myUserHandle().equals(app.key.user); }
+
+    /** The app a dock pin names, or null when its package is not in the list. */
+    LauncherApp pinnedApp(String packageName) { return pinnable.get(packageName); }
 
     void addListener(Listener listener) { listeners.add(listener); }
     void removeListener(Listener listener) { listeners.remove(listener); }
@@ -176,6 +186,9 @@ final class AppCatalog {
     private void publishOnMain(Status next, List<LauncherApp> sorted) {
         status = next;
         apps = sorted;
+        Map<String, LauncherApp> byPackage = new HashMap<>();
+        for (LauncherApp app : sorted) if (canPin(app)) byPackage.put(app.key.packageName, app);
+        pinnable = byPackage;
         for (Listener listener : new ArrayList<>(listeners)) listener.onAppsChanged(this);
     }
 

@@ -9,7 +9,6 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
-import android.os.Process;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -204,7 +203,6 @@ final class DockEditor implements AppCatalog.Listener {
     @Override public void onAppsChanged(AppCatalog catalog) { bind(); }
 
     private void bind() {
-        Map<String, LauncherApp> installed = installedApps(catalog.apps());
         Map<String, Row> previous = new HashMap<>(rows);
         rows.clear();
         card.removeAllViews();
@@ -213,7 +211,7 @@ final class DockEditor implements AppCatalog.Listener {
             String packageName = packages.get(i);
             Row row = previous.remove(packageName);
             if (row == null) row = new Row(packageName);
-            row.bind(installed.get(packageName), i, packages.size());
+            row.bind(catalog.pinnedApp(packageName), i, packages.size());
             rows.put(packageName, row);
             card.addView(row.view, new LinearLayout.LayoutParams(-1, -2));
         }
@@ -260,14 +258,6 @@ final class DockEditor implements AppCatalog.Listener {
             }
         });
         resize.start();
-    }
-
-    private static Map<String, LauncherApp> installedApps(List<LauncherApp> apps) {
-        Map<String, LauncherApp> installed = new HashMap<>();
-        for (LauncherApp app : apps) {
-            if (Process.myUserHandle().equals(app.key.user)) installed.put(app.key.packageName, app);
-        }
-        return installed;
     }
 
     /** One pinned app: icon, name, and its move and remove buttons. */

@@ -12,6 +12,7 @@ import android.graphics.drawable.Drawable;
 import android.os.Looper;
 import android.os.Process;
 import android.os.UserHandle;
+import android.os.UserManager;
 import org.robolectric.util.ReflectionHelpers;
 import org.robolectric.util.ReflectionHelpers.ClassParameter;
 import static org.robolectric.Shadows.shadowOf;
@@ -43,6 +44,14 @@ final class TestApps {
                 throw new IllegalStateException("The label resource of " + packageName + " is unavailable");
             }
         });
+    }
+
+    /** A work profile beside the launcher's own profile, as LauncherApps reports it. */
+    static UserHandle workProfile(Context context) {
+        UserHandle work = UserHandle.getUserHandleForUid(10 * 100_000 + 10_000);
+        UserManager users = context.getSystemService(UserManager.class);
+        if (!users.getUserProfiles().contains(work)) shadowOf(users).addUserProfile(work);
+        return work;
     }
 
     /** A catalog that loads on the main looper, after its first load has been published. */

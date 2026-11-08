@@ -2,7 +2,9 @@ package dev.augie.roadhome;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
+import android.os.Process;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -12,6 +14,8 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 29)
@@ -36,6 +40,21 @@ public class AppCatalogTest {
 
         assertEquals(AppCatalog.Status.READY, catalog.status());
         assertEquals(Arrays.asList("Maps"), labels(catalog.apps()));
+    }
+
+    @Test public void pinsNameAppsInTheLaunchersOwnProfileOnly() {
+        TestApps.install(context, "com.mail", "Mail");
+        TestApps.install(context, TestApps.workProfile(context), "com.mail", "Mail", new ColorDrawable(Color.BLUE));
+        TestApps.install(context, TestApps.workProfile(context), "com.slack", "Slack", new ColorDrawable(Color.RED));
+
+        AppCatalog catalog = TestApps.loadedCatalog(context);
+
+        assertEquals("The drawer lists every profile", 3, catalog.apps().size());
+        LauncherApp mail = catalog.pinnedApp("com.mail");
+        assertNotNull(mail);
+        assertEquals(Process.myUserHandle(), mail.key.user);
+        assertNull("A work-profile app cannot be pinned", catalog.pinnedApp("com.slack"));
+        assertNull(catalog.pinnedApp("com.not.installed"));
     }
 
     private static List<String> labels(List<LauncherApp> apps) {

@@ -4,7 +4,6 @@ import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.drawable.BitmapDrawable;
-import android.os.Process;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
@@ -93,14 +92,10 @@ final class Dock extends LinearLayout implements AppCatalog.Listener {
         if (catalog.status() == AppCatalog.Status.FAILED) {
             Log.w("RoadHome", "Dock apps are hidden because the app list could not load; opening Apps retries it");
         }
-        Map<String, LauncherApp> installed = new HashMap<>();
-        for (LauncherApp app : catalog.apps()) {
-            if (Process.myUserHandle().equals(app.key.user)) installed.put(app.key.packageName, app);
-        }
         Map<String, ImageButton> previous = new HashMap<>(buttons);
         buttons.clear();
         for (String packageName : pins.packages()) {
-            LauncherApp app = installed.get(packageName);
+            LauncherApp app = catalog.pinnedApp(packageName);
             if (app == null) continue;
             ImageButton button = previous.remove(packageName);
             if (button == null) button = button(packageName);

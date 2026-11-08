@@ -7,7 +7,6 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.Process;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
@@ -20,9 +19,7 @@ import android.widget.Switch;
 import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Road Home's settings on a glass BottomSheet: a centered column of grouped cards for the
@@ -247,7 +244,7 @@ final class SettingsSheet implements AppCatalog.Listener {
     private void showPicker() {
         if (picking || pins.isFull()) return;
         picker.reset();
-        picker.setHidden(app -> !Process.myUserHandle().equals(app.key.user) || pins.contains(app.key.packageName));
+        picker.setHidden(app -> !AppCatalog.canPin(app) || pins.contains(app.key.packageName));
         picking = true;
         switchPage(mainHeader, mainPage, pickerHeader, pickerPage, 1);
     }
@@ -314,14 +311,10 @@ final class SettingsSheet implements AppCatalog.Listener {
     }
 
     private void updatePreviewIcons() {
-        Map<String, Bitmap> installed = new HashMap<>();
-        for (LauncherApp app : catalog.apps()) {
-            if (Process.myUserHandle().equals(app.key.user)) installed.put(app.key.packageName, app.icon);
-        }
         List<Bitmap> icons = new ArrayList<>();
         for (String packageName : pins.packages()) {
-            Bitmap icon = installed.get(packageName);
-            if (icon != null) icons.add(icon);
+            LauncherApp app = catalog.pinnedApp(packageName);
+            if (app != null) icons.add(app.icon);
         }
         preview.setDockIcons(icons);
     }
