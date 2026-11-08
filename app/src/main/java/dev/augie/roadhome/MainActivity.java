@@ -3,28 +3,26 @@ package dev.augie.roadhome;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
-import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Looper;
 import android.provider.Settings;
-import android.view.Gravity;
+import android.util.DisplayMetrics;
 import android.view.View;
 import android.view.WindowManager;
-import android.widget.ImageButton;
 import android.widget.LinearLayout;
-import android.widget.TextClock;
 
 public final class MainActivity extends Activity {
     private MapPanel maps;
     private MediaPanel media;
     private LinearLayout content;
-    private SharedPreferences preferences;
+    private LauncherSettings settings;
+    private Dock dock;
+    private int dockCapacity;
     private AppDrawer drawer;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        preferences = getSharedPreferences("layout", MODE_PRIVATE);
+        settings = new LauncherSettings(getSharedPreferences(LauncherSettings.PREFERENCES, MODE_PRIVATE));
         AppCatalog.get(this); // Loads apps in the background so the drawer opens with them.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemBars();
@@ -34,7 +32,13 @@ public final class MainActivity extends Activity {
         int inset = BuildConfig.WINDOWED_MAPS ? getResources().getDimensionPixelSize(
                 getResources().getIdentifier("status_bar_height", "dimen", "android")) : 0;
         root.setPadding(0, inset, 0, 0);
-        root.addView(createDock(), new LinearLayout.LayoutParams(Ui.dp(this, 60), -1));
+        dockCapacity = dockCapacity(this, inset);
+        dock = new Dock(this, AppCatalog.get(this), settings.dockPins(dockCapacity), new Dock.Actions() {
+            @Override public void openApp(String packageName) { AppLaunch.open(MainActivity.this, packageName); }
+            @Override public void showApps() { MainActivity.this.showApps(); }
+            @Override public void showSettings() { MainActivity.this.showSettings(); }
+        });
+        root.addView(dock, new LinearLayout.LayoutParams(Ui.dp(this, DockLayout.WIDTH_DP), -1));
         View dockDivider = new View(this);
         dockDivider.setBackgroundColor(0x20FFFFFF);
         root.addView(dockDivider, new LinearLayout.LayoutParams(1, -1));
@@ -54,55 +58,12 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private LinearLayout createDock() {
-        LinearLayout dock = new LinearLayout(this);
-        dock.setOrientation(LinearLayout.VERTICAL);
-        dock.setGravity(Gravity.CENTER_HORIZONTAL);
-        dock.setPadding(Ui.dp(this, 6), 0, Ui.dp(this, 6), Ui.dp(this, 4));
-        dock.setBackgroundColor(0xFF15242E);
-        TextClock clock = new TextClock(this);
-        if (BuildConfig.WINDOWED_MAPS) clock.setVisibility(View.GONE);
-        clock.setFormat12Hour("h:mm");
-        clock.setFormat24Hour("HH:mm");
-        clock.setTextColor(Ui.TEXT);
-        clock.setTextSize(18);
-        clock.setGravity(Gravity.CENTER);
-        dock.addView(clock, new LinearLayout.LayoutParams(-1, Ui.dp(this, 42)));
-        TextClock date = new TextClock(this);
-        date.setFormat12Hour("EEE d");
-        date.setFormat24Hour("EEE d");
-        date.setTextColor(Ui.MUTED);
-        date.setTextSize(12);
-        date.setGravity(Gravity.CENTER);
-        dock.addView(date, new LinearLayout.LayoutParams(-1, Ui.dp(this, 22)));
-        dock.addView(new View(this), new LinearLayout.LayoutParams(1, 0, 1));
-        ImageButton mapButton = Ui.iconButton(this, Ui.Icon.MAP, "Google Maps", this::openMapsFullscreen);
-        setAppIcon(mapButton, EmbeddedMaps.PACKAGE);
-        dock.addView(mapButton, dockButtonLayout());
-        ImageButton musicButton = Ui.iconButton(this, Ui.Icon.MUSIC, "Spotify", () -> AppDrawer.open(this, "com.spotify.music"));
-        setAppIcon(musicButton, "com.spotify.music");
-        dock.addView(musicButton, dockButtonLayout());
-        dock.addView(Ui.iconButton(this, Ui.Icon.APPS, "Apps", this::showApps), dockButtonLayout());
-        dock.addView(new View(this), new LinearLayout.LayoutParams(1, 0, 1));
-        dock.addView(Ui.iconButton(this, Ui.Icon.SETTINGS, "Layout and settings", this::showSettings), dockButtonLayout());
-        return dock;
-    }
-
-    private LinearLayout.LayoutParams dockButtonLayout() {
-        LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48));
-        layout.topMargin = Ui.dp(this, 4);
-        return layout;
-    }
-
-    private void setAppIcon(ImageButton button, String packageName) {
-        try {
-            button.setImageDrawable(new AppIcon(getPackageManager().getApplicationIcon(packageName)));
-            int padding = Ui.dp(this, 4);
-            button.setPadding(padding, padding, padding, padding);
-        }
-        catch (PackageManager.NameNotFoundException error) {
-            android.util.Log.i("RoadHome", "Using fallback icon for unavailable app " + packageName);
-        }
+    private static int dockCapacity(Activity activity, int topInset) {
+        DisplayMetrics real = new DisplayMetrics();
+        activity.getWindowManager().getDefaultDisplay().getRealMetrics(real);
+        // The launcher is landscape-only, so the dock spans the display's shorter side.
+        int height = Math.min(real.widthPixels, real.heightPixels) - topInset;
+        return DockLayout.pinCapacity(Math.round(height / real.density));
     }
 
     private void showApps() {
@@ -110,7 +71,7 @@ public final class MainActivity extends Activity {
         drawer.show();
     }
 
-    private void openMusic() { AppDrawer.open(this, media.musicPackage()); }
+    private void openMusic() { AppLaunch.open(this, media.musicPackage()); }
     void openMapsFullscreen() { maps.openFullscreen(); }
     boolean openVideoFullscreen(Runnable open) { return media.openVideoFullscreen(open); }
     // A virtual display can keep Home started behind another fullscreen app on Android 10.
@@ -121,11 +82,10 @@ public final class MainActivity extends Activity {
 
     private void arrangePanels() {
         content.removeAllViews();
-        int percent = preferences.getInt("mapPercent", 70);
-        if (percent != 60 && percent != 70) percent = 70;
+        int percent = settings.mapWidth().percent;
         LinearLayout.LayoutParams mapLayout = new LinearLayout.LayoutParams(0, -1, percent);
         LinearLayout.LayoutParams mediaLayout = new LinearLayout.LayoutParams(0, -1, 100 - percent);
-        boolean mapsOnRight = preferences.getBoolean("mapsOnRight", true);
+        boolean mapsOnRight = settings.mapSide() == LauncherSettings.MapSide.RIGHT;
         maps.setInnerCorners(mapsOnRight);
         if (mapsOnRight) {
             content.addView(media, mediaLayout);
@@ -137,13 +97,13 @@ public final class MainActivity extends Activity {
     }
 
     private void showSettings() {
-        boolean onRight = preferences.getBoolean("mapsOnRight", true);
+        boolean onRight = settings.mapSide() == LauncherSettings.MapSide.RIGHT;
         String[] choices = {onRight ? "Move Maps to the left" : "Move Maps to the right",
                 "Map size", "Android settings", "Choose home app"};
         showLauncherDialog(new AlertDialog.Builder(this).setTitle("Road Home").setItems(choices, (dialog, which) -> {
             switch (which) {
                 case 0:
-                    preferences.edit().putBoolean("mapsOnRight", !onRight).apply();
+                    settings.setMapSide(onRight ? LauncherSettings.MapSide.LEFT : LauncherSettings.MapSide.RIGHT);
                     arrangePanels();
                     break;
                 case 1: chooseMapSize(); break;
@@ -155,10 +115,10 @@ public final class MainActivity extends Activity {
     }
 
     private void chooseMapSize() {
-        int selected = preferences.getInt("mapPercent", 70) == 60 ? 0 : 1;
+        int selected = settings.mapWidth() == LauncherSettings.MapWidth.BALANCED ? 0 : 1;
         showLauncherDialog(new AlertDialog.Builder(this).setTitle("Map size")
                 .setSingleChoiceItems(new String[]{"Balanced (60%)", "More map (70%)"}, selected, (dialog, which) -> {
-                    preferences.edit().putInt("mapPercent", which == 0 ? 60 : 70).apply();
+                    settings.setMapWidth(which == 0 ? LauncherSettings.MapWidth.BALANCED : LauncherSettings.MapWidth.MORE_MAP);
                     arrangePanels();
                     dialog.dismiss();
                 }).setNegativeButton("Close", null).create());
@@ -180,6 +140,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onDestroy() {
         if (drawer != null) drawer.release();
+        dock.release();
         media.release();
         maps.release();
         super.onDestroy();
