@@ -134,6 +134,14 @@ final class MapTransition {
         if (cover != null && area != null && !area.isEmpty()) cover.conceal(area);
     }
 
+    /**
+     * Blanks the frozen frame everywhere but {@code kept}, such as around Maps grown to its panel
+     * size, so a frozen copy of the video around it never reads as a stalled player.
+     */
+    void concealOutside(Rect kept) {
+        if (cover != null) cover.concealOutside(kept);
+    }
+
     boolean pending() { return cover != null && cover.phase == Phase.PENDING; }
 
     void cancel() {
@@ -149,6 +157,8 @@ final class MapTransition {
         private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
         private final Paint blank = new Paint();
         private final Rect concealed = new Rect();
+        /** The only part of the frozen frame still shown, or null for all of it. */
+        private Rect kept;
         private final int destinationWidth;
         private final Runnable moveTask;
         private final Completion completion;
@@ -172,6 +182,11 @@ final class MapTransition {
 
         void conceal(Rect area) {
             concealed.union(area);
+            invalidate();
+        }
+
+        void concealOutside(Rect area) {
+            kept = new Rect(area);
             invalidate();
         }
 
@@ -223,6 +238,11 @@ final class MapTransition {
             if (phase == Phase.DISPOSED) return;
             canvas.drawBitmap(snapshot, null, screen, paint);
             if (!concealed.isEmpty()) canvas.drawRect(concealed, blank);
+            if (kept == null) return;
+            canvas.save();
+            canvas.clipOutRect(kept);
+            canvas.drawPaint(blank);
+            canvas.restore();
         }
 
         void dispose() {

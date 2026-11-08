@@ -15,6 +15,7 @@ import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.GraphicsMode;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.shadows.ShadowSurfaceControl;
@@ -85,6 +86,31 @@ public class MapTransitionTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(250));
         assertEquals(List.of("covered", "revealed"), events);
         assertFalse(transition.active());
+    }
+
+    @Config(shadows = Screenshots.class, qualifiers = "w1280dp-h720dp-land-mdpi")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void aFrozenFrameCanKeepOnlyMapsAndBlankTheRest() {
+        Activity host = Robolectric.buildActivity(Activity.class).setup().get();
+        View panel = new View(host);
+        host.setContentView(panel, new FrameLayout.LayoutParams(833, 720));
+        shadowOf(Looper.getMainLooper()).idle();
+        MapTransition transition = new MapTransition(host, panel);
+        transition.holdThenCrossfade(() -> { }, () -> { });
+        Bitmap drawn = Bitmap.createBitmap(1280, 720, Bitmap.Config.ARGB_8888);
+        transition.concealOutside(new Rect(224, 0, 1057, 720));
+        coverView(host).draw(new android.graphics.Canvas(drawn));
+        assertEquals("Outside Maps is blank", android.graphics.Color.BLACK, drawn.getPixel(100, 360));
+        assertEquals("Outside Maps is blank", android.graphics.Color.BLACK, drawn.getPixel(1200, 360));
+        assertEquals("Maps' frozen pixels stay", Screenshots.MAPS, drawn.getPixel(640, 360));
+        transition.cancel();
+    }
+
+    private static View coverView(Activity host) {
+        org.robolectric.shadows.ShadowWindowManagerImpl manager =
+                org.robolectric.shadow.api.Shadow.extract(host.getSystemService(android.view.WindowManager.class));
+        List<View> views = manager.getViews();
+        return views.get(views.size() - 1);
     }
 
     /** Android 10's privileged screenshot, which Robolectric does not provide: Maps everywhere. */

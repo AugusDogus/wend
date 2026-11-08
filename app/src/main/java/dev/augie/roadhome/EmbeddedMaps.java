@@ -352,6 +352,10 @@ final class EmbeddedMaps extends MapPanel {
                 takeoverFrame = new MapFrame(screen.x, () -> post(this::moveTakeover));
                 postDelayed(takeoverDeadline, TAKEOVER_LAYOUT_MS);
             }, next::revealed);
+            // Only Maps stays in the frozen frame; a frozen video around it reads as a stall.
+            RectF centered = SurfacePlacement.centered(getWidth(), getHeight(), screen.x, screen.y).visible();
+            transition.concealOutside(new Rect(Math.round(centered.left), Math.round(centered.top),
+                    Math.round(centered.right), Math.round(centered.bottom)));
         });
     }
 
