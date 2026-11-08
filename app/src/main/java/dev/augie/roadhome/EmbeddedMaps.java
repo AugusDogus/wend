@@ -48,12 +48,25 @@ final class EmbeddedMaps extends MapPanel {
     /** A tap on floating Maps that is taking the screen from the video, until Maps moves. */
     private Takeover takeover;
     private MapFrame takeoverFrame;
+    /**
+     * How long Maps, behind a frozen frame, may take to lay out at the full screen size before it
+     * moves as it is. Maps then finishes laying out on the main display; moving it first leaves
+     * Road Home visible behind it, so Home loses its live return.
+     */
+    private static final int TAKEOVER_LAYOUT_MS = 700;
+    /**
+     * How long Maps may take to lay out in its panel before it floats as it is: until then the
+     * fullscreen video shows no navigation, and floating Maps finishes its layout live.
+     */
+    private static final int PANEL_LAYOUT_MS = 500;
     private final Runnable takeoverDeadline = () -> {
-        Log.w("RoadHomeMap", "Maps did not lay out at the full screen size within 900 ms; moving it as it is");
+        Log.w("RoadHomeMap", "Maps did not lay out at the full screen size within " + TAKEOVER_LAYOUT_MS
+                + " ms; moving it as it is");
         moveTakeover();
     };
     private final Runnable panelFrameDeadline = () -> {
-        Log.w("RoadHomeMap", "Maps did not lay out at its panel size within 900 ms; floating it as it is");
+        Log.w("RoadHomeMap", "Maps did not lay out at its panel size within " + PANEL_LAYOUT_MS
+                + " ms; floating it as it is");
         panelFrameReady();
     };
     private boolean hostActive;
@@ -313,31 +326,33 @@ final class EmbeddedMaps extends MapPanel {
         launch();
         if (pendingFloat == null) return;
         panelFrame = new MapFrame(getWidth(), () -> post(this::panelFrameReady));
-        postDelayed(panelFrameDeadline, 900);
+        postDelayed(panelFrameDeadline, PANEL_LAYOUT_MS);
     }
 
     @Override void openFullscreenFromFloating(Takeover next) {
         if (activityView == null || takeover != null) return;
         // Grows live, never past pixel scale one, to its full-height panel display centered on
         // screen. A held frame then covers the task move, and crossfades to fullscreen Maps.
-        floating.focus(() -> transition.holdThenCrossfade(() -> {
-            // Under the frozen frame: Maps leaves its window for its panel, the video steps aside,
-            // and Maps lays out at the full screen size on its own display first, as the dock
-            // expansion does. Moved at its panel size, Android 10 left Road Home resumed and
-            // visible behind fullscreen Maps, so Home later had nothing to animate.
-            floating.cancel();
-            takeover = next;
-            next.covered();
-            if (!hostActive) {
-                // Above the video app, Road Home is stopped and lays out nothing, so its display
-                // cannot grow first. Moved as it is, Maps lays out on the main display instead.
-                moveTakeover();
-                return;
-            }
-            activityView.setLayoutParams(new LayoutParams(screen.x, screen.y));
-            takeoverFrame = new MapFrame(screen.x, () -> post(this::moveTakeover));
-            postDelayed(takeoverDeadline, 900);
-        }, next::revealed));
+        floating.focus(() -> {
+            transition.holdThenCrossfade(() -> {
+                // Under the frozen frame: Maps leaves its window for its panel, the video steps
+                // aside, and Maps lays out at the full screen size on its own display first, as
+                // the dock expansion does. Moved at its panel size, Android 10 left Road Home
+                // resumed and visible behind fullscreen Maps, so Home later had nothing to animate.
+                floating.cancel();
+                takeover = next;
+                next.covered();
+                if (!hostActive) {
+                    // Above the video app, Road Home is stopped and lays out nothing, so its
+                    // display cannot grow first. Moved as it is, Maps lays out on the main display.
+                    moveTakeover();
+                    return;
+                }
+                activityView.setLayoutParams(new LayoutParams(screen.x, screen.y));
+                takeoverFrame = new MapFrame(screen.x, () -> post(this::moveTakeover));
+                postDelayed(takeoverDeadline, TAKEOVER_LAYOUT_MS);
+            }, next::revealed);
+        });
     }
 
     private void moveTakeover() {

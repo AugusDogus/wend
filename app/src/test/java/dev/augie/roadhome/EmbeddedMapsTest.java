@@ -108,6 +108,24 @@ public class EmbeddedMapsTest {
         maps.release();
     }
 
+    /** Navigation is gone from the screen until Maps floats: it never waits long for Maps' layout. */
+    @Test public void mapsFloatsAboveTheVideoWithinHalfASecondOfReturningEvenBeforeItsLayout() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, 0, 1);
+        maps.returnBeneathVideo(() -> events.add("float"));
+        maps.resume();
+        while (!tasks.calls.contains("move to " + panelDisplay(maps))) {
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(10));
+        }
+        // No layer query can report Maps here, as when Maps is slow to lay out at its panel size.
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(450));
+        assertEquals(List.of(), events);
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100));
+        assertEquals(List.of("float"), events);
+        maps.release();
+    }
+
     @Test public void mapsClosedUnderTheVideoSaysSoInsteadOfFloating() throws Exception {
         FakeTasks tasks = new FakeTasks(host);
         EmbeddedMaps maps = readyMaps(tasks);

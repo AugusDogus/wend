@@ -20,6 +20,15 @@ import android.view.animation.AnimationUtils;
 final class MapTransition {
     private enum Completion { CROSSFADE, HELD_CROSSFADE, HANDOFF, REVEAL }
     private enum Phase { PENDING, WAITING_FOR_FRAME, REVEALING, DISPOSED }
+    /** Waiting for Maps' frame after a move under this cover. */
+    private static final int FRAME_MS = 900;
+    /**
+     * Waiting for Maps' frame after a held move. Maps has usually laid out at its new size before
+     * it moves; otherwise it finishes live, as a frozen frame much over a second reads as a hang.
+     */
+    private static final int MOVED_FRAME_MS = 300;
+    /** A held frame whose work never reports the move. */
+    private static final int HELD_MS = 1500;
     private final Activity host;
     private final View panel;
     private final WindowManager windows;
@@ -55,12 +64,15 @@ final class MapTransition {
     /** Keep the final cropped frame still while Maps lays out, then remove it without fading. */
     void settle(Runnable moveTask) { prepare(false, moveTask, Completion.REVEAL, () -> { }); }
 
-    /** After a slow expansion, keep its original cover until the fullscreen frame is ready. */
+    /**
+     * Maps has moved: keep the frozen frame until Maps shows its new size, which it usually
+     * already does, but never long after the move.
+     */
     void settleHeld() {
         Runnable reveal = heldReveal;
         heldReveal = null;
         if (reveal != null) reveal.run();
-        else if (cover != null && cover.phase == Phase.WAITING_FOR_FRAME) cover.awaitFrame();
+        else if (cover != null && cover.phase == Phase.WAITING_FOR_FRAME) cover.awaitFrame(MOVED_FRAME_MS);
     }
 
     private void prepare(boolean expanding, Runnable moveTask, Completion completion, Runnable revealed) {
@@ -143,10 +155,7 @@ final class MapTransition {
         private final Runnable revealed;
         private MapFrame frame;
         private Phase phase = Phase.PENDING;
-        private final Runnable deadline = () -> {
-            Log.w("RoadHome", "Maps frame did not settle before transition deadline; revealing live task");
-            reveal();
-        };
+        private final Runnable deadline = this::deadlinePassed;
 
         Cover(Bitmap snapshot, int destinationWidth, Runnable moveTask, Completion completion, Runnable revealed) {
             super(host);
@@ -170,19 +179,27 @@ final class MapTransition {
             if (phase != Phase.PENDING) return;
             phase = Phase.WAITING_FOR_FRAME;
             moveTask.run();
-            if (phase == Phase.DISPOSED) return;
+            if (phase != Phase.WAITING_FOR_FRAME) return;
             if (completion == Completion.HANDOFF || completion == Completion.HELD_CROSSFADE) {
-                postDelayed(deadline, 1500);
+                // Held until settleHeld, unless that already ran as the work moved Maps.
+                if (frame == null) postDelayed(deadline, HELD_MS);
                 return;
             }
-            awaitFrame();
+            awaitFrame(FRAME_MS);
         }
 
-        void awaitFrame() {
+        /** @param deadlineMs how long Maps may take to show its new size before it shows as it is */
+        void awaitFrame(int deadlineMs) {
             removeCallbacks(deadline);
             if (frame != null) frame.close();
             frame = new MapFrame(destinationWidth, () -> post(this::reveal));
-            postDelayed(deadline, 900);
+            postDelayed(deadline, deadlineMs);
+        }
+
+        private void deadlinePassed() {
+            Log.w("RoadHome", "Maps did not show its " + destinationWidth + " px wide layout before its"
+                    + " transition deadline; revealing it as it is, and it finishes laying out live");
+            reveal();
         }
 
         private void reveal() {
