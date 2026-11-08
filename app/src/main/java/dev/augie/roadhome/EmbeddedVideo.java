@@ -201,7 +201,11 @@ final class EmbeddedVideo extends FrameLayout {
         cancelPreparation();
         window.open(this, playerSurface, source(previousBounds), displaySize, open,
                 this::presentationRestored, reached);
-        if (window.active()) postDelayed(inspect, 300);
+        if (window.active()) {
+            // The card it leaves keeps the last still rather than an empty black slot.
+            cover.setVisibility(VISIBLE);
+            postDelayed(inspect, 300);
+        }
         return true;
     }
 
@@ -240,6 +244,7 @@ final class EmbeddedVideo extends FrameLayout {
             return null;
         }
         Log.i("RoadHomeVideo", "Floating live video above Maps in the " + corner + " corner");
+        cover.setVisibility(VISIBLE);
         postDelayed(inspect, 500);
         int[] location = new int[2];
         getLocationOnScreen(location);
@@ -294,8 +299,13 @@ final class EmbeddedVideo extends FrameLayout {
         appSwitches.stop();
         if (playerLifecycle != null) playerLifecycle.returnToHost();
         cancelPreparation();
-        if (hostActive && presentation == VideoCardState.PLAYING) inspectSurface();
-        else {
+        if (hostActive && presentation == VideoCardState.PLAYING) {
+            // Back in the card live, as it arrived: the still would show an older frame over it.
+            if (state == State.SHOWN && playerSurface != null && playerSurface.showsPreview()) {
+                cover.setVisibility(GONE);
+            }
+            inspectSurface();
+        } else {
             if (state == State.SHOWN) state = State.READY;
             coverPlayer();
             status.setVisibility(GONE);

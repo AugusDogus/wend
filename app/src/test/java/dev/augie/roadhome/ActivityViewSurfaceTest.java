@@ -14,6 +14,7 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
@@ -45,6 +46,25 @@ public class ActivityViewSurfaceTest {
         assertEquals(panel, portalRegion(maps).getBounds());
         maps.restorePreview(1, 0, 0, panel);
         assertEquals(panel, portalRegion(maps).getBounds());
+    }
+
+    /**
+     * The video card hides its still as soon as the live video is back in it, and only then: an
+     * older still over the landed video would jump back in time, and none over a hidden display
+     * would leave the card black.
+     */
+    @Test public void itKnowsWhetherTheDisplayShowsInItsPreview() throws Exception {
+        Rect decoder = new Rect(16, 122, 496, 392);
+        ActivityViewSurface video = surface(ActivityViewSurface.PreviewInput.KEPT);
+        assertFalse("Not shown before its first reveal", video.showsPreview());
+        video.show(320 / 480f, -10.7f, -81.3f, decoder);
+        assertTrue(video.showsPreview());
+        video.hide();
+        assertFalse(video.showsPreview());
+        video.restorePreview(320 / 480f, -10.7f, -81.3f, decoder);
+        assertTrue("Back in the card after a presentation", video.showsPreview());
+        video.restoreHidden();
+        assertFalse("Returned hidden, as when Road Home's window had no surface", video.showsPreview());
     }
 
     private ActivityViewSurface surface(ActivityViewSurface.PreviewInput input) throws ReflectiveOperationException {

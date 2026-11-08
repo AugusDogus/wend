@@ -44,6 +44,8 @@ class ActivityViewSurface {
     private final Object portal;
     private final Region touchableRegion;
     private final Rect cropped = new Rect();
+    /** The display shows in its preview parent, in Road Home's window, rather than elsewhere or hidden. */
+    private boolean inPreview;
 
     ActivityViewSurface(ActivityView view, PreviewInput previewInput) throws ReflectiveOperationException {
         this.previewInput = previewInput;
@@ -118,6 +120,7 @@ class ActivityViewSurface {
             transform(transaction, scale, x, y, bounds);
             transaction.setAlpha(surface, 1).apply();
         }
+        inPreview = false;
     }
 
     /** Puts our live display in another window at {@code placement}, without input, in one frame. */
@@ -131,6 +134,7 @@ class ActivityViewSurface {
             place(transaction, placement, radius, alpha);
             transaction.apply();
         }
+        inPreview = false;
     }
 
     void transform(float scale, float x, float y, Rect bounds) throws ReflectiveOperationException {
@@ -171,6 +175,7 @@ class ActivityViewSurface {
             round(transaction, 0);
             transaction.setAlpha(surface, 0).apply();
         }
+        inPreview = false;
     }
 
     void restorePreview(float scale, float x, float y, Rect bounds) throws ReflectiveOperationException {
@@ -183,7 +188,11 @@ class ActivityViewSurface {
             updateInput(transaction);
             transaction.setAlpha(surface, 1).apply();
         }
+        inPreview = true;
     }
+
+    /** Whether the display shows in Road Home's window, where its preview belongs. */
+    boolean showsPreview() { return inPreview; }
 
     /** Whether Road Home's window currently has the card surface a preview can return to. */
     boolean hostAvailable() throws ReflectiveOperationException {
@@ -206,6 +215,7 @@ class ActivityViewSurface {
             updateInput(transaction);
             transaction.setAlpha(surface, 0).apply();
         }
+        inPreview = false;
     }
 
     void input(Rect bounds) {
@@ -230,6 +240,7 @@ class ActivityViewSurface {
             updateInput(transaction);
             transaction.setAlpha(surface, 0).apply();
         }
+        inPreview = false;
     }
 
     void show(Rect bounds) throws ReflectiveOperationException {
@@ -244,6 +255,7 @@ class ActivityViewSurface {
             updateInput(transaction);
             transaction.setAlpha(surface, 1).apply();
         }
+        inPreview = true;
     }
 
     /** @param bounds the shown part of the display, in the display's own coordinates */
