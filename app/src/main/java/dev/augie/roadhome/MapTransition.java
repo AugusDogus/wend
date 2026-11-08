@@ -24,6 +24,8 @@ final class MapTransition {
     private final View panel;
     private final WindowManager windows;
     private Cover cover;
+    /** A held takeover with no frozen frame: revealed once {@link #settleHeld} says Maps moved. */
+    private Runnable heldReveal;
 
     MapTransition(Activity host, View panel) {
         this.host = host;
@@ -55,14 +57,16 @@ final class MapTransition {
 
     /** After a slow expansion, keep its original cover until the fullscreen frame is ready. */
     void settleHeld() {
-        if (cover != null && cover.phase == Phase.WAITING_FOR_FRAME) cover.awaitFrame();
+        Runnable reveal = heldReveal;
+        heldReveal = null;
+        if (reveal != null) reveal.run();
+        else if (cover != null && cover.phase == Phase.WAITING_FOR_FRAME) cover.awaitFrame();
     }
 
     private void prepare(boolean expanding, Runnable moveTask, Completion completion, Runnable revealed) {
         cancel();
         if (!ValueAnimator.areAnimatorsEnabled() || windows == null || !panel.isLaidOut()) {
-            moveTask.run();
-            revealed.run();
+            moveUncovered(moveTask, completion, revealed);
             return;
         }
         Bitmap snapshot = null;
@@ -97,12 +101,18 @@ final class MapTransition {
             Log.w("RoadHome", "Map transition unavailable; moving task without animation", error);
             if (cover != null) cancel();
             else if (snapshot != null) snapshot.recycle();
-            moveTask.run();
-            revealed.run();
+            moveUncovered(moveTask, completion, revealed);
         }
     }
 
-    boolean active() { return cover != null; }
+    private void moveUncovered(Runnable moveTask, Completion completion, Runnable revealed) {
+        // A held takeover's work only prepares the move; Maps shows once it has moved.
+        if (completion == Completion.HELD_CROSSFADE) heldReveal = revealed;
+        moveTask.run();
+        if (completion != Completion.HELD_CROSSFADE) revealed.run();
+    }
+
+    boolean active() { return cover != null || heldReveal != null; }
 
     /**
      * Blanks part of the frozen frame whose live content has just moved to another window,
@@ -115,6 +125,7 @@ final class MapTransition {
     boolean pending() { return cover != null && cover.phase == Phase.PENDING; }
 
     void cancel() {
+        heldReveal = null;
         Cover current = cover;
         cover = null;
         if (current != null) current.dispose();

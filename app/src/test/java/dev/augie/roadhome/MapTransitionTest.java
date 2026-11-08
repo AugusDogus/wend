@@ -26,13 +26,27 @@ public class MapTransitionTest {
         assertFalse(transition.active());
     }
 
-    @Test public void aHeldTakeoverWithoutACoverIsRevealedRightAfterItsWork() {
+    @Test public void aHeldTakeoverWithoutACoverIsRevealedOnlyOnceMapsHasMoved() {
         Activity host = Robolectric.buildActivity(Activity.class).setup().get();
         MapTransition transition = new MapTransition(host, new View(host));
         List<String> events = new ArrayList<>();
         transition.holdThenCrossfade(() -> events.add("covered"), () -> events.add("revealed"));
+        // The video must not emerge over Road Home before Maps reaches the main display.
+        assertEquals(List.of("covered"), events);
+        transition.settleHeld();
+        assertEquals(List.of("covered", "revealed"), events);
         transition.settleHeld();
         assertEquals(List.of("covered", "revealed"), events);
         assertFalse(transition.active());
+    }
+
+    @Test public void aCanceledHeldTakeoverWithoutACoverIsNeverRevealed() {
+        Activity host = Robolectric.buildActivity(Activity.class).setup().get();
+        MapTransition transition = new MapTransition(host, new View(host));
+        List<String> events = new ArrayList<>();
+        transition.holdThenCrossfade(() -> events.add("covered"), () -> events.add("revealed"));
+        transition.cancel();
+        transition.settleHeld();
+        assertEquals(List.of("covered"), events);
     }
 }
