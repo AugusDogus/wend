@@ -63,20 +63,23 @@ final class EmbeddedMaps extends MapPanel {
 
         final Takeover callbacks;
         final Above above;
+        /** The size Maps' display was given to lay out at before it grows: the screen's, unless that failed. */
+        final Point display;
 
-        ScreenTakeover(Takeover callbacks, Above above) {
+        ScreenTakeover(Takeover callbacks, Above above, Point display) {
             this.callbacks = callbacks;
             this.above = above;
+            this.display = display;
         }
     }
 
     private ScreenTakeover takeover;
     private MapFrame takeoverFrame;
     /**
-     * How long Maps, behind a frozen frame, may take to lay out at the full screen size before it
-     * moves as it is. Moved earlier, Maps lays out a second time on the main display, which holds
-     * the frozen frame longer, not shorter: real Maps in guidance took 0.6 to 0.9 s here on the
-     * loaded emulator, and a 700 ms cap made those swaps slower.
+     * How long Maps, held still in its floating window, may take to lay out at the full screen size
+     * before it grows and moves as it is. Moved earlier, Maps lays out a second time on the main
+     * display: real Maps in guidance took 0.6 to 0.9 s here on the loaded emulator, and a 700 ms
+     * cap made those swaps slower.
      */
     private static final int TAKEOVER_LAYOUT_MS = 900;
     /**
@@ -86,8 +89,8 @@ final class EmbeddedMaps extends MapPanel {
     private static final int PANEL_LAYOUT_MS = 500;
     private final Runnable takeoverDeadline = () -> {
         Log.w("WendMap", "Maps did not lay out at the full screen size within " + TAKEOVER_LAYOUT_MS
-                + " ms; moving it as it is");
-        moveTakeover();
+                + " ms; growing it as it is");
+        if (takeover != null) growToFullscreen(takeover);
     };
     private final Runnable panelFrameDeadline = () -> {
         Log.w("WendMap", "Maps did not lay out at its panel size within " + PANEL_LAYOUT_MS
@@ -364,55 +367,72 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     @Override void openFullscreenFromFloating(Takeover next) {
-        if (activityView == null || takeover != null) return;
-        // Grows live, never past pixel scale one, to its full-height panel display centered on
-        // screen. A held frame then covers the task move, and crossfades to fullscreen Maps.
-        floating.focus(() -> {
-            if (takeover != null) return;
-            ScreenTakeover started = new ScreenTakeover(next, overVideoApp != null
-                    ? ScreenTakeover.Above.VIDEO_APP : ScreenTakeover.Above.LIVE_VIDEO);
-            takeover = started;
-            // Only Maps stays in the frozen frame, black around it: a frozen video beside it reads
-            // as a stall. Read from Maps' own layers, as the screen can still be a frame short of
-            // the growth's end and showed the video at Maps' edges.
-            RectF centered = SurfacePlacement.centered(getWidth(), getHeight(), screen.x, screen.y).visible();
-            Rect panel = new Rect(0, 0, getWidth(), getHeight());
-            MapTransition.Still maps = new MapTransition.Still(() -> new ActivityViewSurface(activityView,
-                    ActivityViewSurface.PreviewInput.FORWARDED).still(panel), new Rect(Math.round(centered.left),
-                    Math.round(centered.top), Math.round(centered.right), Math.round(centered.bottom)));
-            transition.holdThenCrossfade(maps, () -> {
-                if (takeover != started) return;
-                // Under the frozen frame: the video steps aside, and Maps lays out at the full
-                // screen size on its own display first, as the dock expansion does. Moved at its
-                // panel size, Android 10 left Wend resumed and visible behind fullscreen
-                // Maps, so Home later had nothing to animate.
-                next.covered();
-                if (started.above == ScreenTakeover.Above.VIDEO_APP) growAboveVideoApp();
-                else {
-                    // Maps leaves its window for its panel, where Wend's layout sizes it.
-                    floating.cancel();
-                    activityView.setLayoutParams(new LayoutParams(screen.x, screen.y));
-                }
-                takeoverFrame = new MapFrame(screen.x, () -> post(this::moveTakeover));
-                postDelayed(takeoverDeadline, TAKEOVER_LAYOUT_MS);
-            }, next::revealed);
-        });
+        if (activityView == null || takeover != null || !floating.floating()) return;
+        // Feedback: Maps grew to its panel's size, centered, and only then, after a frozen frame,
+        // to full screen. Now the floating window holds still while Maps lays out at the full
+        // screen size behind it, as the dock expansion does first, then grows straight to full
+        // screen with Maps already in its fullscreen layout. Moved at its panel size, Android 10
+        // left Wend resumed and visible behind fullscreen Maps, so Home had nothing to animate.
+        RectF shown = floatingCrop();
+        try {
+            floating.freeze(new ActivityViewSurface(activityView, ActivityViewSurface.PreviewInput.FORWARDED)
+                    .still(new Rect(Math.round(shown.left), Math.round(shown.top),
+                            Math.round(shown.right), Math.round(shown.bottom))));
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("WendMap", "Could not hold floating Maps still while it lays out at full screen size;"
+                    + " its relayout shows in the floating window until it grows", error);
+        }
+        ScreenTakeover started = new ScreenTakeover(next, overVideoApp != null
+                ? ScreenTakeover.Above.VIDEO_APP : ScreenTakeover.Above.LIVE_VIDEO, layOutFullscreen());
+        takeover = started;
+        takeoverFrame = new MapFrame(started.display.x, () -> post(() -> growToFullscreen(started)));
+        postDelayed(takeoverDeadline, TAKEOVER_LAYOUT_MS);
+    }
+
+    /** Maps has laid out at the full screen size, or its deadline passed: it grows straight there. */
+    private void growToFullscreen(ScreenTakeover started) {
+        if (takeover != started) return;
+        stopWaitingForTakeover();
+        Point display = started.display;
+        floating.focus(FloatingMapCrop.of(display.x, display.y, getResources().getDisplayMetrics().density),
+                display, () -> {
+                    if (takeover != started) return;
+                    // A frozen frame of exactly what Maps shows now covers the task move. Read from
+                    // Maps' own layers, as the screen can still be a frame short of the growth's end.
+                    Rect whole = new Rect(0, 0, display.x, display.y);
+                    RectF at = SurfacePlacement.centered(display.x, display.y, screen.x, screen.y).visible();
+                    MapTransition.Still maps = new MapTransition.Still(() -> new ActivityViewSurface(activityView,
+                            ActivityViewSurface.PreviewInput.FORWARDED).still(whole), new Rect(Math.round(at.left),
+                            Math.round(at.top), Math.round(at.right), Math.round(at.bottom)));
+                    transition.holdThenCrossfade(maps, () -> {
+                        if (takeover != started) return;
+                        // Under the frozen frame the video steps aside, then Maps moves as laid out.
+                        started.callbacks.covered();
+                        moveTakeover();
+                    }, started.callbacks::revealed);
+                });
     }
 
     /**
-     * Above the video app, Maps stays in its floating window, under the frozen frame, until it
-     * moves. Returned to its panel, it would show nowhere while Wend is stopped, and a display
-     * shown nowhere is missing from SurfaceFlinger's layers, where Maps is seen laying out. Wend
-     * may be stopped and lay out nothing, or still have its window (the video app moved off
-     * Wend's display left it resumed), so the display and its view both take the full size.
+     * Maps stays in its floating window, behind its still, until it moves: returned to its panel
+     * above the video app, it would show nowhere while Wend is stopped, and a display shown
+     * nowhere is missing from SurfaceFlinger's layers, where Maps is seen laying out. Wend may be
+     * stopped and lay out nothing, or still have its window (above the live video, or when the
+     * video app moved off Wend's display left it resumed), so the display and its view both
+     * take the full size.
      */
-    private void growAboveVideoApp() {
+    private Point layOutFullscreen() {
+        Point panel = new Point(getWidth(), getHeight());
         activityView.setLayoutParams(new LayoutParams(screen.x, screen.y));
-        if (displayLifecycle == null) return;
-        try { displayLifecycle.resize(screen.x, screen.y); }
-        catch (ReflectiveOperationException | RuntimeException error) {
+        if (displayLifecycle == null) return panel;
+        try {
+            displayLifecycle.resize(screen.x, screen.y);
+            return screen;
+        } catch (ReflectiveOperationException | RuntimeException error) {
             Log.w("WendMap", "Could not grow Maps' display to " + screen.x + "x" + screen.y
-                    + "; Maps moves at its panel size once its deadline passes and lays out fullscreen after", error);
+                    + "; Maps grows and moves at its panel size once its deadline passes and lays out"
+                    + " fullscreen after", error);
+            return panel;
         }
     }
 
@@ -432,7 +452,7 @@ final class EmbeddedMaps extends MapPanel {
             showError("Maps could not open fullscreen. Tap Open Maps; existing tasks were left intact.");
             moving.callbacks.failed();
         } finally {
-            // Maps' display, kept in the floating window above the video app, now has no task.
+            // Maps' display, kept in the floating window until it moved, now has no task.
             floating.cancel();
             post(this::restorePanelSize);
         }
