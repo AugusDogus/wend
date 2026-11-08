@@ -78,11 +78,14 @@ final class MapsTask {
         }
         // Android 10 foregrounds the Home stack as a side effect of this API. Our
         // activity can be in a standard stack after an update or direct app launch.
-        if (displayId != 0) activityManager.moveTaskToFront(host.getTaskId(), 0);
+        if (displayId != 0) showHost();
         remember(task.id);
         Log.i("RoadHome", "Moved Maps task " + task.id + " from display "
                 + task.displayId + " to " + displayId);
     }
+
+    /** Brings Road Home's own task forward on the main display. */
+    void showHost() { activityManager.moveTaskToFront(host.getTaskId(), 0); }
 
     void bounded(Task task, android.graphics.Rect bounds) throws ReflectiveOperationException {
         ActivityOptions options = ActivityOptions.makeBasic();

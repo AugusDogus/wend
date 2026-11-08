@@ -33,6 +33,9 @@ final class EmbeddedMaps extends MapPanel {
     /** Live Maps floating above the fullscreen video. Its display keeps the panel's size. */
     private final LiveSurfaceWindow floating;
     private final Point screen = new Point();
+    /** Maps leaves display 0 beneath the fullscreen video once Road Home has drawn behind it. */
+    private boolean returningBeneath;
+    private final Runnable moveBeneath = this::moveBeneathVideo;
     /** Floats Maps once it has returned beneath the fullscreen video and laid out in its panel. */
     private Runnable pendingFloat;
     private boolean panelFrameReady;
@@ -137,6 +140,14 @@ final class EmbeddedMaps extends MapPanel {
 
     void resume() {
         hostActive = true;
+        if (returningBeneath) {
+            // Road Home now covers fullscreen Maps under the video. Move Maps after Road Home's
+            // next frame, once Maps has been hidden behind it and the panel is laid out.
+            getViewTreeObserver().registerFrameCommitCallback(() -> post(moveBeneath));
+            postDelayed(moveBeneath, 300);
+            invalidate();
+            return;
+        }
         if (motion != null && motion.expanding()) cancelPendingTransition();
         launch();
         floatWhenReady();
@@ -195,22 +206,42 @@ final class EmbeddedMaps extends MapPanel {
         cancelPendingTransition();
         cancelPendingFloat();
         if (activityView == null || state != State.READY) return;
+        pendingFloat = ready;
+        returningBeneath = true;
+        if (hostActive) { moveBeneathVideo(); return; }
+        // Road Home first, as on Home, all hidden by the video. Maps then leaves display 0 from
+        // behind it, and Android recreates its windows at the panel's size. Moved while still
+        // visible, Maps had to resize them in place, and the fixture's map SurfaceView sometimes
+        // kept its fullscreen-sized buffer in the panel.
+        try { tasks.showHost(); }
+        catch (RuntimeException error) {
+            Log.w("RoadHomeMap", "Could not bring Road Home forward first; moving Maps beneath the video now", error);
+            moveBeneathVideo();
+        }
+    }
+
+    private void moveBeneathVideo() {
+        if (!returningBeneath) return;
+        returningBeneath = false;
+        removeCallbacks(moveBeneath);
         int panelDisplay = activityView.getVirtualDisplayId();
         try {
             MapsTask.Task existing = tasks.find();
             if (existing == null) {
                 Log.w("RoadHomeMap", "No Maps task to return beneath the video; the panel offers to reopen Maps");
+                cancelPendingFloat();
                 return;
             }
-            // No motion: the video covers the whole screen. Road Home comes forward behind it.
+            // No motion: the video covers the whole screen.
             if (existing.displayId != panelDisplay) tasks.move(existing, panelDisplay);
         } catch (ReflectiveOperationException | RuntimeException error) {
             Log.e("RoadHomeMap", "Could not return Maps beneath the fullscreen video to display " + panelDisplay, error);
             showError("Maps could not be restored. Open Maps from Recents to recover your route.");
+            cancelPendingFloat();
             return;
         }
-        if (ready == null) return;
-        pendingFloat = ready;
+        launch();
+        if (pendingFloat == null) return;
         panelFrame = new MapFrame(getWidth(), () -> post(this::panelFrameReady));
         postDelayed(panelFrameDeadline, 900);
     }
@@ -288,6 +319,8 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     private void cancelPendingFloat() {
+        returningBeneath = false;
+        removeCallbacks(moveBeneath);
         pendingFloat = null;
         panelFrameReady = false;
         stopWaitingForPanelFrame();
