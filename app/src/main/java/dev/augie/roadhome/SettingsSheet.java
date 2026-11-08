@@ -75,8 +75,9 @@ final class SettingsSheet implements AppCatalog.Listener {
         this.dockCapacity = dockCapacity;
         this.host = host;
         pins = settings.dockPins(dockCapacity);
-        picker = new AppBrowser(activity, catalog, activity.getString(R.string.settings_search_hint),
-                R.string.every_app_pinned, R.string.matching_app_pinned, R.string.matching_apps_pinned, this::pin);
+        picker = new AppBrowser(activity, catalog, AppCatalog::canPin,
+                activity.getString(R.string.settings_search_hint), R.string.every_app_pinned,
+                R.string.matching_app_pinned, R.string.matching_apps_pinned, this::pin);
 
         SettingsRows rows = new SettingsRows(activity);
         mainHeader = rows.header(Ui.Icon.CLOSE, R.string.settings_close, this::close,
@@ -245,7 +246,7 @@ final class SettingsSheet implements AppCatalog.Listener {
         if (picking || pins.isFull()) return;
         catalog.retryIfFailed();
         picker.reset();
-        picker.setHidden(app -> !AppCatalog.canPin(app) || pins.contains(app.key.packageName));
+        picker.setHidden(app -> pins.contains(app.key.packageName));
         picking = true;
         switchPage(mainHeader, mainPage, pickerHeader, pickerPage, 1);
     }

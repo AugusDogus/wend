@@ -19,8 +19,8 @@ final class AppDrawer {
     AppDrawer(Activity activity, AppCatalog catalog, FrostedBackdrop backdrop) {
         long started = SystemClock.uptimeMillis();
         this.catalog = catalog;
-        // Nothing is hidden in the drawer, so its hidden-match messages never show.
-        browser = new AppBrowser(activity, catalog, "Search apps", R.string.no_apps,
+        // The drawer offers every app and hides none, so its hidden-match messages never show.
+        browser = new AppBrowser(activity, catalog, app -> true, "Search apps", R.string.no_apps,
                 R.string.no_matching_apps, R.string.no_matching_apps, app -> {
             dismiss();
             AppLaunch.open(activity, app);

@@ -23,9 +23,9 @@ import java.util.function.Predicate;
 
 /**
  * A searchable grid of the catalog's apps, shared by the app drawer and the dock's app
- * picker. Tiles are built once and reused across catalog changes; search and the hidden
- * filter only toggle their visibility. Place {@link #search()} in a sheet header and
- * {@link #body()} below it.
+ * picker. Tiles are built once for the apps the browser offers and reused across catalog
+ * changes; search and the hidden filter only toggle their visibility. Place {@link #search()}
+ * in a sheet header and {@link #body()} below it.
  */
 final class AppBrowser implements AppCatalog.Listener {
     interface Chooser { void onChosen(LauncherApp app); }
@@ -35,6 +35,8 @@ final class AppBrowser implements AppCatalog.Listener {
 
     private final Activity activity;
     private final AppCatalog catalog;
+    /** The apps this browser can show at all, such as only pinnable apps in the dock's picker. */
+    private final Predicate<LauncherApp> offered;
     private final Chooser chooser;
     private final int allHiddenMessage;
     private final int hiddenMatchOne;
@@ -45,18 +47,20 @@ final class AppBrowser implements AppCatalog.Listener {
     private final AppGrid grid;
     private final FrameLayout body;
     private final Map<LauncherApp.Key, TextView> tiles = new HashMap<>();
-    /** Apps the browser leaves out, such as apps already in the dock. */
+    /** Offered apps the browser hides for now, such as apps already in the dock. */
     private Predicate<LauncherApp> hidden = app -> false;
 
     /**
-     * {@code allHiddenMessage} explains an empty grid when every app is hidden. When only
-     * hidden apps match the query, {@code hiddenMatchOne} is formatted with that app's label
-     * and {@code hiddenMatchMany} with the query.
+     * {@code allHiddenMessage} explains an empty grid when every offered app is hidden. When
+     * only hidden apps match the query, {@code hiddenMatchOne} is formatted with that app's label
+     * and {@code hiddenMatchMany} with the query. Apps that are not {@code offered} never show
+     * and never count as matches.
      */
-    AppBrowser(Activity activity, AppCatalog catalog, String searchHint, int allHiddenMessage,
-            int hiddenMatchOne, int hiddenMatchMany, Chooser chooser) {
+    AppBrowser(Activity activity, AppCatalog catalog, Predicate<LauncherApp> offered, String searchHint,
+            int allHiddenMessage, int hiddenMatchOne, int hiddenMatchMany, Chooser chooser) {
         this.activity = activity;
         this.catalog = catalog;
+        this.offered = offered;
         this.chooser = chooser;
         this.allHiddenMessage = allHiddenMessage;
         this.hiddenMatchOne = hiddenMatchOne;
@@ -111,6 +115,7 @@ final class AppBrowser implements AppCatalog.Listener {
         tiles.clear();
         grid.removeAllViews();
         for (LauncherApp app : catalog.apps()) {
+            if (!offered.test(app)) continue;
             TextView tile = previous.remove(app.key);
             if (tile == null) tile = tile();
             if (tile.getTag() != app) bindTile(tile, app);
@@ -142,7 +147,7 @@ final class AppBrowser implements AppCatalog.Listener {
             case LOADING: status.setText(R.string.loading_apps); break;
             case FAILED: status.setText(R.string.apps_unavailable); break;
             case READY:
-                if (catalog.apps().isEmpty()) {
+                if (tiles.isEmpty()) {
                     status.setText(R.string.no_apps);
                 } else if (visibleTiles() > 0) {
                     status.setVisibility(View.GONE);
