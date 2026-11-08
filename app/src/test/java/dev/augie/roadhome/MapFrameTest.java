@@ -5,10 +5,14 @@ import android.util.proto.ProtoOutputStream;
 import java.io.IOException;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -21,6 +25,20 @@ public class MapFrameTest {
     private static final String TEST_APP = "test.maps";
     private static final int PANEL = 833;
     private static final int SCREEN = 1280;
+
+    /**
+     * Each query is a SurfaceFlinger dump, which can take hundreds of milliseconds while Android
+     * applies a display change. Buffers at the new size are already on screen, so one query that
+     * shows them is enough.
+     */
+    @Test public void reportsMapsReadyOnTheFirstQueryThatShowsItsNewSize() throws Exception {
+        AtomicInteger queries = new AtomicInteger();
+        CountDownLatch ready = new CountDownLatch(1);
+        try (MapFrame frame = new MapFrame(SCREEN, width -> queries.incrementAndGet() >= 2, ready::countDown)) {
+            assertTrue("Maps was never reported ready", ready.await(5, TimeUnit.SECONDS));
+        }
+        assertEquals(2, queries.get());
+    }
 
     @Test public void waitsForBothWindowAndTileBuffersToResize() throws IOException {
         assertFalse(ready(833, 833, 0, 0));

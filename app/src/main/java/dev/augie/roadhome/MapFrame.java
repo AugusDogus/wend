@@ -11,25 +11,48 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Waits for Maps' window and tile buffers at the new width, never reading pixels. */
+/**
+ * Waits for Maps' window and tile buffers at the new width, never reading pixels. Callers own the
+ * deadline and close it; it stops querying on its own only as a backstop.
+ */
 final class MapFrame implements AutoCloseable {
     interface Listener { void onReady(); }
+    /** One look at the compositor: whether Maps shows its layout at {@code width}. */
+    interface Query { boolean shows(int width) throws IOException, ReflectiveOperationException; }
+    private static final int QUERY_INTERVAL_MS = 40;
+    private static final int BACKSTOP_MS = 3000;
     private volatile boolean closed;
     private volatile ParcelFileDescriptor reading;
 
     MapFrame(int width, Listener listener) {
+        start(width, this::layersShow, listener);
+    }
+
+    /** With another source of layer queries, for tests. */
+    MapFrame(int width, Query query, Listener listener) {
+        start(width, query, listener);
+    }
+
+    private void start(int width, Query query, Listener listener) {
         Thread worker = new Thread(() -> {
-            long deadline = SystemClock.uptimeMillis() + 900;
-            int settled = 0;
+            long started = SystemClock.uptimeMillis();
+            int queries = 0;
             try {
-                while (!closed && SystemClock.uptimeMillis() < deadline) {
-                    settled = ready(width) ? settled + 1 : 0;
-                    if (settled >= 3) {
-                        if (!closed) listener.onReady();
+                while (!closed && SystemClock.uptimeMillis() - started < BACKSTOP_MS) {
+                    queries++;
+                    // Buffers at the new size are already on screen: one query showing them is
+                    // enough. A dump can take hundreds of milliseconds during a display change.
+                    if (query.shows(width)) {
+                        if (closed) return;
+                        Log.i("RoadHome", "Maps showed its " + width + " px wide layout after "
+                                + (SystemClock.uptimeMillis() - started) + " ms (" + queries + " layer queries)");
+                        listener.onReady();
                         return;
                     }
-                    Thread.sleep(40);
+                    Thread.sleep(QUERY_INTERVAL_MS);
                 }
+                if (!closed) Log.w("RoadHome", "Stopped waiting for Maps' " + width + " px wide layout after "
+                        + queries + " layer queries; its transition's own deadline shows Maps as it is");
             } catch (IOException | ReflectiveOperationException | RuntimeException error) {
                 if (!closed) Log.w("RoadHome", "Maps frame readiness unavailable; using bounded transition deadline", error);
             } catch (InterruptedException error) {
@@ -39,7 +62,7 @@ final class MapFrame implements AutoCloseable {
         worker.start();
     }
 
-    private boolean ready(int width) throws IOException, ReflectiveOperationException {
+    private boolean layersShow(int width) throws IOException, ReflectiveOperationException {
         Object service = Class.forName("android.os.ServiceManager").getMethod("getService", String.class)
                 .invoke(null, "SurfaceFlinger");
         if (!(service instanceof IBinder)) throw new IOException("SurfaceFlinger unavailable");
