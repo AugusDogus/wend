@@ -75,7 +75,8 @@ it off; `floatingVideoCorner` remembers the last corner.
   still work. A second tap on the dock's Maps button, landing where the video has
   just arrived, therefore keeps Maps fullscreen instead of swapping (device report
   BUG-4).
-- **Pause** keeps the last frame floating. Home then shows the thumbnail.
+- **Pause** keeps the last frame floating. Home then shows the card's still (see
+  [the video card](#the-video-card)).
 - **Removed cleanly** (160 ms fade, video display powered off as before) when
   the session ends or clears its title; when playback stops, fails, or loses
   its playback state (`STOPPED`, `ERROR`, `NONE`, not `PAUSED`), because YouTube
@@ -83,7 +84,7 @@ it off; `floatingVideoCorner` remembers the last corner.
   RH-7); or when another app's task is created or brought to the front, also
   while a tapped floating video is still growing to fullscreen. Maps, Road Home,
   and the video's own display are allowed. Home afterwards works as usual: Maps
-  returns to its panel, and the card shows the stopped video's thumbnail.
+  returns to its panel, and the card shows the stopped video's still.
 - **Not floated** when another app paused Road Home while Maps was preparing to
   go fullscreen: the video then stays in its card rather than floating above
   that app.
@@ -323,6 +324,75 @@ names the three moments of the Maps direction (covered, revealed, failed), and
 `MapTransition.holdThenCrossfade` holds its frame until the task has moved.
 `MainActivity` routes both directions and Home.
 
+## The video card
+
+The card under the media title shows the selected video: live while it plays
+there, and otherwise a cover. Before November 8 a tap on the live card reached
+YouTube's own tiny player controls, and a paused, stopped, or returning video
+left a black box (device reports RH-4, RH-5, BUG-3, and design feedback).
+
+- **Tap.** The whole card is one target that opens the video exactly as its
+  Open action does: a playing video grows to fullscreen with Maps floating, any
+  other opens the video app on the main display with Maps floating above it.
+  None of the card's touches reach YouTube any more. Fullscreen input is
+  unchanged: the whole display receives touches once the video covers the
+  screen.
+- **Cover.** Whenever the live video is not shown in the card, the card shows,
+  in this order: a recent still of the live video, the session's artwork, or a
+  placeholder (Road Home's panel color, the video app's 24 dp icon at the top
+  left, and a 48 dp play control). A paused or stopped video adds the 48 dp play
+  control over the still or artwork; a playing video on its way back shows none.
+  YouTube 21.43 supplies no artwork, so the still is what the driver sees.
+- **When the cover shows.** As playback pauses or stops in the card, while Road
+  Home is stopped and as it re-acquires the video on Home (BUG-3), while the
+  video floats or plays fullscreen, and while it travels back into the card. It
+  is removed in the frame the live video shows again: when the surface is
+  revealed after its geometry check, or at once when a floating or fullscreen
+  video lands back in the card live. The live surface is hidden only after the
+  cover has been drawn over it, so the card never shows black in between.
+
+### How it works
+
+`ActivityViewSurface.PreviewInput` says where touches on a display's preview
+go. Maps' panel is unscaled and keeps `FORWARDED`. The video card is `KEPT`: its
+input portal is empty while it is a preview. Forwarding never worked there:
+Android 10 scales a portal's touch region and then offsets it by the already
+scaled frame, so with the card at `[109,93][429,273]` the portal took
+`[168,93][488,273]` (`card/before/02-dumpsys-input-live.txt`). The card's left
+59 px took nothing, and a 41 px strip of the Maps panel beside the card went to
+YouTube, whose window only covers the card. `EmbeddedVideo`'s tap target is a
+visible view above the player, so ActivityView's tap-exclude region (the area of
+Road Home's window that lets touches through to the display, computed by
+subtracting the views drawn above it) no longer contains the card, and Road Home
+receives those touches itself.
+
+`VideoStills` takes the stills. While the card plays live and nothing of Road
+Home's covers it, it captures the card's own screen area once a second at the
+card's size, with the same Android 10 `SurfaceControl.screenshot` overload as
+the drawer and the map transitions, which leaves out secure layers. Stills stay
+in memory and are never stored or sent. A capture is kept only after the card
+has kept playing live for 500 ms more without interruption. That rule comes from
+the recording `card/before/pause-fullscreen.mp4` (frames in
+`pause-frames-8.3s.png`): YouTube's last moving frame was at 8.597 s, its pause
+overlay (dimmed video, play control, time) appeared at 8.758 s and stayed, and
+the session reported the pause 65 ms after the media key. A capture at the
+moment playback stops would race that overlay under load; a confirmed capture
+never contains it. The kept still is therefore 0.5 to 2 s older than the pause.
+
+Road Home's own drawing over the card is excluded: `MainActivity` marks the card
+covered as a sheet opens and as Maps starts going fullscreen (its live expansion
+sweeps over the card before Road Home stops), and shown again when its window
+regains focus or Road Home restarts. A pressed card, a card with its cover up,
+and any presentation elsewhere also take no captures.
+
+`VideoCardCover` draws the cover and owns the stills. Memory is bounded to at
+most three card-sized bitmaps (about 230 KB each at 320 x 180): the confirmed
+still, the one last drawn, and one capture waiting for its check. The screenshot's
+graphics buffer is copied once and freed at once. A replaced still that was
+never drawn is recycled at once; one that was drawn is left to the collector,
+because the renderer may still hold it. A new title or an ended session drops
+the still, so a still of another video never stands for this one.
+
 ## Validation
 
 ### Floating video and the PiP fix
@@ -437,6 +507,12 @@ On the emulator (`build/evidence/floating-maps/` and `build/evidence/matrix/`):
   uninstalled and reinstalled.
 - Not verified in the first pass: real Google Maps or YouTube, live guidance,
   and the PX6. The PX6 is still unverified.
+- The video card's still is 0.5 to 2 s older than the moment playback left the
+  card, so a cut in the video during that time shows as a step back. Stills are
+  taken only in the card: after a long floating or fullscreen presentation, the
+  still is the frame from before the video left the card, which a pause while
+  floating then shows on Home. Capturing the floating window as well would keep
+  it current; not done.
 
 ### Fixes of November 8 on the combined tree
 
@@ -533,6 +609,55 @@ On `road-home-api29` (fixtures), emulator build: the same direct open and tap,
 dock Maps, both swaps, and Home (`fixture-cf69d90/`, `fixture-bb43c2a/`); map
 fixture task 101, instance `900e3e41898`, and its route marker were kept, and
 the video fixture task 107 survived three installs.
+
+### The video card, November 8 (third pass)
+
+Release and emulator unit tests (205 each, no failures), release and emulator
+assembly, and release lint (no errors, 52 warnings) pass. New tests, each seen
+failing first: a tap anywhere on the card opens the video, paused or playing
+(`MediaPanelTest`); the scaled video preview forwards no touches while Maps'
+panel does, and fullscreen input is unchanged (`ActivityViewSurfaceTest`); a
+paused card without artwork is a play control on a subtle surface, not black,
+at the panel and in `VideoCardCoverTest`; a still wins over artwork, and stills
+are recycled when replaced unless they were drawn; a frame is kept only after a
+later check finds the card still live, a frame taken as playback left is dropped
+and freed, and nothing is captured while the card is not live or without the
+platform signature (`VideoStillsTest`); the surface knows when it shows in its
+preview again. Releasing a card whose player display was never created no longer
+throws (found by these tests).
+
+On `road-home-google-api29` with real Maps in guidance and YouTube, release
+build of this code (evidence under this worktree's git-ignored
+`build/evidence/card/`):
+
+- Before (`before/`): the paused card was black with a small glyph
+  (`01-home-paused-card.png`), a tap at the card's left edge did nothing and one
+  in its middle showed YouTube's inline controls (`taps-before.png`), and the
+  shifted portal region above.
+- RH-5 (`rh5/`): with the video live in the card, the video portal's touch
+  region is empty and Road Home's window owns the card area
+  (`03-dumpsys-input-live.txt`); a tap at the card's top left corner (130, 110)
+  opened the video fullscreen with Maps floating, as the Open action does
+  (`04-card-tap.mp4`, `04-after-card-tap.png`).
+- First acquisition after Home: the placeholder with the YouTube icon, then live
+  (`after/01-first-acquisition-sheet.png`).
+- Pause in the card (`media dispatch pause`): live frames, then the cover with
+  the still and its play control, with no black frame between them
+  (`after/02-pause-frames-55-72.png`, `02-paused-card.png`).
+- Home with the video floating over Maps: the video travels back over the still,
+  Maps' existing settle cover then holds a frame showing the still, and the card
+  is live afterwards (`after/03-landing-card.png`, `03-home-from-floating.mp4`).
+- Home with "Video over fullscreen Maps" off (BUG-3): YouTube paused while its
+  display was off, and the card showed the still with the play control from
+  the first frame after Home until YouTube played again, never black
+  (`after/05-home-nofloat-card.png`). At load average 35, YouTube took about
+  11 s to resume on its own; Road Home embeds only once it plays.
+
+Not verified on a device: stop in the card, Home from the tapped fullscreen
+video, the fixture emulator, and the closing floating-window matrix. The device
+tool's scroll failed twice with `injectInputEvent returned false` (also with
+`--debug`), so device work stopped there, with "Video over fullscreen Maps"
+still off on that emulator (`after/07-device-state-at-stop.txt`).
 
 ### Known issue: Back is dropped in fullscreen Maps on the emulators
 
