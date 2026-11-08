@@ -30,6 +30,7 @@ final class EmbeddedMaps extends MapPanel {
     private final MapTransition transition;
     private boolean hostActive;
     private boolean launching;
+    private boolean pictureInPictureChecked;
     private final LinearLayout status;
     private final TextView message;
     private View topCorner;
@@ -132,6 +133,7 @@ final class EmbeddedMaps extends MapPanel {
 
     private void openOnDisplay(int displayId) {
         if (launching) return;
+        preventSystemPictureInPicture();
         try {
             MapsTask.Task existing = tasks.find();
             if (existing != null) {
@@ -165,6 +167,23 @@ final class EmbeddedMaps extends MapPanel {
         } catch (ReflectiveOperationException | RuntimeException error) {
             Log.e("RoadHome", "Could not reuse Maps task on display " + displayId, error);
             showError("Maps could not be restored. Existing tasks were left intact. Open Maps from Recents to recover your route.");
+        }
+    }
+
+    // Home from fullscreen Maps calls its onUserLeaveHint, and navigation apps then enter
+    // PiP before this panel can reclaim the task, flashing the small system window.
+    private void preventSystemPictureInPicture() {
+        if (pictureInPictureChecked) return;
+        try {
+            // An uninstalled Maps is checked again on the next launch request.
+            pictureInPictureChecked = MapsPictureInPicture.disable(getContext(), PACKAGE)
+                    != MapsPictureInPicture.Outcome.NOT_INSTALLED;
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            pictureInPictureChecked = true;
+            Log.e("RoadHome", "Could not turn off system picture-in-picture for " + PACKAGE
+                    + ". Maps and its route are unaffected, but Home can briefly show the small PiP"
+                    + " window before Maps returns to the panel. Turn it off in Settings > Apps >"
+                    + " Special app access > Picture-in-picture.", error);
         }
     }
 
