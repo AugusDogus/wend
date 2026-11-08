@@ -131,7 +131,8 @@ public final class MainActivity extends Activity {
         maps.openFullscreenFromFloating(new MapPanel.Takeover() {
             @Override public void covered() { media.videoBeneathMaps(videoCorner(), floatingVideo); }
             @Override public void revealed() { media.emergeVideo(); }
-            @Override public void failed() { media.homeVideo(); }
+            // Above the video app Road Home is stopped, and the video stays where it is.
+            @Override public void failed() { if (resumed) media.homeVideo(); }
         });
     }
 
@@ -150,6 +151,15 @@ public final class MainActivity extends Activity {
     // Remove native Maps overlays explicitly instead of relying on onStop.
     void externalAppOpening() { maps.suspend(); media.suspendVideo(); }
     void externalAppFailed() { maps.resume(); media.resumeVideo(); }
+
+    /**
+     * Road Home opens the video app itself on the main display (a paused or unavailable preview,
+     * or no live video): live Maps floats above it when allowed, as above the live video.
+     */
+    void videoAppOpening() {
+        externalAppOpening();
+        if (settings.floatingMaps()) maps.floatAboveVideoApp(settings.floatingMapsCorner(), floatingMaps);
+    }
     void videoOpened() { media.videoOpened(); }
 
     private void arrangePanels() {

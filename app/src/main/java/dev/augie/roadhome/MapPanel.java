@@ -50,10 +50,20 @@ abstract class MapPanel extends FrameLayout {
     boolean floatAboveVideo(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener,
             LiveSurfaceWindow.Entry entry) { return false; }
 
+    /**
+     * Lifts live Maps out of its panel into a small window above the video app, which Road Home is
+     * opening on the main display itself. It stays while Road Home is stopped, leaves when another
+     * app comes to the front, and returns to its panel when Road Home shows again.
+     * @return false, leaving Maps where it is, when this host cannot float it now
+     */
+    boolean floatAboveVideoApp(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener) {
+        return false;
+    }
+
     /** Maps lifted with {@link LiveSurfaceWindow.Entry#HELD_AT_CARD} now moves to its corner. */
     void leavePanel() { }
 
-    /** The fullscreen video below floating Maps has gone: Maps returns to its panel. */
+    /** The video below floating Maps has gone: Maps returns to its panel once Road Home shows it. */
     void returnFromFloating() { }
 
     /**

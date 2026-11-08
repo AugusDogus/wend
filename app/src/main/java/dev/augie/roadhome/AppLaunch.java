@@ -48,9 +48,13 @@ final class AppLaunch {
             return;
         }
         MainActivity home = activity instanceof MainActivity ? (MainActivity) activity : null;
-        if (home != null) home.externalAppOpening();
+        boolean video = EmbeddedVideo.PACKAGE.equals(packageName);
+        if (home != null) {
+            if (video) home.videoAppOpening();
+            else home.externalAppOpening();
+        }
         if (openExternal(activity, packageName)) {
-            if (home != null && EmbeddedVideo.PACKAGE.equals(packageName)) home.videoOpened();
+            if (home != null && video) home.videoOpened();
         } else if (home != null) home.externalAppFailed();
     }
 

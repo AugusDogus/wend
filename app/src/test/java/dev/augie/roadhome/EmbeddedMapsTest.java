@@ -3,6 +3,8 @@ package dev.augie.roadhome;
 import android.app.Activity;
 import android.app.ActivityView;
 import android.app.PendingIntent;
+import android.app.TaskStackListener;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ResolveInfo;
@@ -11,6 +13,7 @@ import android.graphics.Rect;
 import android.hardware.display.DisplayManager;
 import android.os.Looper;
 import android.view.SurfaceControl;
+import android.view.SurfaceHolder;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -163,6 +166,67 @@ public class EmbeddedMapsTest {
         maps.release();
     }
 
+    @Test public void mapsFloatsAboveTheVideoAppRoadHomeOpensAndStaysWhileRoadHomeStops() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        // The dock or the card opens the video app on the main display: Road Home is leaving.
+        maps.suspend();
+        assertTrue(maps.floatAboveVideoApp(FloatingPlacement.Corner.BOTTOM_RIGHT, listener()));
+        // Road Home stops behind the video app.
+        maps.suspend();
+        assertTrue("Maps keeps floating above the video app", floating(maps).active());
+        maps.release();
+    }
+
+    @Test public void mapsFloatingAboveTheLiveVideoStillLeavesWhenAnotherAppStopsRoadHome() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        assertTrue(maps.floatAboveVideo(FloatingPlacement.Corner.BOTTOM_RIGHT, listener(),
+                LiveSurfaceWindow.Entry.HELD_AT_CARD));
+        maps.suspend();
+        assertFalse(floating(maps).active());
+        maps.release();
+    }
+
+    @Test public void anotherAppComingForwardEndsMapsFloatingAboveTheVideoApp() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        maps.suspend();
+        assertTrue(maps.floatAboveVideoApp(FloatingPlacement.Corner.BOTTOM_RIGHT, listener()));
+        TaskStackListener appSwitches = appSwitches(maps);
+        appSwitches.onTaskCreated(40, new ComponentName(EmbeddedVideo.PACKAGE, "VideoActivity"));
+        appSwitches.onTaskCreated(41, new ComponentName(EmbeddedMaps.PACKAGE, "MapsActivity"));
+        shadowOf(Looper.getMainLooper()).idle();
+        assertTrue("The video app and Maps itself keep it", floating(maps).active());
+        appSwitches.onTaskCreated(42, new ComponentName("com.android.settings", "Settings"));
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1));
+        assertFalse(floating(maps).active());
+        assertNull("Maps waits in its panel, with no message", panelMessage(maps));
+        maps.release();
+    }
+
+    @Test public void roadHomeShowingAgainReturnsMapsFloatingAboveTheVideoApp() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        maps.suspend();
+        assertTrue(maps.floatAboveVideoApp(FloatingPlacement.Corner.BOTTOM_RIGHT, listener()));
+        // The video app went away, or Home: Road Home starts, then its window gets a surface.
+        maps.resume();
+        assertTrue("Maps floats until Road Home's window can show the panel", floating(maps).active());
+        hostSurfaceCreated(maps);
+        assertFalse(floating(maps).active());
+        assertEquals(List.of(), tasks.calls);
+        maps.release();
+    }
+
     @Test public void aVideoThatFloatedAsMapsStartedReturnsIfMapsThenFailsToMove() {
         EmbeddedMaps.CoverOnce once = new EmbeddedMaps.CoverOnce(covering());
         assertEquals(new Rect(1, 2, 3, 4), once.starting());
@@ -251,6 +315,36 @@ public class EmbeddedMapsTest {
         Object callback = field.get(activityView(maps));
         assertTrue(callback instanceof ActivityView.StateCallback);
         return (ActivityView.StateCallback) callback;
+    }
+
+    private static LiveSurfaceWindow floating(EmbeddedMaps maps) throws ReflectiveOperationException {
+        Field field = EmbeddedMaps.class.getDeclaredField("floating");
+        field.setAccessible(true);
+        return (LiveSurfaceWindow) field.get(maps);
+    }
+
+    /** The app-switch callback Android calls while Maps floats above the video app. */
+    private static TaskStackListener appSwitches(EmbeddedMaps maps) throws ReflectiveOperationException {
+        Field watcher = EmbeddedMaps.class.getDeclaredField("overVideoApp");
+        watcher.setAccessible(true);
+        Object value = watcher.get(maps);
+        assertTrue("Maps watches app switches while it floats above the video app", value instanceof TaskFrontWatcher);
+        Field registration = TaskFrontWatcher.class.getDeclaredField("registration");
+        registration.setAccessible(true);
+        Object listener = registration.get(value);
+        assertTrue(listener instanceof TaskStackListener);
+        return (TaskStackListener) listener;
+    }
+
+    /** Road Home's window has a surface again, so its panel can show Maps. */
+    private static void hostSurfaceCreated(EmbeddedMaps maps) throws ReflectiveOperationException {
+        Field field = EmbeddedMaps.class.getDeclaredField("displayLifecycle");
+        field.setAccessible(true);
+        Object lifecycle = field.get(maps);
+        assertTrue(lifecycle instanceof EmbeddedDisplayLifecycle);
+        Field holder = EmbeddedDisplayLifecycle.class.getDeclaredField("holder");
+        holder.setAccessible(true);
+        ((EmbeddedDisplayLifecycle) lifecycle).surfaceCreated((SurfaceHolder) holder.get(lifecycle));
     }
 
     /** As when the live map motion cannot be created, so Maps moves under a frozen frame. */

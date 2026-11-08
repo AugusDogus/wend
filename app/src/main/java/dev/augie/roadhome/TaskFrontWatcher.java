@@ -13,10 +13,12 @@ final class TaskFrontWatcher {
     interface Listener { void movedToFront(String packageName, int displayId); }
 
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final String tag;
     private final Listener listener;
     private Registration registration;
 
-    TaskFrontWatcher(Listener listener) { this.listener = listener; }
+    /** @param tag the log tag of the window that watches */
+    TaskFrontWatcher(String tag, Listener listener) { this.tag = tag; this.listener = listener; }
 
     void start() throws ReflectiveOperationException {
         if (registration != null) return;
@@ -35,7 +37,7 @@ final class TaskFrontWatcher {
                     .invoke(service(), current);
         } catch (ReflectiveOperationException | RuntimeException error) {
             // Its callbacks are ignored from now on, so the stale registration has no effect.
-            Log.w("RoadHomeVideo", "Could not unregister the app-switch listener; ignoring its later callbacks", error);
+            Log.w(tag, "Could not unregister the app-switch listener; ignoring its later callbacks", error);
         }
     }
 
@@ -44,7 +46,7 @@ final class TaskFrontWatcher {
         // Android reports an existing task brought forward here.
         @Override public void onTaskMovedToFront(ActivityManager.RunningTaskInfo task) {
             ComponentName component = task.baseActivity != null ? task.baseActivity : task.topActivity;
-            report(component, displayId(task));
+            report(component, displayId(task, tag));
         }
 
         // A newly launched app gets a new task instead, without a display or a move-to-front.
@@ -58,10 +60,10 @@ final class TaskFrontWatcher {
         }
     }
 
-    private static int displayId(ActivityManager.RunningTaskInfo task) {
+    private static int displayId(ActivityManager.RunningTaskInfo task, String tag) {
         try { return task.getClass().getField("displayId").getInt(task); }
         catch (ReflectiveOperationException error) {
-            Log.w("RoadHomeVideo", "Android did not report the display of task " + task.taskId
+            Log.w(tag, "Android did not report the display of task " + task.taskId
                     + "; treating it as a different display", error);
             return Display.INVALID_DISPLAY;
         }

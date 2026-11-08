@@ -31,7 +31,7 @@ final class EmbeddedVideo extends FrameLayout {
     private EmbeddedDisplayLifecycle playerLifecycle;
     private final Activity host;
     private final LiveSurfaceWindow window;
-    private final TaskFrontWatcher appSwitches = new TaskFrontWatcher(this::appMovedToFront);
+    private final TaskFrontWatcher appSwitches = new TaskFrontWatcher("RoadHomeVideo", this::appMovedToFront);
     private final Runnable presentationEnded;
     private final TextView status;
     private final ImageView thumbnail;

@@ -32,6 +32,11 @@ final class EmbeddedMaps extends MapPanel {
     private final MapTransition transition;
     /** Live Maps floating above the fullscreen video. Its display keeps the panel's size. */
     private final LiveSurfaceWindow floating;
+    /**
+     * Watches app switches exactly while Maps floats above the video app that Road Home opened on
+     * the main display, rather than above the live video Road Home presents itself.
+     */
+    private TaskFrontWatcher overVideoApp;
     private final Point screen = new Point();
     /** Maps leaves display 0 beneath the fullscreen video once Road Home has drawn behind it. */
     private boolean returningBeneath;
@@ -148,6 +153,8 @@ final class EmbeddedMaps extends MapPanel {
 
     void resume() {
         hostActive = true;
+        // The video app left, or failed to open: Maps returns from above it to its panel.
+        if (overVideoApp != null) { returnFromFloating(); return; }
         if (returningBeneath) {
             // Road Home now covers fullscreen Maps under the video. Move Maps after Road Home's
             // next frame, once Maps has been hidden behind it and the panel is laid out.
@@ -166,7 +173,8 @@ final class EmbeddedMaps extends MapPanel {
         cancelPendingFloat();
         cancelTakeover();
         // Another app replaced Road Home and the video below; Maps waits hidden in its panel.
-        floating.cancel();
+        // Above the video app Road Home opened, it stays until another app comes to the front.
+        if (overVideoApp == null) floating.cancel();
     }
 
     @Override void home(Runnable then) {
@@ -186,9 +194,39 @@ final class EmbeddedMaps extends MapPanel {
 
     @Override boolean floatAboveVideo(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener,
             LiveSurfaceWindow.Entry entry) {
-        if (activityView == null || displayLifecycle == null || state != State.READY || !hostActive
-                || launching || floating.active() || status.getVisibility() == View.VISIBLE || !isLaidOut()
-                || (motion != null && motion.pending()) || transition.pending()) return false;
+        if (!hostActive || !canFloat() || !openFloating(corner, listener, entry)) return false;
+        Log.i("RoadHomeMap", "Floating live Maps above the video in the " + corner + " corner");
+        return true;
+    }
+
+    @Override boolean floatAboveVideoApp(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener) {
+        if (!canFloat()) return false;
+        TaskFrontWatcher appSwitches = new TaskFrontWatcher("RoadHomeMap", this::appMovedToFront);
+        try { appSwitches.start(); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("RoadHomeMap", "Floating Maps unavailable: app switches cannot be observed, so it could"
+                    + " stay above another app; Maps stays in its panel", error);
+            return false;
+        }
+        overVideoApp = appSwitches;
+        // Moves to its corner as the video app opens; the end of the float stops the watcher.
+        if (!openFloating(corner, listener, LiveSurfaceWindow.Entry.FROM_CARD)) {
+            stopWatchingApps();
+            return false;
+        }
+        Log.i("RoadHomeMap", "Floating live Maps above the video app in the " + corner + " corner");
+        return true;
+    }
+
+    private boolean canFloat() {
+        return activityView != null && displayLifecycle != null && state == State.READY && !launching
+                && !floating.active() && status.getVisibility() != View.VISIBLE && isLaidOut()
+                && !(motion != null && motion.pending()) && !transition.pending();
+    }
+
+    /** Lifts Maps out of its panel, if it is there, into the floating window. */
+    private boolean openFloating(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener,
+            LiveSurfaceWindow.Entry entry) {
         try {
             MapsTask.Task existing = tasks.find();
             if (existing == null || existing.displayId != activityView.getVirtualDisplayId()) return false;
@@ -206,13 +244,31 @@ final class EmbeddedMaps extends MapPanel {
             displayLifecycle.returnToHost();
             return false;
         }
-        Log.i("RoadHomeMap", "Floating live Maps above the video in the " + corner + " corner");
         return true;
+    }
+
+    private void appMovedToFront(String packageName, int displayId) {
+        if (overVideoApp == null) return;
+        // Road Home showing again returns Maps to its panel (resume); Maps and the video app are its own.
+        if (packageName.equals(getContext().getPackageName()) || packageName.equals(PACKAGE)
+                || packageName.equals(EmbeddedVideo.PACKAGE)) return;
+        floating.dismiss(packageName + " came to the front on display " + displayId);
+    }
+
+    private void stopWatchingApps() {
+        if (overVideoApp == null) return;
+        overVideoApp.stop();
+        overVideoApp = null;
     }
 
     @Override void leavePanel() { floating.leaveCard(); }
 
-    @Override void returnFromFloating() { floating.collapse(); }
+    @Override void returnFromFloating() {
+        // Road Home may still be starting, after Home or as the video app leaves: Maps stays
+        // floating until Road Home's window can show its panel again.
+        if (displayLifecycle != null) displayLifecycle.whenHostReady(floating::collapse);
+        else floating.collapse();
+    }
 
     @Override void returnBeneathVideo(Runnable ready) {
         cancelPendingTransition();
@@ -272,6 +328,12 @@ final class EmbeddedMaps extends MapPanel {
             floating.cancel();
             takeover = next;
             next.covered();
+            if (!hostActive) {
+                // Above the video app, Road Home is stopped and lays out nothing, so its display
+                // cannot grow first. Moved as it is, Maps lays out on the main display instead.
+                moveTakeover();
+                return;
+            }
             activityView.setLayoutParams(new LayoutParams(screen.x, screen.y));
             takeoverFrame = new MapFrame(screen.x, () -> post(this::moveTakeover));
             postDelayed(takeoverDeadline, 900);
@@ -354,6 +416,7 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     private void floatingEnded() {
+        stopWatchingApps();
         if (displayLifecycle != null) displayLifecycle.returnToHost();
         if (hostActive) {
             try {
