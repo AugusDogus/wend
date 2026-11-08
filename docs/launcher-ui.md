@@ -2,14 +2,16 @@
 
 The user reported that the app list took seconds to load on every opening and could
 not be dragged down to dismiss. The drawer now shows a launcher-wide cached catalog
-immediately and is a draggable glass bottom sheet. Validated on the
-`road-home-google-api29` emulator (Android 10, 1280 x 720, 240 dpi) with the
-release build on November 7, 2026. Not yet installed on the PX6.
+immediately and is a draggable glass bottom sheet.
 
 The user then reported that settings looked bad and could not add or remove dock
 apps. The dock is now a configurable list of pins, and settings is a glass sheet with
 live layout controls and a dock editor; see [Configurable dock](#configurable-dock)
-and [Settings sheet](#settings-sheet). Same emulator and build type, same day.
+and [Settings sheet](#settings-sheet).
+
+None of this has run on the PX6. Validation happened per lane on Android 10
+emulators (1280 x 720, 240 dpi); [Validation scope](#validation-scope) says what was
+checked before the merge, on the merged build, and for the review fixes.
 
 ## App catalog
 
@@ -35,13 +37,21 @@ and finally rebuilt every grid view on each keystroke.
 
 API for the configurable dock and the settings app picker: `AppCatalog.get(context)`
 on the main thread, `status()` (`LOADING`, `READY`, `FAILED`), `apps()`,
-`addListener` / `removeListener`, and `retryIfFailed()`. Never recycle a
-`LauncherApp.icon`.
+`pinnedApp(packageName)`, `canPin(app)`, `addListener` / `removeListener`, and
+`retryIfFailed()`. Pins name packages in Road Home's own profile; `pinnedApp` is the
+one place that rule is applied for the dock, the dock editor and the layout preview.
+Never recycle a `LauncherApp.icon`.
 
-Failures are logged with the package and the effect. A failed initial load shows
-"Apps could not be loaded" and retries on the next opening. A failed package reload
-keeps that package's previous entry. An icon that cannot load uses Android's
-default activity icon.
+Failures are logged with the package and the effect:
+
+- An icon that cannot be loaded or drawn uses Android's default activity icon. An
+  app whose label cannot be read is left out. Neither fails the rest of the list.
+- A failed package reload keeps that package's previous entry.
+- A failed initial load (LauncherApps unavailable or refusing the query) shows "Apps
+  could not be loaded" in the drawer and the picker, and loads again the next time
+  the drawer, Settings or Add app opens. Meanwhile `pinnedApp` reads each pin from
+  PackageManager (its launch activity, label and icon) on the main thread, once per
+  pin until the next load, so the dock keeps Maps and its other installed apps.
 
 ## Drawer
 
@@ -53,7 +63,9 @@ existing tiles by package and profile. Dismissal clears the query and scrolls to
 top. Rows fade under the header and at the bottom edge. Tapping a tile removes the
 sheet at once and opens the app through `AppLaunch`, which keeps the existing Maps
 and YouTube task paths; apps in another profile open through
-`LauncherApps.startMainActivity`.
+`LauncherApps.startMainActivity`. The search field is labelled by its hint alone, so
+TalkBack reads the typed query, and the status line ("No apps match …") is a polite
+live region, so TalkBack announces it.
 
 ## Bottom sheet
 
@@ -92,12 +104,14 @@ immediately with the sheet below the screen and a transparent backdrop. The slid
 starts as soon as the screen pixels are taken: at the window's first pre-draw if they
 already are, otherwise on the capture callback, otherwise after 64 ms. A capture that
 finishes after the slide began is discarded and the sheet keeps its denser plain
-tint. Blurring continues off the main thread and fades in. One RenderScript context
-per drawer is created when the launcher is idle and reused.
+tint. Blurring continues off the main thread and fades in. The shared
+`FrostedBackdrop` creates its RenderScript context on its worker thread as soon as
+`MainActivity` creates it, and reuses it for every capture.
 
-## Validation
+## Drawer validation (before the merge)
 
-Timings come from `RoadHome` log lines on the emulator, three or more openings each.
+On `road-home-google-api29` with the release build of the drawer lane, November 7,
+2026. Timings come from `RoadHome` log lines, three or more openings each.
 
 | Build | First opening after launcher start | Later openings |
 | --- | --- | --- |
@@ -158,11 +172,13 @@ package names (two or more dot-separated segments, each starting with a letter).
 - Capacity: `DockLayout.pinCapacity` takes the display's shorter side in dp. The
   clock (42), date (22), bottom padding (4), Apps and Settings (52 each: a 48 dp target
   plus a 4 dp gap) leave 308 of 480 dp, so five 52 dp slots fit on the PX6.
-- Icons come from `AppCatalog`, so the dock follows installs, removals and pin changes
-  live. A pin whose app is not installed (or not in the main profile) is skipped in
-  the dock but stays stored, and comes back in place when the app is reinstalled.
-  Until the catalog first loads, the dock reserves the pins' slots so the Apps button
-  does not jump, then fades the icons in over 150 ms.
+- Icons come from `AppCatalog.pinnedApp`, so the dock follows installs, removals and
+  pin changes live. A pin whose app is not installed (or not in the main profile) is
+  skipped in the dock but stays stored, and comes back in place when the app is
+  reinstalled. Until the catalog first loads, the dock reserves the pins' slots so the
+  Apps button does not jump, then fades the icons in over 150 ms. If that load fails,
+  the pins come from PackageManager instead (see [App catalog](#app-catalog)), and a
+  retry keeps the buttons already shown until it finishes.
 - Tapping a pin goes through `AppLaunch.open`, the routing that used to live in
   `AppDrawer`: Maps opens fullscreen through `MainActivity.openMapsFullscreen`, the
   video package tries the live-video path first, and an existing YouTube task is
@@ -170,12 +186,14 @@ package names (two or more dot-separated segments, each starting with a letter).
 
 ## Settings sheet
 
-`SettingsSheet` replaces the AlertDialog. It is a `BottomSheet` with denser glass, a
+`SettingsSheet` is a `BottomSheet` (it replaced an AlertDialog) with denser glass, a
 header of [close] [Settings] [balancing space], and a centered column (at most
 680 dp of the 853 dp screen) of grouped cards. Section labels are small and muted;
-rows are at least 64 dp tall and every control is a 48 dp target. Builders for the
-rows live in `SettingsRows`. Layout is start/end relative; directional glyphs (back,
-forward chevron) mirror in right-to-left languages.
+rows are at least 64 dp tall and every control is a 48 dp target. Each segment of a
+`SegmentedControl` spans the control's full 48 dp height; its thumb and press ripple
+are drawn 3 dp inside it. Builders for the rows live in `SettingsRows`. Layout is
+start/end relative; directional glyphs (back, forward chevron) mirror in right-to-left
+languages.
 
 - Layout: Map position (Left / Right) and Map width (Balanced 60% / More map 70%)
   as `SegmentedControl`s. A raised thumb slides to the choice over 220 ms with a
@@ -192,22 +210,30 @@ forward chevron) mirror in right-to-left languages.
   The real panels are now rearranged once the preview settles (320 ms after the last
   tap, so quick taps coalesce) or as soon as the sheet starts closing, whichever comes
   first. Behind the sheet the launcher therefore changes within a third of a second.
+  In the archived `windowed` build the panels are rearranged only once the sheet's
+  window is gone: its Maps corner masks are overlay windows that a relayout re-adds
+  above every older window, the open sheet included.
 - Dock: the pins in dock order with icon, name, move up, move down and remove. The
   count ("2 of 5") sits beside the section label. Moved rows slide 240 ms; the row you
   moved rises above its neighbor (lighter fill, raised Z) and sinks back when it lands,
   so the two never pass through each other. Removed rows fade and shrink over 120 ms
   before the rows below close the gap, and the card resizes with them. A pin that is
-  not installed shows its package name, a dashed placeholder and "Not installed".
-- Add app opens a picker page inside the sheet: the same `AppBrowser` grid, without
-  apps already pinned or from other profiles, with search. Choosing an app pins it at
-  the bottom and returns. Back, or the back arrow, returns without pinning. Empty
-  searches say what happened: "No apps match “Waze”. Try another name.", "YouTube is
-  already in the dock." or "Every app is already in the dock." At capacity, Add app is dimmed and
-  explains "The dock is full. Remove an app to add another."
+  not installed shows its package name, a dashed placeholder and "Not installed";
+  while the app list is still loading it says "Loading…" instead. A row pinned just
+  before another edit is shown at full opacity rather than left mid-fade.
+- Add app opens a picker page inside the sheet: the same `AppBrowser` grid, offering
+  only apps in Road Home's own profile and hiding apps already pinned, with search.
+  Opening it retries a failed app list. Choosing an app pins it at the bottom and
+  returns. Back, or the back arrow, returns without pinning. Empty searches say what
+  happened: "No apps match “Waze”. Try another name.", "YouTube is already in the
+  dock." (only for pinned apps; work-profile apps never count as matches) or "Every
+  app is already in the dock." At capacity, Add app is dimmed and explains "The dock
+  is full. Remove an app to add another."
 - Floating windows: "Video over fullscreen Maps" (`floatingVideo`) and "Maps over
   fullscreen video" (`floatingMaps`), both default on, stored in `layout` and read
-  through `LauncherSettings.floatingVideo()` and `floatingMaps()`. This lane only adds
-  the switches; the windows themselves are implemented elsewhere.
+  through `LauncherSettings.floatingVideo()` and `floatingMaps()`. `MainActivity`
+  reads them each time a window would float; the windows are described in
+  [floating windows](floating-windows.md).
 - System: Android settings and Default home app open the existing intents through
   `AppLaunch.openSystemScreen`, which suspends the Maps and video overlays like any
   external app and restores them if Android cannot open the screen.
@@ -229,10 +255,10 @@ instead of 72%) and 8% white cards; the same area then measured #323d46 for the 
 and #444b52 for a card: about 5.5:1 for muted section labels on the glass and 4.4:1
 for muted secondary text inside cards. Primary text is above 8:1 on both.
 
-### Settings validation
+### Settings validation (before the merge)
 
-Verified on `road-home-google-api29` with the release build, with screenshots and
-recordings:
+Verified on `road-home-google-api29` with the release build of the settings lane,
+before the floating-window lane was merged, with screenshots and recordings:
 
 - Before: the AlertDialog (`settings/before-settings-dialog.png`).
 - Every section on screen: layout, dock, floating windows, system and footer
@@ -260,7 +286,8 @@ recordings:
   back and a 47% pull at 244 dp/s dismissed, revealing the updated dock
   (`settings/drag-dismiss.mp4`, `drag-dismiss-frames.png`).
 - A floating-window switch turned off stayed off after closing and reopening
-  (`settings/switch-maps-off-reopened.png`); it was turned back on.
+  (`settings/switch-maps-off-reopened.png`); it was turned back on. That lane had no
+  floating windows, so what the switches control was checked only after the merge.
 - Android settings and Default home app opened, and Home restored the launcher with
   Maps task 190 in its panel (`settings/system-rows-sequence.png`).
 - The YouTube pin opened YouTube; a second tap reused task 253 instead of creating
@@ -272,11 +299,19 @@ recordings:
 - Press ripples before and after the fix (`settings/ripple-contact.png`, then the
   close button in `picker-transition-frames.png`).
 
-Unit tests: `DockPinsTest` (20: parse and serialize, defaults, empty versus missing,
-garbage, dedupe, capacity, add, remove, move, immutability), `DockLayoutTest` (4),
-`LauncherSettingsTest` (10: defaults, existing keys, wrong types, unknown widths,
-floating keys, pins), `LayoutPreviewTest` (5: map geometry and corner rounding) and
-`SegmentedControlTest` (5: selection, listener, accessibility, target height).
+Unit and Robolectric tests: `DockPinsTest` (parse and serialize, defaults, empty
+versus missing, garbage, dedupe, capacity, add, remove, move, immutability),
+`DockLayoutTest` (capacity), `DockTest` (a full dock measured at 480 dp keeps every
+button a 48 dp target and Settings on screen; pins from PackageManager after a failed
+load, kept through a retry), `DockEditorTest` (loading versus not installed, an
+interrupted fade-in), `AppCatalogTest` (an unreadable icon or label, own-profile pins,
+the PackageManager fallback), `AppBrowserTest` (work-profile apps left out of the
+picker, the pinned message, TalkBack reading the query, announced results),
+`SettingsSheetTest` (when a layout change reaches the launcher, in each build),
+`LauncherSettingsTest` (defaults, existing keys, wrong types, unknown widths, floating
+keys and corners, pins), `LayoutPreviewTest` (map geometry and corner rounding) and
+`SegmentedControlTest` (selection, listener, accessibility, a segment measured in its
+settings row).
 
 ### Settings limits
 
@@ -301,3 +336,29 @@ floating keys, pins), `LayoutPreviewTest` (5: map geometry and corner rounding) 
   on the right at 70%, both floating-window switches on, the Maps fixture uninstalled.
 
 Evidence (git-ignored): `build/evidence/settings/` and `build/evidence/dock/`.
+
+## Validation scope
+
+- Drawer and settings lane (the validation sections above): `road-home-google-api29`
+  with the release build, November 7, 2026, before the floating-window lane was
+  merged. Evidence (git-ignored): `build/evidence/app-catalog/`, `drawer-sheet/`,
+  `settings/` and `dock/`.
+- Merged build (911dc7a), review device runs on November 7 and 8, 2026. On the
+  fixture emulator (`road-home-api29`, emulator variant) the floating-window switches
+  were toggled through this sheet across the whole floating matrix; both sheets opened
+  over a playing video card without blanking it; a map side and width change while
+  the video played kept both tasks and placed the floating windows for the new layout
+  (the next dock expansion then hit the slow Maps fallback, tracked with the floating
+  windows); the video fixture was pinned through the picker and opened from the dock;
+  and Home closed an open drawer, settings page and picker. On
+  `road-home-google-api29` with real Maps and YouTube (release build), the drawer
+  started opening 25 to 76 ms after the tap with icons in its first frame, and every
+  settings section, dock edits, a layout change during guidance and playback, both
+  switches and both system links worked. Evidence (git-ignored, main checkout):
+  `build/validation/merged-regression-api29/` and `build/validation/real-apps-api29/`.
+- Review fixes described above (one unreadable app no longer fails the list, the
+  PackageManager fallback for pins, the editor's loading label and fade-in, the
+  picker's profile filter, search accessibility, full-height segments and the
+  windowed relayout): unit and Robolectric tests in the release, emulator and windowed
+  variants only. Not yet run on an emulator.
+- PX6: none of the above.

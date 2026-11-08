@@ -1,8 +1,9 @@
 # Live YouTube window transitions
 
 A playing preview now stays on the same virtual display when opened fullscreen.
-`LiveVideoWindow` reparents the launcher's own ActivityView root into a transparent
-overlay, then animates its uniform scale, position, and crop over 280 ms. Home
+`LiveSurfaceWindow` (named `LiveVideoWindow` when this was written) reparents the
+launcher's own ActivityView root into a transparent overlay, then animates its
+uniform scale, position, and crop over 280 ms. Home
 animates the live surface back and atomically restores its preview parent,
 geometry, and input portal. There is no screenshot, frozen-frame cover, task
 transfer, display resize, or decoder restart in this round trip.
@@ -46,9 +47,13 @@ on the app supplying it; without artwork the existing play placeholder is shown.
 
 ## Validation
 
-Release build, lint, and 52 unit tests pass. Tests cover geometry/proportions,
-source ownership, offset watch-page geometry, advancing frames, cancellation,
-window-readiness timeout, duplicate requests, and system Home routing.
+This section records the video lane before the floating-window and settings work
+was merged; it was not repeated on the merged tree. At the time, the release
+build, lint, and the 52 unit tests then in the tree passed. Tests cover
+geometry/proportions, source ownership, offset watch-page geometry, advancing
+frames, cancellation, window-readiness timeout, duplicate requests, and system
+Home routing. The same window now also floats video and Maps; see
+[floating windows](floating-windows.md).
 
 Real YouTube and Maps on the Android 10 emulator exercised fullscreen controls,
 repeated live fullscreen/Home cycles, pause/Home/resume, and watch-page playback.
