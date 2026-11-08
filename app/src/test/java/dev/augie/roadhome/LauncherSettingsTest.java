@@ -79,6 +79,23 @@ public class LauncherSettingsTest {
         assertFalse(settings.floatingMaps());
     }
 
+    @Test public void floatingCornersDefaultToBottomRightAndAreRemembered() {
+        assertEquals(FloatingPlacement.Corner.BOTTOM_RIGHT, settings.floatingVideoCorner());
+        assertEquals(FloatingPlacement.Corner.BOTTOM_RIGHT, settings.floatingMapsCorner());
+        settings.setFloatingVideoCorner(FloatingPlacement.Corner.TOP_LEFT);
+        settings.setFloatingMapsCorner(FloatingPlacement.Corner.BOTTOM_LEFT);
+        assertEquals("TOP_LEFT", preferences.getString("floatingVideoCorner", null));
+        assertEquals("BOTTOM_LEFT", preferences.getString("floatingMapsCorner", null));
+        assertEquals(FloatingPlacement.Corner.TOP_LEFT, new LauncherSettings(preferences).floatingVideoCorner());
+        assertEquals(FloatingPlacement.Corner.BOTTOM_LEFT, new LauncherSettings(preferences).floatingMapsCorner());
+    }
+
+    @Test public void unknownOrWronglyTypedCornersFallBackToBottomRight() {
+        preferences.edit().putString("floatingVideoCorner", "MIDDLE").putInt("floatingMapsCorner", 2).commit();
+        assertEquals(FloatingPlacement.Corner.BOTTOM_RIGHT, settings.floatingVideoCorner());
+        assertEquals(FloatingPlacement.Corner.BOTTOM_RIGHT, settings.floatingMapsCorner());
+    }
+
     @Test public void dockPinsSurviveARoundTrip() {
         DockPins pins = DockPins.parse("com.android.settings,com.google.android.youtube", 5);
         settings.setDockPins(pins);

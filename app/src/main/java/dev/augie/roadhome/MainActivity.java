@@ -2,7 +2,6 @@ package dev.augie.roadhome;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Looper;
 import android.util.DisplayMetrics;
@@ -11,19 +10,10 @@ import android.view.WindowManager;
 import android.widget.LinearLayout;
 
 public final class MainActivity extends Activity {
-    /** "layout" preference: live video keeps playing in a floating window over fullscreen Maps. */
-    static final String FLOATING_VIDEO = "floatingVideo";
-    /** "layout" preference: the corner the floating video last settled in. */
-    static final String FLOATING_VIDEO_CORNER = "floatingVideoCorner";
-    /** "layout" preference: live Maps floats in a small window over fullscreen video. */
-    static final String FLOATING_MAPS = "floatingMaps";
-    /** "layout" preference: the corner floating Maps last settled in. */
-    static final String FLOATING_MAPS_CORNER = "floatingMapsCorner";
     private MapPanel maps;
     private MediaPanel media;
     private LinearLayout content;
     private LauncherSettings settings;
-    private SharedPreferences preferences;
     private Dock dock;
     private int dockCapacity;
     private FrostedBackdrop backdrop;
@@ -31,21 +21,20 @@ public final class MainActivity extends Activity {
     private SettingsSheet settingsSheet;
     private final LiveSurfaceWindow.Listener floatingVideo = new LiveSurfaceWindow.Listener() {
         @Override public void settled(FloatingPlacement.Corner corner) {
-            preferences.edit().putString(FLOATING_VIDEO_CORNER, corner.name()).apply();
+            settings.setFloatingVideoCorner(corner);
         }
         @Override public void tapped() { swapToVideo(); }
     };
     private final LiveSurfaceWindow.Listener floatingMaps = new LiveSurfaceWindow.Listener() {
         @Override public void settled(FloatingPlacement.Corner corner) {
-            preferences.edit().putString(FLOATING_MAPS_CORNER, corner.name()).apply();
+            settings.setFloatingMapsCorner(corner);
         }
         @Override public void tapped() { swapToMaps(); }
     };
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        preferences = getSharedPreferences(LauncherSettings.PREFERENCES, MODE_PRIVATE);
-        settings = new LauncherSettings(preferences);
+        settings = new LauncherSettings(getSharedPreferences(LauncherSettings.PREFERENCES, MODE_PRIVATE));
         AppCatalog.get(this); // Loads apps in the background so the drawer opens with them.
         backdrop = new FrostedBackdrop(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -110,7 +99,7 @@ public final class MainActivity extends Activity {
      * panel's display and Road Home comes forward; Maps then emerges floating when allowed.
      */
     private void swapToVideo() {
-        media.expandVideo(() -> maps.returnBeneathVideo(preferences.getBoolean(FLOATING_MAPS, true)
+        media.expandVideo(() -> maps.returnBeneathVideo(settings.floatingMaps()
                 ? () -> floatMaps(LiveSurfaceWindow.Entry.EMERGING) : null));
     }
 
@@ -123,9 +112,7 @@ public final class MainActivity extends Activity {
 
     /** Where the video floats over fullscreen Maps, or null when it should not float. */
     private FloatingPlacement.Corner videoCorner() {
-        if (!preferences.getBoolean(FLOATING_VIDEO, true)) return null;
-        return FloatingPlacement.Corner.parse(preferences.getString(FLOATING_VIDEO_CORNER, null),
-                FloatingPlacement.Corner.BOTTOM_RIGHT);
+        return settings.floatingVideo() ? settings.floatingVideoCorner() : null;
     }
 
     /**
@@ -148,9 +135,7 @@ public final class MainActivity extends Activity {
     }
 
     private void floatMaps(LiveSurfaceWindow.Entry entry) {
-        if (!preferences.getBoolean(FLOATING_MAPS, true)) return;
-        maps.floatAboveVideo(FloatingPlacement.Corner.parse(preferences.getString(FLOATING_MAPS_CORNER, null),
-                FloatingPlacement.Corner.BOTTOM_RIGHT), floatingMaps, entry);
+        if (settings.floatingMaps()) maps.floatAboveVideo(settings.floatingMapsCorner(), floatingMaps, entry);
     }
 
     // A virtual display can keep Home started behind another fullscreen app on Android 10.

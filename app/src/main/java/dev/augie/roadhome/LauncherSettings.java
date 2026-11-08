@@ -24,9 +24,10 @@ final class LauncherSettings {
     private static final String MAPS_ON_RIGHT = "mapsOnRight";
     private static final String MAP_PERCENT = "mapPercent";
     private static final String DOCK_PINS = "dockPins";
-    // Read directly by the floating window code; keep these names.
     private static final String FLOATING_VIDEO = "floatingVideo";
+    private static final String FLOATING_VIDEO_CORNER = "floatingVideoCorner";
     private static final String FLOATING_MAPS = "floatingMaps";
+    private static final String FLOATING_MAPS_CORNER = "floatingMapsCorner";
     private static final String TAG = "RoadHome";
 
     private final SharedPreferences preferences;
@@ -63,6 +64,20 @@ final class LauncherSettings {
 
     void setFloatingMaps(boolean enabled) { preferences.edit().putBoolean(FLOATING_MAPS, enabled).apply(); }
 
+    /** The corner the floating video last settled in. */
+    FloatingPlacement.Corner floatingVideoCorner() { return readCorner(FLOATING_VIDEO_CORNER); }
+
+    void setFloatingVideoCorner(FloatingPlacement.Corner corner) {
+        preferences.edit().putString(FLOATING_VIDEO_CORNER, corner.name()).apply();
+    }
+
+    /** The corner floating Maps last settled in. */
+    FloatingPlacement.Corner floatingMapsCorner() { return readCorner(FLOATING_MAPS_CORNER); }
+
+    void setFloatingMapsCorner(FloatingPlacement.Corner corner) {
+        preferences.edit().putString(FLOATING_MAPS_CORNER, corner.name()).apply();
+    }
+
     /** The stored pins, limited to {@code capacity}; the defaults if none were ever saved. */
     DockPins dockPins(int capacity) {
         String stored;
@@ -81,6 +96,22 @@ final class LauncherSettings {
     }
 
     void setDockPins(DockPins pins) { preferences.edit().putString(DOCK_PINS, pins.serialize()).apply(); }
+
+    private FloatingPlacement.Corner readCorner(String key) {
+        FloatingPlacement.Corner fallback = FloatingPlacement.Corner.BOTTOM_RIGHT;
+        String stored;
+        try {
+            stored = preferences.getString(key, null);
+        } catch (ClassCastException error) {
+            Log.w(TAG, "Stored " + key + " is not a corner name; using " + fallback + " until it is moved again", error);
+            return fallback;
+        }
+        FloatingPlacement.Corner corner = FloatingPlacement.Corner.parse(stored, fallback);
+        if (stored != null && !corner.name().equals(stored)) {
+            Log.w(TAG, "Stored " + key + " \"" + stored + "\" is not a corner; using " + fallback + " until it is moved again");
+        }
+        return corner;
+    }
 
     private boolean readBoolean(String key, boolean fallback) {
         try {
