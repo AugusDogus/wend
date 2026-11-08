@@ -5,6 +5,7 @@
     <string name="loading_apps">Loading apps…</string>
     <string name="apps_unavailable">Apps could not be loaded. Close this screen and try again.</string>
     <string name="no_apps">No apps are available to open.</string>
+    <string name="recent_app">%1$s, recently opened</string>
     <string name="no_matching_apps">No apps match “%1$s”. Try another name.</string>
     <string name="every_app_pinned">Every app is already in the dock.</string>
     <string name="matching_app_pinned">%1$s is already in the dock.</string>

@@ -12,6 +12,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.util.ArrayList;
@@ -25,7 +26,8 @@ import java.util.function.Predicate;
  * A searchable grid of the catalog's apps, shared by the app drawer and the dock's app
  * picker. Tiles are built once for the apps the browser offers and reused across catalog
  * changes; search and the hidden filter only toggle their visibility. Place {@link #search()}
- * in a sheet header and {@link #body()} below it.
+ * in a sheet header and {@link #body()} below it. The drawer also shows one row of recent apps
+ * above the grid ({@link #setRecent}); the picker shows none.
  */
 final class AppBrowser implements AppCatalog.Listener {
     interface Chooser { void onChosen(LauncherApp app); }
@@ -45,8 +47,12 @@ final class AppBrowser implements AppCatalog.Listener {
     private final TextView status;
     private final ScrollView scroll;
     private final AppGrid grid;
+    /** Recent apps, then a hairline divider, above the grid. */
+    private final LinearLayout recentRow;
+    private final AppGrid recentGrid;
     private final FrameLayout body;
     private final Map<LauncherApp.Key, TextView> tiles = new HashMap<>();
+    private final Map<LauncherApp.Key, TextView> recentTiles = new HashMap<>();
     /** Offered apps the browser hides for now, such as apps already in the dock. */
     private Predicate<LauncherApp> hidden = app -> false;
 
@@ -69,11 +75,25 @@ final class AppBrowser implements AppCatalog.Listener {
         body = new FrameLayout(activity);
         grid = new AppGrid(activity, COLUMNS, Ui.dp(activity, CELL_DP));
         grid.setPadding(0, 0, 0, Ui.dp(activity, 8));
+        recentGrid = new AppGrid(activity, COLUMNS, Ui.dp(activity, CELL_DP));
+        recentRow = new LinearLayout(activity);
+        recentRow.setOrientation(LinearLayout.VERTICAL);
+        recentRow.setVisibility(View.GONE);
+        recentRow.addView(recentGrid);
+        View divider = new View(activity);
+        divider.setBackgroundColor(Ui.DIVIDER);
+        LinearLayout.LayoutParams dividerLayout = new LinearLayout.LayoutParams(-1, 1);
+        dividerLayout.setMargins(Ui.dp(activity, 16), 0, Ui.dp(activity, 16), Ui.dp(activity, 12));
+        recentRow.addView(divider, dividerLayout);
+        LinearLayout content = new LinearLayout(activity);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.addView(recentRow);
+        content.addView(grid);
         scroll = new ScrollView(activity);
         // Rows fade out under the header and at the bottom edge, hinting at more apps.
         scroll.setVerticalFadingEdgeEnabled(true);
         scroll.setFadingEdgeLength(Ui.dp(activity, 24));
-        scroll.addView(grid);
+        scroll.addView(content);
         body.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         status = Ui.text(activity, "", 17, Ui.MUTED);
         status.setGravity(Gravity.CENTER);
@@ -92,6 +112,26 @@ final class AppBrowser implements AppCatalog.Listener {
 
     void setHidden(Predicate<LauncherApp> next) {
         hidden = next;
+        filter();
+    }
+
+    /**
+     * Shows up to one row of {@code apps}, in order, above the grid while nothing is searched.
+     * An app is shown once even if listed twice; an empty list hides the row and its divider.
+     */
+    void setRecent(List<LauncherApp> apps) {
+        Map<LauncherApp.Key, TextView> previous = new HashMap<>(recentTiles);
+        recentTiles.clear();
+        recentGrid.removeAllViews();
+        for (LauncherApp app : apps) {
+            if (recentTiles.size() == COLUMNS) break;
+            if (recentTiles.containsKey(app.key) || !offered.test(app)) continue;
+            TextView tile = previous.remove(app.key);
+            if (tile == null) tile = tile();
+            if (tile.getTag() != app) bindTile(tile, app, activity.getString(R.string.recent_app, app.label));
+            recentTiles.put(app.key, tile);
+            recentGrid.addView(tile);
+        }
         filter();
     }
 
@@ -120,7 +160,7 @@ final class AppBrowser implements AppCatalog.Listener {
             if (!offered.test(app)) continue;
             TextView tile = previous.remove(app.key);
             if (tile == null) tile = tile();
-            if (tile.getTag() != app) bindTile(tile, app);
+            if (tile.getTag() != app) bindTile(tile, app, app.label);
             tiles.put(app.key, tile);
             grid.addView(tile);
         }
@@ -138,6 +178,7 @@ final class AppBrowser implements AppCatalog.Listener {
             if (matches && isHidden) hiddenMatches.add(app.label);
             tile.setVisibility(matches && !isHidden ? View.VISIBLE : View.GONE);
         }
+        recentRow.setVisibility(query.isEmpty() && !recentTiles.isEmpty() ? View.VISIBLE : View.GONE);
         showStatus(hiddenMatches);
     }
 
@@ -188,10 +229,10 @@ final class AppBrowser implements AppCatalog.Listener {
         return tile;
     }
 
-    private void bindTile(TextView tile, LauncherApp app) {
+    private void bindTile(TextView tile, LauncherApp app, String description) {
         tile.setTag(app);
         tile.setText(app.label);
-        tile.setContentDescription(app.label);
+        tile.setContentDescription(description);
         BitmapDrawable icon = new BitmapDrawable(activity.getResources(), app.icon);
         int size = Ui.dp(activity, AppCatalog.ICON_DP);
         icon.setBounds(0, 0, size, size);

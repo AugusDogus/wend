@@ -8,8 +8,10 @@ import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.TextView;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
@@ -67,6 +69,27 @@ public class AppBrowserTest {
         assertEquals(View.ACCESSIBILITY_LIVE_REGION_POLITE, status.getAccessibilityLiveRegion());
     }
 
+    @Test public void theRecentRowShowsEachAppOnceAndAtMostOneRow() {
+        for (String name : new String[]{"Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot"}) {
+            TestApps.install(activity, "com.example." + name.toLowerCase(Locale.ROOT), name);
+        }
+        AppCatalog catalog = TestApps.loadedCatalog(activity);
+        List<LauncherApp> apps = catalog.apps();
+        AppBrowser drawer = drawer(catalog);
+
+        drawer.setRecent(Arrays.asList(apps.get(5), apps.get(5), apps.get(0), apps.get(1), apps.get(2),
+                apps.get(3), apps.get(4)));
+
+        List<String> recent = new ArrayList<>();
+        for (String text : visibleDescriptions(drawer.body())) if (text.endsWith(", recently opened")) recent.add(text);
+        assertEquals(Arrays.asList("Foxtrot, recently opened", "Alpha, recently opened", "Bravo, recently opened",
+                "Charlie, recently opened", "Delta, recently opened"), recent);
+
+        drawer.setRecent(Collections.<LauncherApp>emptyList());
+
+        assertEquals("Every app, once, in the grid", 6, visibleDescriptions(drawer.body()).size());
+    }
+
     /** Configured as the app drawer. */
     private AppBrowser drawer(AppCatalog catalog) {
         return new AppBrowser(activity, catalog, app -> true, "Search apps", R.string.no_apps,
@@ -92,6 +115,17 @@ public class AppBrowserTest {
             }
         }
         return null;
+    }
+
+    private static List<String> visibleDescriptions(View view) {
+        List<String> descriptions = new ArrayList<>();
+        if (view.getVisibility() != View.VISIBLE) return descriptions;
+        if (view.getContentDescription() != null) descriptions.add(view.getContentDescription().toString());
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) descriptions.addAll(visibleDescriptions(group.getChildAt(i)));
+        }
+        return descriptions;
     }
 
     private static List<String> visibleTexts(View view) {

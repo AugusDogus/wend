@@ -79,7 +79,7 @@ public final class MainActivity extends Activity {
         setContentView(root);
         // Build the sheets and their tiles when the launcher is idle, not on the first tap.
         Looper.myQueue().addIdleHandler(() -> {
-            if (drawer == null && !isDestroyed()) drawer = new AppDrawer(this, AppCatalog.get(this), backdrop);
+            if (drawer == null && !isDestroyed()) drawer = new AppDrawer(this, AppCatalog.get(this), settings, backdrop);
             return false;
         });
         Looper.myQueue().addIdleHandler(() -> {
@@ -98,7 +98,7 @@ public final class MainActivity extends Activity {
 
     private void showApps() {
         media.videoCardCovered();
-        if (drawer == null) drawer = new AppDrawer(this, AppCatalog.get(this), backdrop);
+        if (drawer == null) drawer = new AppDrawer(this, AppCatalog.get(this), settings, backdrop);
         drawer.show();
     }
 

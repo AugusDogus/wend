@@ -72,6 +72,27 @@ it. Its header is only the search field, centered under the handle with 56 dp on
 side (the room the settings header gives its close button and balancing space), so it
 reads the same left to right and right to left.
 
+### Recent apps
+
+Like the Pixel launcher's suggestions row, the top of the drawer shows one row (five
+columns) of the apps Wend opened most recently, newest first, then a hairline divider
+and the full alphabetical grid; the row scrolls with the grid. It is Wend's own
+history, not Android's: `AppLaunch` records every successful launch from the dock, the
+drawer and the media panel (Maps fullscreen, the live video, or an app's launch
+intent; not Android settings screens or failed launches).
+
+- `RecentApps` is the value: distinct package names, newest first, at most five.
+  `LauncherSettings.recentApps()` stores it in SharedPreferences `layout` under
+  `recentApps` (comma-separated); unreadable values are logged and read as no history.
+- Like dock pins, entries name packages in Wend's own profile; work-profile launches
+  are not recorded.
+- The drawer refreshes the row on every opening and on catalog changes. Apps no longer
+  in the catalog are left out and removed from the stored history. Until the catalog is
+  ready, and while a search is typed, the row and divider are hidden; with no history
+  the grid starts at the top as before.
+- TalkBack reads row tiles as "Maps, recently opened", so they are distinct from the
+  same app in the grid.
+
 ## Bottom sheet
 
 `BottomSheet` is a reusable glass sheet in its own window; the drawer and settings
@@ -383,4 +404,11 @@ Evidence (git-ignored): `build/evidence/settings/` and `build/evidence/dock/`.
   picker's profile filter, search accessibility, full-height segments and the
   windowed relayout): unit and Robolectric tests in the release, emulator and windowed
   variants only. Not yet run on an emulator.
+- Drawer without a close button, and its recent-apps row: unit and Robolectric tests
+  only (`RecentAppsTest`, `LauncherSettingsTest`, `AppLaunchTest`, `AppBrowserTest`,
+  and `AppDrawerTest` at 853 x 480 dp, hdpi: a centered search field left to right and
+  mirrored, row order and one-row cap, hidden while searching, uninstalled apps
+  dropped, a drawer launch leading the row on the next opening). Not yet run on an
+  emulator or with real right-to-left text; the divider's contrast over bright Maps
+  tiles and the row's spacing have not been seen on screen.
 - PX6: none of the above.
