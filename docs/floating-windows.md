@@ -58,6 +58,27 @@ deliberately floated app can pin, and only its own code decides how its PiP look
   `PipAppOp.restore`). A video that cannot return live, such as a paused one, has
   its PiP closed as SystemUI's close does (`VideoTask.dismissPip`).
 
+### With the pip-hook module: Maps floats straight from its panel
+
+On a rooted unit with the `pip-hook` LSPosed module (`pip-hook/README.md`),
+opening the video while Maps navigates no longer flashes Maps fullscreen first.
+`MainActivity.videoAppOpening` asks Maps for its own PiP from the panel
+(`MapsPanelPip`, `EmbeddedMaps.floatFromPanelIntoPip`), and only once Maps has
+entered it does the video take the screen:
+
+- Maps shrinks from its panel into its PiP corner with Android's own bounds
+  animation, then crossfades into its navigation card as soon as Maps has drawn it.
+- The live video grows out of its card to fullscreen at the same time
+  (`VideoTask.growFullscreen`); without a live video, the video app opens.
+- Home returns Maps by the same `startActivityFromRecents` move; the module grows
+  the PiP toward the panel while fading it out and fades Maps in once it has
+  redrawn there.
+- The empty panel, and anything Wend's embedded displays do not cover, shows
+  Wend's panel color (`ActivityViewSurface.paintBackground`), not black.
+
+Without the module, the broadcast goes unanswered and Wend uses the task-switch
+path above (`MainActivity.floatMapsByTaskSwitch`).
+
 Why these Android 10 details:
 
 - The op is restored to `MODE_IGNORED` only **after** the app has left PiP (its
