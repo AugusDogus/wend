@@ -132,14 +132,17 @@ public final class MainActivity extends Activity {
         media.videoCardCovered();
         if (BuildConfig.SYSTEM_PIP) {
             // Native PiP: the live video floats in its own player PiP. The video goes fullscreen
-            // first and allows its PiP op; Maps then covers it, so the video enters its own PiP on
-            // the task switch. Decided at the tap: Wend can be paused by the time Maps has moved.
-            boolean floatVideo = resumed && settings.floatingVideo() && media.videoLive()
-                    && media.beginVideoNativePipFloat();
+            // first and allows its PiP op; Maps then covers it with a direct move (so Wend stopping
+            // under the fullscreen video cannot cancel it), and the video enters its own PiP on the
+            // task switch. Decided at the tap: Wend can be paused by the time Maps has moved.
+            if (resumed && settings.floatingVideo() && media.videoLive() && media.beginVideoNativePipFloat()) {
+                maps.coverVideoNativePip();
+                return;
+            }
             maps.openFullscreen(new MapPanel.Covering() {
                 @Override public Rect starting() { return null; }
                 @Override public void abandoned() { media.videoCardShown(); }
-            }, floatVideo);
+            }, false);
             return;
         }
         maps.openFullscreen(new MapPanel.Covering() {
@@ -175,12 +178,7 @@ public final class MainActivity extends Activity {
             if (settings.floatingMaps() && maps.beginNativePipFloat()) media.coverWithVideo();
         } else if (packageName.equals(EmbeddedMaps.PACKAGE) && settings.floatingVideo()) {
             // Maps' nav PiP expanded: float the video in its player PiP above fullscreen Maps.
-            if (media.beginVideoNativePipFloat()) {
-                maps.openFullscreen(new MapPanel.Covering() {
-                    @Override public Rect starting() { return null; }
-                    @Override public void abandoned() { media.videoCardShown(); }
-                }, true);
-            }
+            if (media.beginVideoNativePipFloat()) maps.coverVideoNativePip();
         }
     }
 

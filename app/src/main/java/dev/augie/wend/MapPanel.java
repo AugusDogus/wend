@@ -87,6 +87,13 @@ abstract class MapPanel extends FrameLayout {
      */
     boolean beginNativePipFloat() { return false; }
 
+    /**
+     * Moves Maps fullscreen on the main display over a video that has just gone fullscreen, allowing
+     * that video's own native PiP on the task switch. A direct move, so it survives Wend stopping.
+     * @return false, leaving Maps where it is, when this host cannot cover now
+     */
+    boolean coverVideoNativePip() { return false; }
+
     /** Floating Maps was tapped: it takes the screen from the fullscreen video below it. */
     void openFullscreenFromFloating(Takeover takeover) { takeover.failed(); }
 }

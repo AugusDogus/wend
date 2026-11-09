@@ -298,6 +298,29 @@ final class EmbeddedMaps extends MapPanel {
         }
     }
 
+    @Override boolean coverVideoNativePip() {
+        if (activityView == null || state != State.READY) return false;
+        // A direct, synchronous move, issued before the fullscreen video stops Wend: the live
+        // expansion would be cancelled by suspend. Maps' op stays ignore so Maps never pins itself;
+        // allowing auto-PiP on this move lets the video it covers enter its own player PiP.
+        restMapsOp();
+        try {
+            MapsTask.Task existing = tasks.find();
+            if (existing == null) return launchNew(0);
+            if (existing.displayId != 0 || existing.windowingMode != SystemPip.FULLSCREEN) {
+                tasks.move(existing, 0, false);
+            }
+            launching = false;
+            status.setVisibility(View.GONE);
+            return true;
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.e("WendMap", "Could not open Maps fullscreen over the floating video; existing tasks"
+                    + " were left intact. Open Maps from Recents to recover your route.", error);
+            showError("Maps could not open fullscreen. Open Maps from Recents to recover your route.");
+            return false;
+        }
+    }
+
     private void restMapsOp() {
         try { pipOp.holdResting(getContext()); }
         catch (ReflectiveOperationException | RuntimeException error) {
