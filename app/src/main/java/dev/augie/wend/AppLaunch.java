@@ -8,6 +8,7 @@ import android.content.pm.LauncherApps;
 import android.os.Bundle;
 import android.os.Process;
 import android.util.Log;
+import android.view.View;
 import android.widget.Toast;
 
 /**
@@ -22,10 +23,13 @@ final class AppLaunch {
         else openInProfile(activity, app);
     }
 
-    static void open(Activity activity, String packageName) {
+    static void open(Activity activity, String packageName) { open(activity, packageName, null); }
+
+    /** @param source the view tapped to open the app, which it grows out of; null opens it without one */
+    static void open(Activity activity, String packageName, View source) {
         if (EmbeddedVideo.PACKAGE.equals(packageName) && activity instanceof MainActivity
-                && ((MainActivity) activity).openVideoFullscreen(() -> openDirect(activity, packageName))) return;
-        openDirect(activity, packageName);
+                && ((MainActivity) activity).openVideoFullscreen(() -> openDirect(activity, packageName, source))) return;
+        openDirect(activity, packageName, source);
     }
 
     /** Opens an Android screen such as Settings in its own task over the launcher, never inside Home's task. */
@@ -42,7 +46,7 @@ final class AppLaunch {
         }
     }
 
-    private static void openDirect(Activity activity, String packageName) {
+    private static void openDirect(Activity activity, String packageName, View source) {
         if (EmbeddedMaps.PACKAGE.equals(packageName) && activity instanceof MainActivity) {
             ((MainActivity) activity).openMapsFullscreen();
             return;
@@ -51,19 +55,19 @@ final class AppLaunch {
         boolean video = EmbeddedVideo.PACKAGE.equals(packageName);
         if (home != null && video) {
             // Maps floats first; the video then opens below it, placed live or as the app.
-            home.videoAppOpening(() -> openVideoApp(home));
+            home.videoAppOpening(() -> openVideoApp(home, source));
             return;
         }
         if (home != null) home.externalAppOpening();
-        if (!openExternal(activity, packageName) && home != null) home.externalAppFailed();
+        if (!openExternal(activity, packageName, source) && home != null) home.externalAppFailed();
     }
 
-    private static void openVideoApp(MainActivity home) {
-        if (openExternal(home, EmbeddedVideo.PACKAGE)) home.videoOpened();
+    private static void openVideoApp(MainActivity home, View source) {
+        if (openExternal(home, EmbeddedVideo.PACKAGE, source)) home.videoOpened();
         else home.externalAppFailed();
     }
 
-    private static boolean openExternal(Activity activity, String packageName) {
+    private static boolean openExternal(Activity activity, String packageName, View source) {
         if (EmbeddedVideo.PACKAGE.equals(packageName)) {
             // Under SYSTEM_PIP, let the app this move backgrounds (a floated Maps) enter its own
             // native PiP; whether Maps actually pins is gated by its op, which Wend allowed only
@@ -71,7 +75,8 @@ final class AppLaunch {
             boolean allowAutoPip = activity instanceof MainActivity
                     && ((MainActivity) activity).floatingMapsIntoPip();
             try {
-                if (VideoTask.openFullscreen(activity, allowAutoPip)) return true;
+                View card = activity instanceof MainActivity ? ((MainActivity) activity).videoCard() : null;
+                if (VideoTask.openFullscreen(activity, allowAutoPip, card, source)) return true;
             } catch (ReflectiveOperationException | RuntimeException error) {
                 Log.e("Wend", "Could not restore the existing video task", error);
                 Toast.makeText(activity, "The video could not be restored. Open it from Recents; existing tasks were left intact.",
@@ -86,7 +91,7 @@ final class AppLaunch {
             return false;
         }
         try {
-            activity.startActivity(launch, mainDisplay(activity));
+            activity.startActivity(launch, mainDisplay(activity, from(source)));
             return true;
         }
         catch (ActivityNotFoundException | SecurityException error) {
@@ -112,9 +117,19 @@ final class AppLaunch {
         }
     }
 
-    private static Bundle mainDisplay(Activity activity) {
-        ActivityOptions options = ActivityOptions.makeBasic();
+    private static Bundle mainDisplay(Activity activity) { return mainDisplay(activity, ActivityOptions.makeBasic()); }
+
+    private static Bundle mainDisplay(Activity activity, ActivityOptions options) {
         options.setLaunchDisplayId(activity.getWindowManager().getDefaultDisplay().getDisplayId());
         return options.toBundle();
+    }
+
+    /**
+     * Android's own open transition, growing the app out of the tapped view. Android 10 otherwise
+     * shows the app at once whenever Wend floats Maps into its PiP in the same transition.
+     */
+    static ActivityOptions from(View source) {
+        if (source == null || !source.isShown()) return ActivityOptions.makeBasic();
+        return ActivityOptions.makeScaleUpAnimation(source, 0, 0, source.getWidth(), source.getHeight());
     }
 }

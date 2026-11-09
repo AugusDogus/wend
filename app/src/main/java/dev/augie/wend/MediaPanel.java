@@ -15,6 +15,7 @@ import android.os.Looper;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -127,6 +128,7 @@ final class MediaPanel extends LinearLayout {
         video.yieldToMaps(corner, listener);
     }
     void emergeVideo() { video.emergeAboveMaps(); }
+    View videoCard() { return video; }
     /** Whether the video plays live in its card. */
     boolean videoLive() { return video.livePlaying(); }
     /** Moves the live video fullscreen and allows its PiP op so it enters its own player PiP. */

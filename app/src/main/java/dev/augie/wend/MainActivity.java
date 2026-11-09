@@ -67,7 +67,7 @@ public final class MainActivity extends Activity {
         root.setPadding(0, inset, 0, 0);
         dockCapacity = dockCapacity(this, inset);
         dock = new Dock(this, AppCatalog.get(this), settings.dockPins(dockCapacity), new Dock.Actions() {
-            @Override public void openApp(String packageName) { AppLaunch.open(MainActivity.this, packageName); }
+            @Override public void openApp(String packageName, View source) { AppLaunch.open(MainActivity.this, packageName, source); }
             @Override public void showApps() { MainActivity.this.showApps(); }
             @Override public void showSettings() { MainActivity.this.showSettings(); }
         });
@@ -291,6 +291,9 @@ public final class MainActivity extends Activity {
         maps.beginNativePipFloat();
         openApp.run();
     }
+
+    /** The video card, for the video to grow out of as it opens fullscreen. */
+    View videoCard() { return media.videoCard(); }
 
     /** Whether Wend has just floated Maps into its own native PiP; lets AppLaunch allow the video's auto-PiP cover. */
     boolean floatingMapsIntoPip() { return BuildConfig.SYSTEM_PIP; }

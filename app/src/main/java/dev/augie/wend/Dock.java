@@ -22,7 +22,8 @@ import java.util.Map;
 @SuppressLint("ViewConstructor")
 final class Dock extends LinearLayout implements AppCatalog.Listener {
     interface Actions {
-        void openApp(String packageName);
+        /** @param source the tapped icon */
+        void openApp(String packageName, View source);
         void showApps();
         void showSettings();
     }
@@ -119,7 +120,7 @@ final class Dock extends LinearLayout implements AppCatalog.Listener {
         button.setBackground(Ui.ripple(getContext(), 16));
         int padding = Ui.dp(getContext(), 4);
         button.setPadding(padding, padding, padding, padding);
-        button.setOnClickListener(v -> actions.openApp(packageName));
+        button.setOnClickListener(v -> actions.openApp(packageName, v));
         return button;
     }
 

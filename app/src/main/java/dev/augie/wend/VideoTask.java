@@ -34,6 +34,22 @@ final class VideoTask {
     }
 
     /**
+     * As {@link #openFullscreen(Activity, boolean)}, growing out of the card while the video task
+     * still sits in the card's display (playing or not), and otherwise out of {@code source}, the
+     * tapped icon. Android 10 runs no transition for a task that was already visible, and none here
+     * for one that was not, so the video would otherwise cut to fullscreen.
+     * @param card the video card, or null
+     * @param source the view tapped to open the video, or null
+     */
+    static boolean openFullscreen(Activity host, boolean allowAutoPip, View card, View source)
+            throws ReflectiveOperationException {
+        int selected = find(host);
+        View from = selected >= 0 && card != null && card.isShown() && displayOf(selected) > 0 ? card
+                : source != null && source.isShown() ? source : null;
+        return move(host, 0, !allowAutoPip, ActivityOptions.makeBasic(), from);
+    }
+
+    /**
      * Moves the video task fullscreen onto the main display, growing out of {@code card} instead of
      * cutting to fullscreen where the pip-hook module is installed ({@link #GROW_FROM}); elsewhere
      * Android ignores the request and the video cuts to fullscreen as before. The app it covers may not
@@ -117,6 +133,18 @@ final class VideoTask {
         if (displayId != 0) host.getSystemService(ActivityManager.class).moveTaskToFront(host.getTaskId(), 0);
         else Log.i("WendVideo", "Moved video task " + selected + " to the main display, fullscreen");
         return true;
+    }
+
+    /** The display {@code taskId} is on, or -1 if it has no running task. */
+    private static int displayOf(int taskId) throws ReflectiveOperationException {
+        Object result = api().getMethod("getTasks", int.class).invoke(service(), Integer.MAX_VALUE);
+        if (!(result instanceof List<?>)) throw new IllegalStateException("Task service returned no task list");
+        for (Object item : (List<?>) result) {
+            if (item instanceof ActivityManager.RunningTaskInfo && ((ActivityManager.RunningTaskInfo) item).taskId == taskId) {
+                return item.getClass().getField("displayId").getInt(item);
+            }
+        }
+        return -1;
     }
 
     private static void remember(Activity host, int taskId) { preferences(host).edit().putInt("taskId", taskId).apply(); }

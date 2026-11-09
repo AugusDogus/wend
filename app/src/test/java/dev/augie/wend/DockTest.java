@@ -76,7 +76,7 @@ public class DockTest {
 
     private Dock dock(AppCatalog catalog, DockPins pins) {
         return new Dock(context, catalog, pins, new Dock.Actions() {
-            @Override public void openApp(String packageName) { }
+            @Override public void openApp(String packageName, View source) { }
             @Override public void showApps() { }
             @Override public void showSettings() { }
         });
