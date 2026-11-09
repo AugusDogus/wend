@@ -24,6 +24,7 @@ public final class PipHook implements IXposedHookLoadPackage {
                 PanelReturn.install(lpparam.classLoader);
                 CardReturn.install(lpparam.classLoader);
                 PanelExpand.install(lpparam.classLoader);
+                PipEdges.install(lpparam.classLoader);
             } else if (MAPS.equals(lpparam.packageName) && MAPS.equals(lpparam.processName)) {
                 PanelAppHook.install(PanelAppHook.Entry.LEAVE_HINT);
                 DisplayMoveCache.install();

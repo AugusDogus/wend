@@ -33,6 +33,10 @@ instead of cut. It runs in three processes.
 - **Home** (`CardReturn`, `PanelReturn`). A video Wend grew out of a card shrinks back into it, and a
   PiP Wend moves back into a panel grows into a picture of that panel taken as it left, which covers
   the app until it reports its new layout. Both wait for Wend's window, so they start with it.
+- **PiP edges** (`PipEdges`). The PiP's app is cropped to the PiP's bounds and the module draws the
+  PiP's shadow itself. SurfaceFlinger keeps showing video layers YouTube has removed (one each time
+  it moves between displays), and one showed as a blurred border in the margin Android leaves around
+  the PiP for the app's own shadow.
 - The module's own animations run on their own display-priority thread (`MotionThread`), not on
   Android's `android.anim`, which blocks on the window manager's lock while Wend resumes.
 
