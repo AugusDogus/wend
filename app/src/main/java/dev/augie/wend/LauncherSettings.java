@@ -24,6 +24,7 @@ final class LauncherSettings {
     private static final String MAPS_ON_RIGHT = "mapsOnRight";
     private static final String MAP_PERCENT = "mapPercent";
     private static final String DOCK_PINS = "dockPins";
+    private static final String MUSIC_APP = "musicApp";
     private static final String FLOATING_VIDEO = "floatingVideo";
     private static final String FLOATING_VIDEO_CORNER = "floatingVideoCorner";
     private static final String FLOATING_MAPS = "floatingMaps";
@@ -103,6 +104,37 @@ final class LauncherSettings {
     }
 
     void setDockPins(DockPins pins) { preferences.edit().putString(DOCK_PINS, pins.serialize()).apply(); }
+
+    /**
+     * The app the media panel opens and prefers among paused sessions. The build's default
+     * ({@link BuildConfig#MUSIC_PACKAGE}) until one is chosen; an unreadable or non-package value
+     * is logged and reads as that default, and is replaced the next time an app is chosen.
+     */
+    String musicApp() {
+        String stored;
+        try {
+            stored = preferences.getString(MUSIC_APP, null);
+        } catch (ClassCastException error) {
+            Log.w(TAG, "Stored music app is not a package name; using " + BuildConfig.MUSIC_PACKAGE
+                    + " until one is chosen again", error);
+            return BuildConfig.MUSIC_PACKAGE;
+        }
+        if (stored == null) return BuildConfig.MUSIC_PACKAGE;
+        if (!DockPins.isPackageName(stored)) {
+            Log.w(TAG, "Stored music app \"" + stored + "\" is not an Android package name; using "
+                    + BuildConfig.MUSIC_PACKAGE + " until one is chosen again");
+            return BuildConfig.MUSIC_PACKAGE;
+        }
+        return stored;
+    }
+
+    void setMusicApp(String packageName) {
+        if (!DockPins.isPackageName(packageName)) {
+            throw new IllegalArgumentException("Cannot set the music app to \"" + packageName
+                    + "\": it is not an Android package name");
+        }
+        preferences.edit().putString(MUSIC_APP, packageName).apply();
+    }
 
     private FloatingPlacement.Corner readCorner(String key, FloatingPlacement.Corner fallback) {
         String stored;

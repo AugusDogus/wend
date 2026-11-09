@@ -32,6 +32,7 @@ public class LauncherSettingsTest {
         assertTrue(settings.floatingVideo());
         assertTrue(settings.floatingMaps());
         assertEquals(DockPins.defaults(5).packages(), settings.dockPins(5).packages());
+        assertEquals(BuildConfig.MUSIC_PACKAGE, settings.musicApp());
     }
 
     @Test public void existingInstallsKeepTheirLayoutChoice() {
@@ -107,5 +108,22 @@ public class LauncherSettingsTest {
     @Test public void garbageStoredPinsKeepTheirValidEntries() {
         preferences.edit().putString("dockPins", "com.a.a,,bad name,com.a.a,com.b.b").commit();
         assertEquals(Arrays.asList("com.a.a", "com.b.b"), settings.dockPins(5).packages());
+    }
+
+    @Test public void theMusicAppSurvivesARoundTrip() {
+        settings.setMusicApp("com.example.player");
+        assertEquals("com.example.player", preferences.getString("musicApp", null));
+        assertEquals("com.example.player", settings.musicApp());
+        assertEquals("com.example.player", new LauncherSettings(preferences).musicApp());
+    }
+
+    @Test public void aWronglyTypedMusicAppFallsBackToTheDefault() {
+        preferences.edit().putInt("musicApp", 3).commit();
+        assertEquals(BuildConfig.MUSIC_PACKAGE, settings.musicApp());
+    }
+
+    @Test public void aGarbageMusicAppFallsBackToTheDefault() {
+        preferences.edit().putString("musicApp", "not a package").commit();
+        assertEquals(BuildConfig.MUSIC_PACKAGE, settings.musicApp());
     }
 }
