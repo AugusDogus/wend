@@ -10,6 +10,7 @@ import android.os.IBinder;
 import android.os.Process;
 import android.util.Log;
 import android.view.SurfaceControl;
+import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.WindowManager;
@@ -90,6 +91,34 @@ class ActivityViewSurface {
         if (!(region instanceof Region)) throw new IllegalStateException("Video input portal has no touch region");
         touchableRegion = (Region) region;
         setInput = SurfaceControl.Transaction.class.getMethod("setInputWindowInfo", SurfaceControl.class, handle);
+    }
+
+    /**
+     * Paints the background layer Android 10 puts behind an ActivityView's surface (black by default),
+     * which shows wherever the embedded app draws nothing. Android recreates that layer black with
+     * every new surface, so it is painted again each time the surface is created.
+     */
+    static void paintBackground(ActivityView view, int color) {
+        try {
+            Field field = ActivityView.class.getDeclaredField("mSurfaceView");
+            field.setAccessible(true);
+            Object value = field.get(view);
+            if (!(value instanceof SurfaceView)) throw new IllegalStateException("ActivityView has no SurfaceView");
+            SurfaceView surface = (SurfaceView) value;
+            Method paint = SurfaceView.class.getMethod("setResizeBackgroundColor", int.class);
+            surface.getHolder().addCallback(new SurfaceHolder.Callback() {
+                @Override public void surfaceCreated(SurfaceHolder holder) {
+                    try { paint.invoke(surface, color); }
+                    catch (ReflectiveOperationException | RuntimeException error) {
+                        Log.w("WendSurface", "Could not color an embedded display's background; it shows black where its app draws nothing", error);
+                    }
+                }
+                @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) { }
+                @Override public void surfaceDestroyed(SurfaceHolder holder) { }
+            });
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("WendSurface", "Could not color an embedded display's background; it shows black where its app draws nothing", error);
+        }
     }
 
     private static Method optionalCornerRadius() {

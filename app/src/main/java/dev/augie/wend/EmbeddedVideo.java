@@ -516,6 +516,9 @@ final class EmbeddedVideo extends FrameLayout {
                     Log.w("WendVideo", "Video display lifecycle unavailable; video cannot float above Maps", error);
                 }
                 addView(player, 0, new LayoutParams(displaySize.x, displaySize.y));
+                // The player is screen-sized and scaled into the card, so its background reaches past
+                // the card and shows through Maps' panel whenever Maps is not drawn there.
+                ActivityViewSurface.paintBackground(player, Ui.PANEL);
                 player.setCallback(new ActivityView.StateCallback() {
                     @Override public void onActivityViewReady(ActivityView view) {
                         try {
