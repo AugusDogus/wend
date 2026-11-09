@@ -83,7 +83,9 @@ final class MapsPipHook {
                 Configuration.class, new XC_MethodHook() {
                     @Override protected void afterHookedMethod(MethodHookParam param) {
                         Activity activity = (Activity) param.thisObject;
-                        if ((boolean) param.args[0] && floated.compareAndSet(activity, null)) reportWhenSettled(activity);
+                        // Into PiP from Wend's panel, or out of PiP: system_server holds Maps out of
+                        // sight in both until Maps reports its new layout.
+                        if (!(boolean) param.args[0] || floated.compareAndSet(activity, null)) reportWhenSettled(activity);
                     }
                 });
         XposedBridge.log(PipHook.TAG + ": Maps hook installed");

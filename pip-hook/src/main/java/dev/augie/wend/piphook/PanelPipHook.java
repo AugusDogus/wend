@@ -4,6 +4,7 @@ import android.graphics.Point;
 import android.graphics.Rect;
 import android.animation.ValueAnimator;
 import android.app.PictureInPictureParams;
+import android.os.Handler;
 import android.os.IBinder;
 import android.os.SystemClock;
 import android.view.Display;
@@ -103,7 +104,7 @@ final class PanelPipHook {
                         XposedBridge.log(PipHook.TAG + ": shrink landed after " + (SystemClock.uptimeMillis() - shrinkScheduledAt)
                                 + " ms with " + shrinkFrames.get() + " frames");
                         Rect landed = param.args.length > 1 && param.args[1] instanceof Rect ? (Rect) param.args[1] : null;
-                        if (landed != null) LandingBridge.cover(param.thisObject, landed);
+                        if (landed != null) holdLanded(param.thisObject, landed);
                     }
                 });
         XposedHelpers.findAndHookMethod(XposedHelpers.findClass("com.android.server.wm.ActivityTaskManagerService", loader),
@@ -111,10 +112,24 @@ final class PanelPipHook {
                     @Override protected void beforeHookedMethod(MethodHookParam param) {
                         if (!PipSignals.isLayoutSettled((PictureInPictureParams) param.args[1])) return;
                         param.setResult(null);
-                        LandingBridge.reveal("Maps reported its PiP layout settled");
+                        SettleCover.settled();
                     }
                 });
         XposedBridge.log(PipHook.TAG + ": system_server hook installed");
+    }
+
+    /** Called on the bounds animation thread as the shrink ends at {@code landed}. */
+    private static void holdLanded(Object taskStack, Rect landed) {
+        try {
+            Object displayContent = XposedHelpers.callMethod(taskStack, "getDisplayContent");
+            Handler animation = (Handler) XposedHelpers.callMethod(
+                    XposedHelpers.getObjectField(displayContent, "mBoundsAnimationController"), "getHandler");
+            ScreenStill still = ScreenStill.show(displayContent, landed, "WendPipLandingStill");
+            if (still == null) return;
+            SettleCover.hold(still, animation, "the landed PiP").landed();
+        } catch (Throwable error) {
+            XposedBridge.log(PipHook.TAG + ": could not hold a still over the landed PiP; the app's relayout shows as is: " + error);
+        }
     }
 
     private static void leavePanel(XC_MethodHook.MethodHookParam param) {
@@ -145,7 +160,7 @@ final class PanelPipHook {
     }
 
     /** The on-screen bounds of a Wend panel's virtual display, or null if the display is not a Wend panel. */
-    private static Rect panelBounds(Object activityDisplay) {
+    static Rect panelBounds(Object activityDisplay) {
         Object content = XposedHelpers.getObjectField(activityDisplay, "mDisplayContent");
         if (content == null) return null;
         Object parent = XposedHelpers.callMethod(content, "getParentWindow");
