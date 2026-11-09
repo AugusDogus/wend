@@ -1,25 +1,43 @@
 # pip-hook
 
-An LSPosed module for the Android 10 head unit that makes Wend's floating Maps move instead of cut.
-It runs in two processes:
+An LSPosed module for the Android 10 head unit that makes Wend's floating Maps and video move
+instead of cut. It runs in three processes.
 
-- **Google Maps** (`MapsPipHook`). Wend sends `dev.augie.wend.action.ENTER_PIP_FROM_PANEL` as an
-  ordered broadcast (senders need `MANAGE_ACTIVITY_STACKS`). Maps' resumed activity gets its own
-  `onUserLeaveHint`, so Maps enters its own navigation PiP from the panel, and the hook answers
-  whether it did. After Maps enters or leaves PiP, the hook reports when Maps' set of shown views has
-  stopped changing, through a marker `setPictureInPictureParams` call (`PipSignals`).
-- **system_server** (`PanelPipHook`, `CardGrow`, `PanelReturn`), for AOSP `android-10.0.0_r47`:
-  - A PiP requested from a Wend panel (an ActivityView display) moves to the main display without
-    being drawn fullscreen, and Android's own shrink starts from the panel's screen bounds.
-  - As the shrink lands, a still of the PiP covers Maps while Android resizes it, then crossfades
-    into Maps' PiP card once Maps reports it settled (1.5 s cap).
-  - A task Wend moves out of a card with `dev.augie.wend.GROW_FROM` in its options grows from the
-    card to fullscreen, on the shrink's curve and duration, over a still of Wend.
-  - A PiP Wend moves back into a panel grows toward the panel while fading out; the app stays hidden
-    in the panel until it reports settled, then fades in.
+## In Google Maps and YouTube (`PanelAppHook`, `DisplayMoveCache`)
 
-Without the module nothing answers Wend's broadcast, Wend floats Maps by the task-switch path
-(`MainActivity.floatMapsByTaskSwitch`), and the video cuts to fullscreen as before.
+- Wend sends `dev.augie.wend.action.ENTER_PIP_FROM_PANEL` as an ordered broadcast (senders need
+  `MANAGE_ACTIVITY_STACKS`). The app enters its own PiP and the hook answers whether it did:
+  - **Maps** through its own `onUserLeaveHint`, so it chooses its navigation PiP itself.
+  - **YouTube** directly, as a 16:9 player: YouTube declines from `onUserLeaveHint` but renders its
+    player PiP once in it. Wend passes where the card shows on screen (`dev.augie.wend.START`), since
+    the card scales YouTube's display down.
+- After the app enters or leaves PiP, or moves between displays outside PiP, the hook reports once
+  its new layout is drawn: its set of shown views has changed (or 250 ms passed) and that frame is
+  committed. The report is a marker `setPictureInPictureParams` call (`PipSignals`).
+- While an app handles a configuration change, each display's state is read once. Android 10 reads
+  it over binder for every view when an app moves between displays; for Maps that was 330 to 880
+  calls per move and held its main thread for 160 to 880 ms as it entered its PiP.
+
+## In system_server (AOSP `android-10.0.0_r47`)
+
+- **Entering PiP from a panel** (`PanelPipHook`). The app moves to the main display without being
+  drawn fullscreen, and Android's own shrink starts from the panel's screen bounds. For a scaled
+  panel (the video card), a still of the card covers the app's first frames, moving with the shrink.
+  As the shrink lands, a still covers the app while Android resizes it, until the app reports its
+  PiP layout (2.5 s cap), then crossfades.
+- **Growing out of a card or icon** (`CardGrow`). A task Wend moves with `dev.augie.wend.GROW_FROM`
+  grows from those bounds to fullscreen, on the shrink's curve and duration, over a still of Wend.
+- **Expanding out of a panel** (`PanelExpand`). A task Wend moves with `dev.augie.wend.EXPAND_FROM`
+  (Maps, as the video floats) stays hidden while a still of its panel grows to fullscreen, until the
+  app reports its new layout.
+- **Home** (`CardReturn`, `PanelReturn`). A video Wend grew out of a card shrinks back into it, and a
+  PiP Wend moves back into a panel grows into a picture of that panel taken as it left, which covers
+  the app until it reports its new layout. Both wait for Wend's window, so they start with it.
+- The module's own animations run on their own display-priority thread (`MotionThread`), not on
+  Android's `android.anim`, which blocks on the window manager's lock while Wend resumes.
+
+Without the module nothing answers Wend's broadcast; Wend floats Maps by the task-switch path
+(`MainActivity.floatMapsByTaskSwitch`), the video by its own task switch, and moves cut as before.
 
 ## Build
 
@@ -31,13 +49,14 @@ Without the module nothing answers Wend's broadcast, Wend floats Maps by the tas
 
 1. Install LSPosed (Zygisk build, tested with v1.9.2) and reboot.
 2. `adb install -r pip-hook/build/outputs/apk/debug/pip-hook-debug.apk`
-3. Enable the module for **System Framework** and **Google Maps** in LSPosed. Without the manager
-   app, the same rows can be written to `/data/adb/lspd/config/modules_config.db` as root: set
-   `modules.enabled = 1` for `dev.augie.wend.piphook`, and add `scope` rows `system` and
-   `com.google.android.apps.maps` (user 0) for its `mid`.
-4. Remove Maps from Magisk's denylist (`magisk --denylist rm com.google.android.apps.maps`); an
-   enforced denylist unloads Zygisk, and so the hook, from Maps.
-5. Reboot. `/data/adb/lspd/log/modules_*.log` then shows `system_server hook installed`,
-   `card grow hook installed`, `panel return hook installed`, and `Maps hook installed`.
+3. Enable the module for **System Framework**, **Google Maps**, and **YouTube** in LSPosed. Without
+   the manager app, the same rows can be written to `/data/adb/lspd/config/modules_config.db` as
+   root: set `modules.enabled = 1` for `dev.augie.wend.piphook`, and add `scope` rows `system`,
+   `com.google.android.apps.maps`, and `com.google.android.youtube` (user 0) for its `mid`.
+4. Remove Maps and YouTube from Magisk's denylist (`magisk --denylist rm <package>`); an enforced
+   denylist unloads Zygisk, and so the hook, from them.
+5. Reboot. `/data/adb/lspd/log/modules_*.log` then shows the system_server hooks (`system_server`,
+   `card grow`, `panel return`, `card return`, `panel expand`) and `LEAVE_HINT` (Maps) and `PLAYER`
+   (YouTube) as installed.
 
-Every system_server change needs a reboot; a Maps-only change needs Maps restarted.
+Every system_server change needs a reboot; a Maps or YouTube change needs that app restarted.

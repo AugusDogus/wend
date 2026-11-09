@@ -58,26 +58,28 @@ deliberately floated app can pin, and only its own code decides how its PiP look
   `PipAppOp.restore`). A video that cannot return live, such as a paused one, has
   its PiP closed as SystemUI's close does (`VideoTask.dismissPip`).
 
-### With the pip-hook module: Maps floats straight from its panel
+### With the pip-hook module: apps float straight from their panels
 
-On a rooted unit with the `pip-hook` LSPosed module (`pip-hook/README.md`),
-opening the video while Maps navigates no longer flashes Maps fullscreen first.
-`MainActivity.videoAppOpening` asks Maps for its own PiP from the panel
-(`MapsPanelPip`, `EmbeddedMaps.floatFromPanelIntoPip`), and only once Maps has
-entered it does the video take the screen:
+On a rooted unit with the `pip-hook` LSPosed module (`pip-hook/README.md`), no app flashes
+fullscreen on its way into or out of a PiP. Wend asks the app for its own PiP from its panel
+(`PanelPip`), and only once it has entered does the other app take the screen:
 
-- Maps shrinks from its panel into its PiP corner with Android's own bounds
-  animation, then crossfades into its navigation card as soon as Maps has drawn it.
-- The live video grows out of its card to fullscreen at the same time
-  (`VideoTask.growFullscreen`); without a live video, the video app opens.
-- Home returns Maps by the same `startActivityFromRecents` move; the module grows
-  the PiP toward the panel while fading it out and fades Maps in once it has
-  redrawn there.
-- The empty panel, and anything Wend's embedded displays do not cover, shows
-  Wend's panel color (`ActivityViewSurface.paintBackground`), not black.
+- **Open the video while Maps navigates** (`MainActivity.videoAppOpening`). Maps shrinks from its
+  panel into its PiP corner with Android's own bounds animation, then crossfades into its
+  navigation card once Maps has drawn it. The video grows to fullscreen at the same time: out of its
+  card while its task sits there (playing or not), otherwise out of the tapped dock icon
+  (`VideoTask.openFullscreen`).
+- **Open Maps while the video plays in its card** (`MainActivity.openMapsFullscreen`). The video
+  floats into YouTube's own player PiP straight from the card (`EmbeddedVideo.floatFromCardIntoPip`),
+  and Maps expands out of its panel to fullscreen (`EmbeddedMaps.coverVideoNativePip`).
+- **Home** returns them by the same moves as before: a video that grew out of its card shrinks back
+  into it, and a PiP grows back into its panel through a picture of the panel taken as it left,
+  until the app has redrawn there.
+- The empty panel, and anything Wend's embedded displays do not cover, shows Wend's panel color
+  (`ActivityViewSurface.paintBackground`), not black.
 
-Without the module, the broadcast goes unanswered and Wend uses the task-switch
-path above (`MainActivity.floatMapsByTaskSwitch`).
+Without the module, the broadcast goes unanswered and Wend uses the task-switch paths above
+(`MainActivity.floatMapsByTaskSwitch`, `EmbeddedVideo.beginNativePipFloat`).
 
 Why these Android 10 details:
 
