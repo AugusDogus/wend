@@ -20,6 +20,8 @@ public final class PipHook implements IXposedHookLoadPackage {
                 PanelPipHook.install(lpparam.classLoader);
                 CardGrow.install(lpparam.classLoader);
                 PanelReturn.install(lpparam.classLoader);
+                CardReturn.install(lpparam.classLoader);
+                PanelExpand.install(lpparam.classLoader);
             } else if (MAPS.equals(lpparam.packageName) && MAPS.equals(lpparam.processName)) {
                 MapsPipHook.install();
             }

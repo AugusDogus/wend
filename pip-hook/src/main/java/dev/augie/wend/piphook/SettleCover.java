@@ -2,6 +2,8 @@ package dev.augie.wend.piphook;
 
 import android.os.Handler;
 import de.robv.android.xposed.XposedBridge;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Runs in system_server. Keeps an app that Android 10 is resizing out of sight, under a
@@ -12,11 +14,16 @@ final class SettleCover {
     /** What reveals the app: a still fading out, or the hidden app fading in. */
     interface Reveal { void reveal(Handler thread); }
 
-    private static final long SETTLE_CAP_MS = 1500;
+    /**
+     * Only a safety net: an app normally reports within a few hundred ms. Under heavy load Maps took
+     * over 1.5 s, and revealing it then showed its half-drawn layout.
+     */
+    private static final long SETTLE_CAP_MS = 2500;
     private static final Object lock = new Object();
-    /** The cover waiting on the app, or null; guarded by {@link #lock}. */
-    private static SettleCover current;
+    /** The cover waiting on each app, by its task id; guarded by {@link #lock}. */
+    private static final Map<Integer, SettleCover> current = new HashMap<>();
 
+    private final int taskId;
     private final Reveal target;
     private final Handler thread;
     private final String what;
@@ -24,20 +31,18 @@ final class SettleCover {
     private boolean settled;
     private boolean revealed;
 
-    private SettleCover(Reveal target, Handler thread, String what) {
+    private SettleCover(int taskId, Reveal target, Handler thread, String what) {
+        this.taskId = taskId;
         this.target = target;
         this.thread = thread;
         this.what = what;
     }
 
-    /** Starts covering; a cover still waiting from before is revealed. */
-    static SettleCover hold(Reveal target, Handler thread, String what) {
-        SettleCover cover = new SettleCover(target, thread, what);
+    /** Starts covering task {@code taskId}; a cover still waiting on it from before is revealed. */
+    static SettleCover hold(int taskId, Reveal target, Handler thread, String what) {
+        SettleCover cover = new SettleCover(taskId, target, thread, what);
         SettleCover previous;
-        synchronized (lock) {
-            previous = current;
-            current = cover;
-        }
+        synchronized (lock) { previous = current.put(taskId, cover); }
         if (previous != null) previous.reveal("a newer cover replaced it");
         return cover;
     }
@@ -53,12 +58,12 @@ final class SettleCover {
         else thread.postDelayed(() -> reveal("the app did not report its layout within " + SETTLE_CAP_MS + " ms"), SETTLE_CAP_MS);
     }
 
-    /** The app reported its layout settled; called on any thread. */
-    static void settled() {
+    /** The app in task {@code taskId} reported its layout settled; called on any thread. */
+    static void settled(int taskId) {
         SettleCover cover;
         boolean now;
         synchronized (lock) {
-            cover = current;
+            cover = current.get(taskId);
             if (cover == null) return;
             cover.settled = true;
             now = cover.landed;
@@ -70,7 +75,7 @@ final class SettleCover {
         synchronized (lock) {
             if (revealed) return;
             revealed = true;
-            if (current == this) current = null;
+            current.remove(taskId, this);
         }
         XposedBridge.log(PipHook.TAG + ": revealing " + what + ": " + why);
         target.reveal(thread);

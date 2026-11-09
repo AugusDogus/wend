@@ -8,6 +8,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.SystemClock;
 import android.view.Display;
+import android.view.SurfaceControl;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
@@ -38,6 +39,11 @@ final class PanelPipHook {
     /** Shrink frames applied and when the shrink was scheduled, for the log line as it lands. */
     private static final AtomicInteger shrinkFrames = new AtomicInteger();
     private static volatile long shrinkScheduledAt;
+    /** Frames the start cover stays opaque, then frames it takes to fade. */
+    private static final int START_COVER_FRAMES = 6;
+    /** The still over a scaled panel's PiP as it starts shrinking, or null; on the animation thread. */
+    private static volatile ScreenStill startCover;
+    private static int startCoverFrames;
     private static final String DEFERRED = "wendDeferredWindowManager";
 
     private PanelPipHook() { }
@@ -84,6 +90,11 @@ final class PanelPipHook {
                             shrinkFrames.incrementAndGet();
                         }
                     }
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        ScreenStill cover = startCover;
+                        if (cover == null || LANDING.get() != XposedHelpers.getObjectField(param.thisObject, "mTarget")) return;
+                        followShrink(cover, (Rect) XposedHelpers.getObjectField(param.thisObject, "mTmpRect"));
+                    }
                 });
         // Stock Android holds a PiP shrink until the app opening below has drawn its first frame, so
         // the app sat frozen at its full panel size over the new app's snapshot. A panel shrink
@@ -112,21 +123,54 @@ final class PanelPipHook {
                     @Override protected void beforeHookedMethod(MethodHookParam param) {
                         if (!PipSignals.isLayoutSettled((PictureInPictureParams) param.args[1])) return;
                         param.setResult(null);
-                        SettleCover.settled();
+                        try {
+                            Object lock = XposedHelpers.getObjectField(param.thisObject, "mGlobalLock");
+                            int taskId;
+                            synchronized (lock) {
+                                Object record = XposedHelpers.callStaticMethod(activityRecord, "isInStackLocked", param.args[0]);
+                                if (record == null) return;
+                                taskId = XposedHelpers.getIntField(XposedHelpers.callMethod(record, "getTaskRecord"), "taskId");
+                            }
+                            SettleCover.settled(taskId);
+                        } catch (Throwable error) {
+                            XposedBridge.log(PipHook.TAG + ": could not tell which app reported its layout: " + error);
+                        }
                     }
                 });
         XposedBridge.log(PipHook.TAG + ": system_server hook installed");
+    }
+
+    /**
+     * Moves the start cover with the shrink's bounds, then fades it once the app has had time to
+     * redraw at the PiP's size ({@link #START_COVER_FRAMES}).
+     */
+    private static void followShrink(ScreenStill cover, Rect at) {
+        int frame = ++startCoverFrames;
+        float alpha = Math.max(0f, 1f - Math.max(0, frame - START_COVER_FRAMES) / (float) START_COVER_FRAMES);
+        try {
+            SurfaceControl.Transaction t = new SurfaceControl.Transaction();
+            cover.place(t, at);
+            cover.alpha(t, alpha);
+            t.apply();
+        } catch (Throwable error) {
+            XposedBridge.log(PipHook.TAG + ": start cover frame failed: " + error);
+            alpha = 0f;
+        }
+        if (alpha <= 0f) {
+            startCover = null;
+            cover.remove();
+        }
     }
 
     /** Called on the bounds animation thread as the shrink ends at {@code landed}. */
     private static void holdLanded(Object taskStack, Rect landed) {
         try {
             Object displayContent = XposedHelpers.callMethod(taskStack, "getDisplayContent");
-            Handler animation = (Handler) XposedHelpers.callMethod(
-                    XposedHelpers.getObjectField(displayContent, "mBoundsAnimationController"), "getHandler");
+            Handler animation = MotionThread.get();
             ScreenStill still = ScreenStill.show(displayContent, landed, "WendPipLandingStill");
             if (still == null) return;
-            SettleCover.hold(still, animation, "the landed PiP").landed();
+            int taskId = XposedHelpers.getIntField(XposedHelpers.callMethod(taskStack, "getTopChild"), "mTaskId");
+            SettleCover.hold(taskId, still, animation, "the landed PiP").landed();
         } catch (Throwable error) {
             XposedBridge.log(PipHook.TAG + ": could not hold a still over the landed PiP; the app's relayout shows as is: " + error);
         }
@@ -139,6 +183,29 @@ final class PanelPipHook {
             if (XposedHelpers.getIntField(display, "mDisplayId") == Display.DEFAULT_DISPLAY) return;
             Rect panel = panelBounds(display);
             if (panel == null) return;
+            // A hint is Wend's on-screen rect for a scaled panel, such as the video card, passed on by
+            // PanelAppHook. Consumed here: Android would otherwise crop the shrink to it.
+            // One screenshot of the panel serves both the start cover and the panel's return.
+            ScreenStill.Capture picture = null;
+            Rect hint = (Rect) param.args[1];
+            if (hint != null && !hint.isEmpty()) {
+                panel = new Rect(hint);
+                // The app's window is its display's size, larger than the panel shows it: until it
+                // redraws at the shrinking size its first frames show cropped, so a still of the
+                // panel covers them, moving with the shrink.
+                ScreenStill previous = startCover;
+                if (previous != null) previous.remove();
+                startCoverFrames = 0;
+                picture = ScreenStill.Capture.take(panel);
+                startCover = picture == null ? null : ScreenStill.show(XposedHelpers.getObjectField(
+                        XposedHelpers.callMethod(param.thisObject, "getDefaultDisplay"), "mDisplayContent"),
+                        picture, panel, "WendPipStartCover", Integer.MAX_VALUE, 1f);
+                param.args[1] = new Rect();
+                Object args = XposedHelpers.getObjectField(param.args[0], "pictureInPictureArgs");
+                if (args != null) XposedHelpers.setObjectField(args, "mSourceRectHint", null);
+            }
+            PanelReturn.panelLeft(XposedHelpers.getIntField(XposedHelpers.callMethod(param.args[0], "getTaskRecord"), "taskId"),
+                    picture != null ? picture : ScreenStill.Capture.take(panel));
             Object windowManager = XposedHelpers.getObjectField(param.thisObject, "mWindowManager");
             XposedHelpers.callMethod(windowManager, "deferSurfaceLayout");
             param.setObjectExtra(DEFERRED, windowManager);
@@ -147,12 +214,8 @@ final class PanelPipHook {
             // follows runs both passes itself once the app is in the pinned stack.
             XposedHelpers.callMethod(stack, "reparent", XposedHelpers.callMethod(param.thisObject, "getDefaultDisplay"),
                     true /* onTop */, true /* displayRemoved */);
-            // The app's source-rect hint is in its panel's coordinates; the shrink runs on the main display.
-            Rect hint = (Rect) param.args[1];
-            if (hint != null && !hint.isEmpty()) hint.offset(panel.left, panel.top);
             START.set(panel);
-            XposedBridge.log(PipHook.TAG + ": pinning " + param.args[0] + " from its panel at " + panel
-                    + ", hint " + hint);
+            XposedBridge.log(PipHook.TAG + ": pinning " + param.args[0] + " from its panel at " + panel);
         } catch (Throwable error) {
             // Before the move nothing changed; Android pins the app the stock way.
             XposedBridge.log(PipHook.TAG + ": could not start PiP from the panel, pinning the stock way: " + error);
