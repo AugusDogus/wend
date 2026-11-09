@@ -142,14 +142,19 @@ public final class MainActivity extends Activity {
             // first and allows its PiP op; Maps then covers it with a direct move (so Wend stopping
             // under the fullscreen video cannot cancel it), and the video enters its own PiP on the
             // task switch. Decided at the tap: Wend can be paused by the time Maps has moved.
-            if (resumed && settings.floatingVideo() && media.videoLive() && media.beginVideoNativePipFloat()) {
-                maps.coverVideoNativePip();
+            if (resumed && settings.floatingVideo() && media.videoLive()) {
+                // With the pip-hook module the video floats straight from its card first; without
+                // it, by the task switch below.
+                media.floatVideoFromCardIntoPip(new PanelPip.Result() {
+                    @Override public void entered() { maps.coverVideoNativePip(); }
+                    @Override public void stayed(String why) {
+                        if (media.beginVideoNativePipFloat()) maps.coverVideoNativePip();
+                        else openMapsPlainly();
+                    }
+                });
                 return;
             }
-            maps.openFullscreen(new MapPanel.Covering() {
-                @Override public Rect starting() { return null; }
-                @Override public void abandoned() { media.videoCardShown(); }
-            }, false);
+            openMapsPlainly();
             return;
         }
         maps.openFullscreen(new MapPanel.Covering() {
@@ -162,6 +167,14 @@ public final class MainActivity extends Activity {
             // Wend still shows: a video that floated for Maps returns to its card.
             @Override public void abandoned() { media.homeVideo(); media.videoCardShown(); }
         });
+    }
+
+    /** Maps takes the screen with nothing floating above it. */
+    private void openMapsPlainly() {
+        maps.openFullscreen(new MapPanel.Covering() {
+            @Override public Rect starting() { return null; }
+            @Override public void abandoned() { media.videoCardShown(); }
+        }, false);
     }
 
     /**
@@ -235,7 +248,7 @@ public final class MainActivity extends Activity {
      */
     void videoAppOpening(Runnable openApp) {
         if (BuildConfig.SYSTEM_PIP && resumed && settings.floatingMaps()) {
-            maps.floatFromPanelIntoPip(new MapsPanelPip.Result() {
+            maps.floatFromPanelIntoPip(new PanelPip.Result() {
                 @Override public void entered() { openVideoUnderMapsPip(openApp); }
                 @Override public void stayed(String why) { floatMapsByTaskSwitch(openApp); }
             });

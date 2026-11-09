@@ -3,6 +3,7 @@ package dev.augie.wend;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.ActivityOptions;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -70,6 +71,9 @@ class MapsTask {
         throw new IllegalStateException("Multiple Maps tasks exist and none is the remembered navigation task");
     }
 
+    /** Must match {@code dev.augie.wend.piphook.PanelExpand.EXPAND_FROM}: {left, top, right, bottom} on screen. */
+    private static final String EXPAND_FROM = "dev.augie.wend.EXPAND_FROM";
+
     void move(Task task, int displayId) throws ReflectiveOperationException { move(task, displayId, true); }
 
     /**
@@ -79,12 +83,24 @@ class MapsTask {
      *     {@code supportsEnterPipOnTaskSwitch} and, with its op allowed, it enters its own PiP.
      */
     void move(Task task, int displayId, boolean suppressAutoPip) throws ReflectiveOperationException {
+        move(task, displayId, suppressAutoPip, null);
+    }
+
+    /**
+     * @param expandFrom Maps' panel on screen, for the pip-hook module to expand Maps from it to
+     *     fullscreen ({@link #EXPAND_FROM}); null, or without the module, Maps cuts to fullscreen
+     */
+    void move(Task task, int displayId, boolean suppressAutoPip, Rect expandFrom) throws ReflectiveOperationException {
         ActivityOptions animation = ActivityOptions.makeCustomAnimation(host, 0, 0);
         ActivityOptions options = suppressAutoPip ? SystemPip.withoutAutoPip(animation) : animation;
         options.setLaunchDisplayId(displayId);
         ActivityOptions.class.getMethod("setLaunchWindowingMode", int.class).invoke(options, 1);
+        Bundle bundle = options.toBundle();
+        if (expandFrom != null) {
+            bundle.putIntArray(EXPAND_FROM, new int[] { expandFrom.left, expandFrom.top, expandFrom.right, expandFrom.bottom });
+        }
         Object result = api().getMethod("startActivityFromRecents", int.class, Bundle.class)
-                .invoke(service(), task.id, options.toBundle());
+                .invoke(service(), task.id, bundle);
         if (!(result instanceof Integer) || (Integer) result < 0) {
             throw new IllegalStateException("Moving Maps task " + task.id + " failed: " + result);
         }

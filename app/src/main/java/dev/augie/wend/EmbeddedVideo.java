@@ -223,6 +223,36 @@ final class EmbeddedVideo extends FrameLayout {
     }
 
     /**
+     * Asks the live video to enter its own player PiP straight from its card ({@link PanelPip}),
+     * starting where the card shows on screen, as the card scales the video's display down.
+     * @param result told once, on the main thread; {@code stayed} leaves the video playing in its card
+     */
+    void floatFromCardIntoPip(PanelPip.Result result) {
+        if (!livePlaying()) { result.stayed("the video is not playing live in its card"); return; }
+        try { pipOp.allowForFloat(host); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.e("WendPip", "Could not prepare the video to float from its card; it keeps playing there", error);
+            result.stayed("the video could not be prepared to float: " + error);
+            return;
+        }
+        int[] at = new int[2];
+        getLocationOnScreen(at);
+        Rect card = new Rect(at[0], at[1], at[0] + getWidth(), at[1] + getHeight());
+        PanelPip.request(getContext(), PACKAGE, card, new PanelPip.Result() {
+            @Override public void entered() {
+                cancelPreparation();
+                state = State.READY;
+                inSystemPip = true;
+                // The PiP starts over the card, so the card's cover is drawn beneath it, unseen.
+                coverPlayer();
+                result.entered();
+            }
+            // Untouched in its card, so the task-switch path can still float it.
+            @Override public void stayed(String why) { pipRestore(); result.stayed(why); }
+        });
+    }
+
+    /**
      * Opens the video fullscreen on the main display over the current app, allowing that app's
      * own native PiP on the task switch. Used to cover a Maps that is floating in its nav PiP.
      */

@@ -328,7 +328,7 @@ final class EmbeddedMaps extends MapPanel {
         }
     }
 
-    @Override void floatFromPanelIntoPip(MapsPanelPip.Result result) {
+    @Override void floatFromPanelIntoPip(PanelPip.Result result) {
         try {
             MapsTask.Task existing = activityView == null || state != State.READY ? null : tasks.find();
             if (existing == null || existing.displayId != activityView.getVirtualDisplayId()) {
@@ -344,7 +344,7 @@ final class EmbeddedMaps extends MapPanel {
         // From here Maps leaves its panel on its own: Wend stopping, resuming, or seeing the panel
         // empty must not re-adopt it, or the adoption pulls Maps straight back out of its PiP.
         nativePipFloating = true;
-        MapsPanelPip.request(getContext(), new MapsPanelPip.Result() {
+        PanelPip.request(getContext(), PACKAGE, null, new PanelPip.Result() {
             @Override public void entered() { result.entered(); }
             @Override public void stayed(String why) {
                 nativePipFloating = false;
@@ -380,7 +380,12 @@ final class EmbeddedMaps extends MapPanel {
             MapsTask.Task existing = tasks.find();
             if (existing == null) return launchNew(0);
             if (existing.displayId != 0 || existing.windowingMode != SystemPip.FULLSCREEN) {
-                tasks.move(existing, 0, false);
+                // Expands out of its panel where the pip-hook module is installed.
+                int[] at = new int[2];
+                getLocationOnScreen(at);
+                Rect panel = existing.displayId == activityView.getVirtualDisplayId()
+                        ? new Rect(at[0], at[1], at[0] + getWidth(), at[1] + getHeight()) : null;
+                tasks.move(existing, 0, false, panel);
             }
             launching = false;
             status.setVisibility(View.GONE);

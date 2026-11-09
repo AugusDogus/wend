@@ -131,6 +131,8 @@ final class MediaPanel extends LinearLayout {
     View videoCard() { return video; }
     /** Whether the video plays live in its card. */
     boolean videoLive() { return video.livePlaying(); }
+    /** Floats the live video into its own player PiP straight from its card. */
+    void floatVideoFromCardIntoPip(PanelPip.Result result) { video.floatFromCardIntoPip(result); }
     /** Moves the live video fullscreen and allows its PiP op so it enters its own player PiP. */
     boolean beginVideoNativePipFloat() { return video.beginNativePipFloat(); }
     /** Opens the video fullscreen over floating Maps so Maps enters its own native PiP. */
