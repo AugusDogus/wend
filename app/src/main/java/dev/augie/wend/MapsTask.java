@@ -71,7 +71,7 @@ class MapsTask {
     }
 
     void move(Task task, int displayId) throws ReflectiveOperationException {
-        ActivityOptions options = ActivityOptions.makeCustomAnimation(host, 0, 0);
+        ActivityOptions options = SystemPip.withoutAutoPip(ActivityOptions.makeCustomAnimation(host, 0, 0));
         options.setLaunchDisplayId(displayId);
         ActivityOptions.class.getMethod("setLaunchWindowingMode", int.class).invoke(options, 1);
         Object result = api().getMethod("startActivityFromRecents", int.class, Bundle.class)
@@ -85,6 +85,12 @@ class MapsTask {
         remember(task.id);
         Log.i("Wend", "Moved Maps task " + task.id + " from display "
                 + task.displayId + " to " + displayId);
+    }
+
+    /** Pins Maps above the fullscreen app {@code besideTaskId} on the main display. */
+    void pin(Task task, int besideTaskId) throws ReflectiveOperationException {
+        SystemPip.pin(task.id, besideTaskId);
+        remember(task.id);
     }
 
     /** Brings Wend's own task forward on the main display. */

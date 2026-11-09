@@ -191,6 +191,85 @@ public class EmbeddedMapsTest {
         maps.release();
     }
 
+    /** Home must not leave Maps' PiP over Wend while a Home animation waits for a closing Maps. */
+    @Test public void homeReturnsMapsFromSystemPipToItsPanelAtOnce() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, 0, SystemPip.PINNED);
+        maps.home(() -> events.add("video returns"));
+        assertEquals(List.of("move to " + panelDisplay(maps)), tasks.calls);
+        assertEquals(List.of("video returns"), events);
+        assertNull(panelMessage(maps));
+        maps.release();
+    }
+
+    /** Open YouTube: Maps leaves its panel straight for PiP above the video, which stays on top. */
+    @Test public void mapsInItsPanelIsPinnedAboveTheFullscreenVideo() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        maps.suspend();
+        assertEquals(7, maps.pinToSystemPip(9));
+        assertEquals(List.of("pin 7 above 9"), tasks.calls);
+        tasks.calls.clear();
+        assertEquals("Already pinned", 7, maps.pinToSystemPip(9));
+        assertEquals(List.of(), tasks.calls);
+        maps.release();
+    }
+
+    @Test public void noMapsTaskIsNotPinned() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        assertEquals(-1, maps.pinToSystemPip(9));
+        assertEquals(List.of(), tasks.calls);
+        maps.release();
+    }
+
+    @Test public void mapsThatCannotBePinnedStaysWhereItIs() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, 0, 1);
+        tasks.failMoves = true;
+        assertEquals(-1, maps.pinToSystemPip(9));
+        assertEquals(0, tasks.maps.displayId);
+        assertEquals(1, tasks.maps.windowingMode);
+        maps.release();
+    }
+
+    @Test public void mapsReachingTheMainDisplayIsReportedSoTheVideoCanBePinned() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        withoutLiveMotion(maps);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        maps.openFullscreen(new MapPanel.Covering() {
+            @Override public Rect starting() { events.add("starting"); return null; }
+            @Override public void abandoned() { events.add("abandoned"); }
+            @Override public void moved(int taskId) { events.add("moved " + taskId + " to " + tasks.maps.displayId); }
+        });
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+        assertEquals(List.of("moved 7 to 0", "starting"), events);
+        maps.release();
+    }
+
+    @Test public void aFailedMoveIsNeverReportedAsMoved() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        withoutLiveMotion(maps);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        tasks.failMoves = true;
+        maps.openFullscreen(new MapPanel.Covering() {
+            @Override public Rect starting() { events.add("starting"); return null; }
+            @Override public void abandoned() { events.add("abandoned"); }
+            @Override public void moved(int taskId) { events.add("moved"); }
+        });
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+        assertFalse(events.contains("moved"));
+        maps.release();
+    }
+
     @Test public void mapsFloatsAboveTheVideoAppWendOpensAndStaysWhileWendStops() throws Exception {
         FakeTasks tasks = new FakeTasks(host);
         EmbeddedMaps maps = readyMaps(tasks);
@@ -545,6 +624,12 @@ public class EmbeddedMapsTest {
         }
 
         @Override void showHost() { calls.add("show Wend"); }
+
+        @Override void pin(MapsTask.Task task, int besideTaskId) {
+            if (failMoves) throw new IllegalStateException("Android did not pin task " + task.id);
+            calls.add("pin " + task.id + " above " + besideTaskId);
+            maps = new MapsTask.Task(task.id, 0, SystemPip.PINNED);
+        }
     }
 
     /**

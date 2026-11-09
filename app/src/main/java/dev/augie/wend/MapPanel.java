@@ -19,6 +19,8 @@ abstract class MapPanel extends FrameLayout {
          * with Maps in its panel, so whatever left Wend returns to it.
          */
         void abandoned();
+        /** Maps' task has just moved to the main display, fullscreen and on top. */
+        default void moved(int taskId) { }
     }
 
     /** What happens around floating Maps as a tap brings it fullscreen over the fullscreen video. */
@@ -71,6 +73,13 @@ abstract class MapPanel extends FrameLayout {
      * @param ready if not null, runs once Maps has laid out at the panel's size and Wend shows
      */
     void returnBeneathVideo(Runnable ready) { }
+
+    /**
+     * Puts Maps in Android's own picture-in-picture above the fullscreen app on the main display.
+     * @param besideTaskId that app's task
+     * @return Maps' task, now pinned, or -1 when it stays where it is
+     */
+    int pinToSystemPip(int besideTaskId) { return -1; }
 
     /** Floating Maps was tapped: it takes the screen from the fullscreen video below it. */
     void openFullscreenFromFloating(Takeover takeover) { takeover.failed(); }

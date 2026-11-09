@@ -268,6 +268,22 @@ final class EmbeddedMaps extends MapPanel {
                 && !(motion != null && motion.pending()) && !transition.pending();
     }
 
+    @Override int pinToSystemPip(int besideTaskId) {
+        try {
+            MapsTask.Task existing = tasks.find();
+            if (existing == null) {
+                Log.w("WendPip", "No Maps task to put in picture-in-picture above task " + besideTaskId);
+                return -1;
+            }
+            if (existing.windowingMode != SystemPip.PINNED) tasks.pin(existing, besideTaskId);
+            return existing.id;
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.e("WendPip", "Could not put Maps in picture-in-picture above task " + besideTaskId
+                    + "; Maps and its route stay where they were, and Home returns Maps to its panel", error);
+            return -1;
+        }
+    }
+
     /** Lifts Maps out of its panel, if it is there, into the floating window. */
     private boolean openFloating(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener,
             LiveSurfaceWindow.Entry entry) {
@@ -547,7 +563,8 @@ final class EmbeddedMaps extends MapPanel {
                         if (state == State.CLOSED) { covering.abandoned(); return; }
                         try {
                             tasks.move(existing, displayId);
-                            if (displayId != 0) revealSurface();
+                            if (displayId == 0) covering.moved(existing.id);
+                            else revealSurface();
                             status.setVisibility(View.GONE);
                         } catch (ReflectiveOperationException | RuntimeException error) {
                             transition.cancel();
@@ -558,7 +575,10 @@ final class EmbeddedMaps extends MapPanel {
                             covering.abandoned();
                         }
                     };
-                    if (motion != null) {
+                    // From Android's PiP there is no fullscreen Maps window to animate: Home would wait
+                    // for one with the PiP still above Wend. It leaves the PiP for its panel at once.
+                    if (existing.windowingMode == SystemPip.PINNED) move.run();
+                    else if (motion != null) {
                         if (displayId == 0) motion.expand(move, covering);
                         else motion.returnHome(existing.id, move);
                     } else transition.move(displayId == 0, () -> {
@@ -567,7 +587,7 @@ final class EmbeddedMaps extends MapPanel {
                     });
                 } else {
                     if (existing.windowingMode != 1 || displayId == 0) tasks.move(existing, displayId);
-                    if (displayId == 0) covering.starting();
+                    if (displayId == 0) { covering.moved(existing.id); covering.starting(); }
                     if (displayId != 0) revealSurface();
                     status.setVisibility(View.GONE);
                 }
@@ -679,6 +699,8 @@ final class EmbeddedMaps extends MapPanel {
             state = State.ABANDONED;
             if (was == State.COVERING) covering.abandoned();
         }
+
+        @Override public void moved(int taskId) { if (state != State.ABANDONED) covering.moved(taskId); }
     }
 
     void setInnerCorners(boolean mapsOnRight) {

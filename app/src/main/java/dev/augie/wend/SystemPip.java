@@ -46,44 +46,71 @@ final class SystemPip {
         }
     }
 
-    /**
-     * Pins the task's top activity, as Android does when an app enters PiP, from its current
-     * fullscreen bounds. Unlike an app's own enterPictureInPictureMode, Android does not check the
-     * PICTURE_IN_PICTURE app-op here, so Maps' stays off and Maps never pins itself on Home.
-     * @return the pinned task: another one only if the task held more than one activity
-     */
-    static int pin(int taskId) throws ReflectiveOperationException {
-        List<Stack> stacks = stacks();
-        Stack stack = holding(stacks, taskId);
-        if (stack == null) throw new IllegalStateException("Cannot pin task " + taskId + ": no stack holds it");
-        if (stack.windowingMode == PINNED) return taskId;
-        if (stack.displayId != Display.DEFAULT_DISPLAY) {
-            throw new IllegalStateException("Cannot pin task " + taskId + " on display " + stack.displayId
-                    + ": SystemUI shows PiP on the main display only, so move it there first");
-        }
-        Object pinned = api().getMethod("moveTopActivityToPinnedStack", int.class, Rect.class)
-                .invoke(service(), stack.id, null);
-        if (!Boolean.TRUE.equals(pinned)) {
-            throw new IllegalStateException("Android did not pin task " + taskId + " (stack " + stack.id
-                    + "): it has no running activity or does not support picture-in-picture");
-        }
-        int result = pinnedTask(stacks());
-        if (result < 0) throw new IllegalStateException("Task " + taskId + " was pinned but no pinned stack remains");
-        Log.i(TAG, "Pinned task " + taskId + (result == taskId ? "" : " as task " + result)
-                + " from stack " + stack.id + " in system picture-in-picture");
-        return result;
+    /** How a task reaches PiP above the fullscreen app beside it. */
+    static final class Plan {
+        /** The stack the task first moves into, on top, or -1 when it is the top of its own. */
+        final int intoStack;
+        /** The stack whose top activity is pinned. */
+        final int pinStack;
+
+        Plan(int intoStack, int pinStack) { this.intoStack = intoStack; this.pinStack = pinStack; }
     }
 
     /**
-     * Moves the pinned task to the bottom of the main display, hidden, as SystemUI's close does;
-     * it stops, and a video app may pause.
+     * @param besideTaskId the fullscreen app on the main display that the PiP floats above
+     * @return null when the task is already pinned
      */
-    static void unpinBehind() throws ReflectiveOperationException {
-        for (Stack stack : stacks()) {
-            if (stack.windowingMode != PINNED) continue;
-            api().getMethod("moveTasksToFullscreenStack", int.class, boolean.class).invoke(service(), stack.id, false);
-            Log.i(TAG, "Moved pinned stack " + stack.id + " behind the main display's apps");
+    static Plan plan(List<Stack> stacks, int taskId, int besideTaskId) {
+        Stack stack = holding(stacks, taskId);
+        if (stack == null) throw new IllegalStateException("Cannot pin task " + taskId + ": no stack holds it");
+        if (stack.windowingMode == PINNED) return null;
+        if (stack.displayId == Display.DEFAULT_DISPLAY && stack.windowingMode == FULLSCREEN
+                && stack.taskIds[stack.taskIds.length - 1] == taskId) return new Plan(-1, stack.id);
+        Stack beside = holding(stacks, besideTaskId);
+        if (beside == null || beside.displayId != Display.DEFAULT_DISPLAY || beside.windowingMode != FULLSCREEN) {
+            throw new IllegalStateException("Cannot pin task " + taskId + " from display " + stack.displayId
+                    + ": task " + besideTaskId + " is not a fullscreen app on the main display to float above");
         }
+        // Into the fullscreen app's own stack, on top. startActivityFromRecents would also bring
+        // Wend's Home stack forward, leaving Wend rather than that app under the PiP.
+        return new Plan(beside.id, beside.id);
+    }
+
+    /**
+     * Pins the task above the fullscreen app {@code besideTaskId} on the main display, as Android does
+     * when an app enters PiP: from full screen to SystemUI's default corner. Unlike an app's own
+     * enterPictureInPictureMode, Android checks no PICTURE_IN_PICTURE app-op here, so Maps' stays off
+     * and Maps never pins itself on Home. SystemUI handles PiP on the main display only.
+     */
+    static void pin(int taskId, int besideTaskId) throws ReflectiveOperationException {
+        Plan plan = plan(stacks(), taskId, besideTaskId);
+        if (plan == null) return;
+        if (plan.intoStack >= 0) {
+            api().getMethod("moveTaskToStack", int.class, int.class, boolean.class)
+                    .invoke(service(), taskId, plan.intoStack, true);
+        }
+        Object pinned = api().getMethod("moveTopActivityToPinnedStack", int.class, Rect.class)
+                .invoke(service(), plan.pinStack, null);
+        if (!Boolean.TRUE.equals(pinned)) {
+            throw new IllegalStateException("Android did not pin task " + taskId + " from stack " + plan.pinStack
+                    + ": it has no running activity or does not support picture-in-picture");
+        }
+        int result = pinnedTask(stacks());
+        if (result != taskId) {
+            throw new IllegalStateException("Pinning task " + taskId + " from stack " + plan.pinStack
+                    + " left task " + result + " in picture-in-picture instead");
+        }
+        Log.i(TAG, "Pinned task " + taskId + " above task " + besideTaskId
+                + (plan.intoStack >= 0 ? " after moving it into stack " + plan.intoStack : ""));
+    }
+
+    /**
+     * Removes the PiP as SystemUI's close does: its task stops and moves to the bottom of the main
+     * display, hidden, and a video app may pause.
+     */
+    static void dismiss() throws ReflectiveOperationException {
+        api().getMethod("removeStacksInWindowingModes", int[].class).invoke(service(), (Object) new int[]{PINNED});
+        Log.i(TAG, "Closed system picture-in-picture behind the main display's apps");
     }
 
     /** Whether the task shows in Android's PiP now. */

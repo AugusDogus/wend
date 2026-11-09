@@ -9,6 +9,8 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.robolectric.Shadows.shadowOf;
 
@@ -58,6 +60,41 @@ public class SystemPipTest {
 
     @Test public void noPinnedStackHasNoPinnedTask() {
         assertEquals(-1, SystemPip.pinnedTask(List.of(stack(0, SystemPip.FULLSCREEN, true, MAPS))));
+    }
+
+    /** The video in its card, on Wend's display, joins fullscreen Maps' stack and is pinned from there. */
+    @Test public void aTaskOnWendsDisplayIsPinnedFromTheStackOfTheAppItFloatsAbove() {
+        List<SystemPip.Stack> stacks = List.of(
+                stack(0, SystemPip.FULLSCREEN, true, MAPS),
+                stack(0, SystemPip.FULLSCREEN, false, WEND),
+                stack(5, SystemPip.FULLSCREEN, true, VIDEO));
+        SystemPip.Plan plan = SystemPip.plan(stacks, VIDEO, MAPS);
+        assertEquals(100 + MAPS, plan.intoStack);
+        assertEquals(100 + MAPS, plan.pinStack);
+    }
+
+    /** After the video's PiP expands, Maps is the top task of its own stack behind it. */
+    @Test public void aTaskOnTopOfItsStackOnTheMainDisplayIsPinnedWhereItIs() {
+        List<SystemPip.Stack> stacks = List.of(
+                stack(0, SystemPip.FULLSCREEN, true, VIDEO),
+                stack(0, SystemPip.FULLSCREEN, false, MAPS));
+        SystemPip.Plan plan = SystemPip.plan(stacks, MAPS, VIDEO);
+        assertEquals(-1, plan.intoStack);
+        assertEquals(100 + MAPS, plan.pinStack);
+    }
+
+    @Test public void aPinnedTaskNeedsNoPlan() {
+        assertNull(SystemPip.plan(List.of(stack(0, SystemPip.PINNED, true, MAPS)), MAPS, VIDEO));
+    }
+
+    /** Never pinned above Wend's own panel display: SystemUI shows PiP on the main display only. */
+    @Test public void aTaskIsNotPinnedAboveAnAppOutsideTheMainDisplay() {
+        List<SystemPip.Stack> stacks = List.of(
+                stack(0, SystemPip.FULLSCREEN, true, WEND),
+                stack(5, SystemPip.FULLSCREEN, true, MAPS),
+                stack(6, SystemPip.FULLSCREEN, true, VIDEO));
+        assertThrows(IllegalStateException.class, () -> SystemPip.plan(stacks, VIDEO, MAPS));
+        assertThrows(IllegalStateException.class, () -> SystemPip.plan(stacks, 42, MAPS));
     }
 
     @Test public void theWatcherReportsWhichTaskWasUnpinnedOnTheMainThread() throws Exception {
