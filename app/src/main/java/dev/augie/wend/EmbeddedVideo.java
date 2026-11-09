@@ -24,6 +24,14 @@ final class EmbeddedVideo extends FrameLayout {
     /** Names the live video's overlay window, whose compositor layer VideoSurface trusts. */
     static final String WINDOW_TITLE = BuildConfig.APPLICATION_ID + " live video";
     private static final String PLAYER_UNAVAILABLE = "Player unavailable. Use Open YouTube below.";
+    /**
+     * After this long without a stable video surface the card checks less often. YouTube regularly
+     * takes longer than this to show its surface again on its way back into the card (buffering,
+     * an ad, a loaded head unit); the card shows its still meanwhile instead of giving up.
+     */
+    private static final long SURFACE_SLOW_MS = 3000;
+    /** Only after this long does the card report the player unavailable. */
+    private static final long SURFACE_GIVE_UP_MS = 15000;
     private enum State { EMPTY, WAITING, READY, PREPARING, SHOWN, FAILED, CLOSED }
     private State state = State.EMPTY;
     private ActivityView player;
@@ -634,13 +642,19 @@ final class EmbeddedVideo extends FrameLayout {
                 state = State.PREPARING;
                 preparationStarted = SystemClock.uptimeMillis();
             }
-            if (SystemClock.uptimeMillis() - preparationStarted > 3000) {
-                fail(new IllegalStateException("No stable YouTube video surface found on our display within 3000 ms"));
+            long waited = SystemClock.uptimeMillis() - preparationStarted;
+            if (waited > SURFACE_GIVE_UP_MS) {
+                fail(new IllegalStateException("No stable YouTube video surface found on our display within "
+                        + SURFACE_GIVE_UP_MS + " ms"));
                 return;
             }
+            previousBounds = bounds;
+            // Still waiting: the card keeps its still meanwhile, checked less often once it is slow.
+            postDelayed(inspect, waited > SURFACE_SLOW_MS ? 500 : 100);
+            return;
         }
         previousBounds = bounds;
-        postDelayed(inspect, state == State.SHOWN ? 500 : 100);
+        postDelayed(inspect, 500);
     }
 
     private static boolean sameBounds(VideoSurface.Bounds a, VideoSurface.Bounds b) {
