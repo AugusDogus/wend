@@ -36,6 +36,7 @@
     <string name="settings_floating_video_hint">Playing video stays visible in a small window</string>
     <string name="settings_floating_maps">Maps over fullscreen video</string>
     <string name="settings_floating_maps_hint">Navigation stays visible in a small window</string>
+    <string name="settings_music">Music app</string>
     <string name="settings_system">System</string>
     <string name="settings_android">Android settings</string>
     <string name="settings_home">Default home app</string>

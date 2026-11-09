@@ -195,6 +195,7 @@ public final class MainActivity extends Activity {
         SettingsSheet.Host host = new SettingsSheet.Host() {
             @Override public void onLayoutChanged() { arrangePanels(); }
             @Override public void onDockChanged(DockPins pins) { dock.setPins(pins); }
+            @Override public void onMusicAppChanged() { media.onMusicAppChanged(); }
         };
         return new SettingsSheet(this, backdrop, AppCatalog.get(this), settings, dockCapacity, host);
     }

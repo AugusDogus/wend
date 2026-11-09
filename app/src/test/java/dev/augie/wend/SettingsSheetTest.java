@@ -37,6 +37,7 @@ public class SettingsSheetTest {
                 new SettingsSheet.Host() {
                     @Override public void onLayoutChanged() { layoutChanges++; }
                     @Override public void onDockChanged(DockPins pins) { }
+                    @Override public void onMusicAppChanged() { }
                 });
         sheet.show();
         shadowOf(Looper.getMainLooper()).idle();
@@ -62,6 +63,49 @@ public class SettingsSheetTest {
             assertFalse(window.isShowing());
         }
         assertEquals(1, layoutChanges);
+    }
+
+    @Test public void choosingAMusicAppStoresItAndRelabelsTheMediaPanel() {
+        TestApps.install(activity, "com.example.player", "Player");
+        LauncherSettings settings = new LauncherSettings(
+                activity.getSharedPreferences(LauncherSettings.PREFERENCES, Context.MODE_PRIVATE));
+        int[] musicChanges = {0};
+        SettingsSheet musicSheet = new SettingsSheet(activity, backdrop, TestApps.loadedCatalog(activity), settings, 5,
+                new SettingsSheet.Host() {
+                    @Override public void onLayoutChanged() { }
+                    @Override public void onDockChanged(DockPins pins) { }
+                    @Override public void onMusicAppChanged() { musicChanges[0]++; }
+                });
+        try {
+            musicSheet.show();
+            shadowOf(Looper.getMainLooper()).idle();
+            Dialog window = ShadowDialog.getLatestDialog();
+            View decor = window.getWindow().getDecorView();
+            // The default music app is not installed here, so the row shows its package name.
+            View musicRow = findByDescription(decor, "Music app");
+            assertNotNull("No music app row in the settings sheet", musicRow);
+            musicRow.performClick();
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400));
+            click(decor, "Player"); // The picker reuses the dock's AppBrowser grid.
+            shadowOf(Looper.getMainLooper()).idle();
+            assertEquals("com.example.player", settings.musicApp());
+            assertEquals(1, musicChanges[0]);
+        } finally {
+            musicSheet.release();
+        }
+    }
+
+    private static View findByDescription(View view, String prefix) {
+        if (view.getVisibility() != View.VISIBLE) return null;
+        CharSequence description = view.getContentDescription();
+        if (description != null && description.toString().startsWith(prefix)) return view;
+        if (!(view instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View found = findByDescription(group.getChildAt(i), prefix);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     private static void click(View root, String label) {

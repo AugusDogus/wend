@@ -5,14 +5,18 @@ import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.animation.PathInterpolator;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
@@ -32,6 +36,8 @@ final class SettingsSheet implements AppCatalog.Listener {
         void onLayoutChanged();
         /** The pins changed and are saved; redraw the dock. */
         void onDockChanged(DockPins pins);
+        /** The music app changed and is saved; relabel the media panel. */
+        void onMusicAppChanged();
     }
 
     private static final int COLUMN_DP = 680;
@@ -63,6 +69,10 @@ final class SettingsSheet implements AppCatalog.Listener {
     private final SegmentedControl<LauncherSettings.MapSide> sideControl;
     private final SegmentedControl<LauncherSettings.MapWidth> widthControl;
     private final DockEditor dockEditor;
+    private final LinearLayout musicRow;
+    private final ImageView musicIcon;
+    private final TextView musicTitle;
+    private final TextView musicStatus;
     private final Switch floatingVideo;
     private final Switch floatingMaps;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -72,6 +82,8 @@ final class SettingsSheet implements AppCatalog.Listener {
     private boolean layoutPending;
     private DockPins pins;
     private boolean picking;
+    /** While picking, whether the chosen app becomes the music app rather than a dock pin. */
+    private boolean pickingMusic;
 
     SettingsSheet(Activity activity, FrostedBackdrop backdrop, AppCatalog catalog, LauncherSettings settings,
             int dockCapacity, Host host) {
@@ -83,7 +95,7 @@ final class SettingsSheet implements AppCatalog.Listener {
         pins = settings.dockPins(dockCapacity);
         picker = new AppBrowser(activity, catalog, AppCatalog::canPin,
                 activity.getString(R.string.settings_search_hint), R.string.every_app_pinned,
-                R.string.matching_app_pinned, R.string.matching_apps_pinned, this::pin);
+                R.string.matching_app_pinned, R.string.matching_apps_pinned, this::onPicked);
 
         SettingsRows rows = new SettingsRows(activity);
         mainHeader = rows.header(Ui.Icon.CLOSE, R.string.settings_close, this::close,
@@ -121,6 +133,48 @@ final class SettingsSheet implements AppCatalog.Listener {
         LinearLayout.LayoutParams dockLayout = new LinearLayout.LayoutParams(-1, -2);
         dockLayout.topMargin = Ui.dp(activity, SettingsRows.SECTION_GAP_DP);
         column.addView(dockEditor.view(), dockLayout);
+
+        // Music sits in its own section, beside the dock: both choose apps the launcher opens, but
+        // the music app feeds the media sidebar and stays independent of the dock's pins.
+        musicRow = new LinearLayout(activity);
+        musicRow.setGravity(Gravity.CENTER_VERTICAL);
+        musicRow.setMinimumHeight(Ui.dp(activity, SettingsRows.ROW_DP));
+        musicRow.setPaddingRelative(Ui.dp(activity, 16), Ui.dp(activity, 8), Ui.dp(activity, 12),
+                Ui.dp(activity, 8));
+        musicRow.setBackground(Ui.ripple(activity, 0));
+        musicRow.setOnClickListener(v -> showMusicPicker());
+        musicRow.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.setClassName("android.widget.Button");
+            }
+        });
+        musicIcon = new ImageView(activity);
+        musicIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        musicRow.addView(musicIcon, new LinearLayout.LayoutParams(Ui.dp(activity, 40), Ui.dp(activity, 40)));
+        LinearLayout musicText = new LinearLayout(activity);
+        musicText.setOrientation(LinearLayout.VERTICAL);
+        musicTitle = Ui.text(activity, "", 17, Ui.TEXT);
+        musicTitle.setSingleLine(true);
+        musicTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        musicTitle.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_START);
+        musicText.addView(musicTitle, new LinearLayout.LayoutParams(-1, -2));
+        musicStatus = Ui.text(activity, activity.getString(R.string.settings_not_installed), 14, Ui.MUTED);
+        musicStatus.setPadding(0, Ui.dp(activity, 4), 0, 0);
+        musicText.addView(musicStatus, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams musicTextLayout = new LinearLayout.LayoutParams(0, -2, 1);
+        musicTextLayout.setMarginStart(Ui.dp(activity, 16));
+        musicTextLayout.setMarginEnd(Ui.dp(activity, 8));
+        musicRow.addView(musicText, musicTextLayout);
+        Ui.Symbol chevron = new Ui.Symbol(Ui.Icon.FORWARD, Ui.MUTED);
+        int chevronSize = Ui.dp(activity, 20);
+        chevron.setBounds(0, 0, chevronSize, chevronSize);
+        ImageView musicChevron = new ImageView(activity);
+        musicChevron.setImageDrawable(chevron);
+        musicRow.addView(musicChevron, new LinearLayout.LayoutParams(Ui.dp(activity, 20), Ui.dp(activity, 20)));
+        LinearLayout musicCard = Ui.card(activity);
+        musicCard.addView(musicRow, new LinearLayout.LayoutParams(-1, -2));
+        rows.addSection(column, R.string.settings_music, musicCard, true);
 
         LinearLayout floating = Ui.card(activity);
         floatingVideo = rows.toggle(R.string.settings_floating_video, R.string.settings_floating_video_hint,
@@ -174,6 +228,7 @@ final class SettingsSheet implements AppCatalog.Listener {
         catalog.addListener(this);
         reset();
         updatePreviewIcons();
+        updateMusicRow();
     }
 
     void show() {
@@ -182,6 +237,7 @@ final class SettingsSheet implements AppCatalog.Listener {
         pins = settings.dockPins(dockCapacity);
         dockEditor.setPins(pins, false);
         updatePreviewIcons();
+        updateMusicRow();
         sideControl.select(settings.mapSide());
         widthControl.select(settings.mapWidth());
         preview.show(settings.mapSide(), settings.mapWidth());
@@ -202,7 +258,7 @@ final class SettingsSheet implements AppCatalog.Listener {
         sheet.release();
     }
 
-    @Override public void onAppsChanged(AppCatalog catalog) { updatePreviewIcons(); }
+    @Override public void onAppsChanged(AppCatalog catalog) { updatePreviewIcons(); updateMusicRow(); }
 
     private void chooseSide(LauncherSettings.MapSide side) {
         settings.setMapSide(side);
@@ -237,6 +293,18 @@ final class SettingsSheet implements AppCatalog.Listener {
         host.onDockChanged(next);
     }
 
+    private void onPicked(LauncherApp app) {
+        if (pickingMusic) chooseMusicApp(app);
+        else pin(app);
+    }
+
+    private void chooseMusicApp(LauncherApp app) {
+        showMain(true);
+        settings.setMusicApp(app.key.packageName);
+        updateMusicRow();
+        host.onMusicAppChanged();
+    }
+
     private void pin(LauncherApp app) {
         showMain(true);
         if (!pins.canAdd(app.key.packageName)) {
@@ -253,6 +321,18 @@ final class SettingsSheet implements AppCatalog.Listener {
         catalog.retryIfFailed();
         picker.reset();
         picker.setHidden(app -> pins.contains(app.key.packageName));
+        pickingMusic = false;
+        picking = true;
+        switchPage(mainHeader, mainPage, pickerHeader, pickerPage, 1);
+    }
+
+    /** The same AppBrowser page, offering every own-profile app so any can become the music app. */
+    private void showMusicPicker() {
+        if (picking) return;
+        catalog.retryIfFailed();
+        picker.reset();
+        picker.setHidden(app -> false);
+        pickingMusic = true;
         picking = true;
         switchPage(mainHeader, mainPage, pickerHeader, pickerPage, 1);
     }
@@ -313,9 +393,33 @@ final class SettingsSheet implements AppCatalog.Listener {
 
     private void reset() {
         picking = true;
+        pickingMusic = false;
         showMain(false);
         picker.reset();
         mainPage.scrollTo(0, 0);
+    }
+
+    /** Shows the chosen music app's icon and label, or its package and "Not installed" when absent. */
+    private void updateMusicRow() {
+        String packageName = settings.musicApp();
+        LauncherApp app = catalog.pinnedApp(packageName);
+        int missing = catalog.status() == AppCatalog.Status.LOADING
+                ? R.string.settings_pin_loading : R.string.settings_not_installed;
+        String label = app == null ? packageName : app.label;
+        musicTitle.setText(label);
+        musicTitle.setTextColor(app == null ? Ui.MUTED : Ui.TEXT);
+        musicStatus.setText(missing);
+        musicStatus.setVisibility(app == null ? View.VISIBLE : View.GONE);
+        if (app == null) musicIcon.setImageDrawable(musicPlaceholder());
+        else musicIcon.setImageDrawable(new BitmapDrawable(activity.getResources(), app.icon));
+        musicRow.setContentDescription(activity.getString(R.string.settings_music) + ", " + label);
+    }
+
+    private GradientDrawable musicPlaceholder() {
+        GradientDrawable outline = new GradientDrawable();
+        outline.setCornerRadius(Ui.dp(activity, 40) * 0.23f);
+        outline.setStroke(Ui.dp(activity, 1), 0x80A8B9CC, Ui.dp(activity, 4), Ui.dp(activity, 3));
+        return outline;
     }
 
     private void updatePreviewIcons() {
