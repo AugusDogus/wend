@@ -45,8 +45,8 @@ runs, and undoing PiP after `onActivityPinned` is exactly the visible flash.
 
 When Maps opens fullscreen (dock or app drawer) while the embedded video is live
 and playing, the video keeps playing in a 288 × 162 dp window above Maps:
-16:9, 12 dp corners, a hairline edge and soft shadow, 16 dp from the screen
-edges (below the status bar). Paused, thumbnail-only, or unavailable videos keep
+16:9, 12 dp corners and a hairline edge, 16 dp from the screen edges (below the
+status bar). It has no shadow, as Android 10's own PiP window has none. Paused, thumbnail-only, or unavailable videos keep
 today's behavior. The `layout` preference `floatingVideo` (default true) turns
 it off; `floatingVideoCorner` remembers the last corner.
 
@@ -69,22 +69,29 @@ it off; `floatingVideoCorner` remembers the last corner.
   drags it to is remembered and wins over the default. Check it on the PX6.
 - **Home** returns it to the card once Wend's window has a surface again,
   concurrently with the Maps return animation. Playback never stops.
-- **Tap** swaps: the video takes the screen and Maps floats above it (see
-  [swapping](#swapping)). A floating window takes no touches while it enters, and
-  for 500 ms after it comes to rest it takes a tap without acting on it; drags
-  still work. A second tap on the dock's Maps button, landing where the video has
-  just arrived, therefore keeps Maps fullscreen instead of swapping (device report
-  BUG-4).
+- **Tap, double tap, drag off the bottom:** Android 10's PiP gestures, see
+  [PiP controls](#pip-controls). A double tap swaps: the video takes the screen
+  and Maps floats above it (see [swapping](#swapping)). A floating window takes no
+  touches while it enters, and for 500 ms after it comes to rest it takes a tap
+  without acting on it; drags still work. A second tap on the dock's Maps button,
+  landing where the video has just arrived, therefore keeps Maps fullscreen
+  instead of swapping (device report BUG-4).
 - **Pause** keeps the last frame floating. Home then shows the card's still (see
   [the video card](#the-video-card)).
+- **Stopped or ended** (`STOPPED`, `ERROR`, `NONE`) keeps floating, with its
+  controls up and offering play until it plays again. Before this, it closed,
+  because YouTube then draws its stopped, up-next, or ad screen into the window
+  (device report RH-7); feedback was that the window then vanished and could not
+  be tapped to choose another video. The dimmed controls now sit over that
+  screen, and a double tap or the fullscreen control brings the video app
+  fullscreen, where another video can be chosen.
 - **Removed cleanly** (160 ms fade, video display powered off as before) when
-  the session ends or clears its title; when playback stops, fails, or loses
-  its playback state (`STOPPED`, `ERROR`, `NONE`, not `PAUSED`), because YouTube
-  then draws its stopped, up-next, or ad screen into the window (device report
-  RH-7); or when another app's task is created or brought to the front, also
-  while a tapped floating video is still growing to fullscreen. Maps, Wend,
-  and the video's own display are allowed. Home afterwards works as usual: Maps
-  returns to its panel, and the card shows the stopped video's still.
+  the session ends or clears its title, when it is closed (its close control or a
+  drag off the bottom edge, which also pauses it), or when another app's task is
+  created or brought to the front, also while a double-tapped floating video is
+  still growing to fullscreen. Maps, Wend, and the video's own display are
+  allowed. Home afterwards works as usual: Maps returns to its panel, and the
+  card shows the video's still.
 - **Not floated** when another app paused Wend while Maps was preparing to
   go fullscreen: the video then stays in its card rather than floating above
   that app.
@@ -99,9 +106,11 @@ There is no system PiP, task move, new task, or Play command for the video.
 root surface into a full-screen
 `TYPE_APPLICATION_OVERLAY` window and places it with `SurfacePlacement` (uniform
 scale, offset, crop to the decoder bounds from `VideoSurface`), plus a
-SurfaceFlinger corner radius scaled into layer space. `FloatingOutline` adds
-color layers for the edge and shadow in the same transactions, so they never lag
-a drag. `OverlayTouchRegion` limits the overlay's touchable area to the floating
+SurfaceFlinger corner radius scaled into layer space. The display's root sits
+just below the overlay window's own transparent buffer, so `FloatingChrome`,
+the overlay's view, draws the PiP controls over it. `FloatingOutline` adds a
+color layer for the hairline edge in the same transactions, so it never lags a
+drag. `OverlayTouchRegion` limits the overlay's touchable area to the floating
 rectangle through Android 10's internal-insets listener, so Maps keeps every
 other touch; the video's input portal stays empty until fullscreen.
 
@@ -133,15 +142,25 @@ keeps running live in a small window above it. The `layout` preference
 `floatingMaps` (default true) turns it off; `floatingMapsCorner` remembers its
 corner, default bottom right (the passenger side).
 
-- **Size.** The floating video's area (288 × 162 dp) in the panel's own shape:
-  232 × 201 dp for the 70% panel, 215 × 217 dp for 60%. The panel's display is
-  never resized; the compositor scales the whole panel display, so Maps keeps
-  its panel layout and every control stays where the driver expects it.
+- **Shape.** A 4:5 portrait of the map alone, at the floating video's area (288 ×
+  162 dp): 193 × 241 dp. Feedback was that the whole panel, which floated before,
+  was an odd shape and showed all of Maps' controls, unlike Android's vertical
+  navigation PiP. Maps draws its own PiP layout only in system PiP, which Wend
+  turns off (see above), so `FloatingMapCrop` crops the panel display instead:
+  100 dp below its top, 80 dp above its bottom, centered. Measured on real Maps
+  in guidance in the 70% panel, that leaves out the next-turn card (top 95 dp),
+  the trip sheet (bottom 75 dp), the speed box and the compass, search and sound
+  buttons, and keeps the centered car and the road ahead; crops of guidance
+  screenshots were compared to choose it. The display is not resized and Maps
+  keeps its panel layout, so outside guidance (search, route preview) the crop
+  shows whatever Maps draws there, sheets included. Its card, the panel, still
+  shows the whole display, and the window moves between the two.
 - **Enter.** Maps lifts out of its panel into its own overlay without moving,
   the video expands from its card beneath it, then Maps shrinks into its corner
   (280 ms each). Moving both at once uncovers parts of the empty panel.
-- **Drag, snap, outline, corners, catch mid-snap, tap grace after entering:** as
-  for the floating video.
+- **Drag, snap, outline, corners, catch mid-snap, tap grace after entering, PiP
+  controls:** as for the floating video, without a playback control. Closed, Maps
+  returns to its panel (beneath the fullscreen video) and keeps navigating.
 - **Input.** Maps' input portal is empty while it floats; the overlay takes only
   the floating rectangle (drag or tap) and the video keeps every other touch. On
   return, the root goes back to its panel with the same geometry and input that
@@ -181,7 +200,7 @@ switch. Before November 8 navigation disappeared whenever the video was paused
   Maps does not float, so it can never stay above an unrelated app.
 - **Home**, or Wend showing again because the video app left or failed to
   open, returns Maps to its panel once Wend's window can show it.
-- **Tap** brings Maps fullscreen as for any floating Maps. The video is a task
+- **Double tap** brings Maps fullscreen as for any floating Maps. The video is a task
   on the main display, not a Wend presentation, so it does not float; it
   stays beneath, and Home embeds it in the card again if it plays. Maps stays in
   its floating window, under the frozen frame, until it moves: a display shown
@@ -205,10 +224,65 @@ switch. Before November 8 navigation disappeared whenever the video was paused
   removes the frozen frame at once, never moves Maps, and returns Maps to its
   panel: in view after Home, or hidden behind the other app.
 
+## PiP controls
+
+Both floating windows take Android 10's PiP gestures (`PipTouchHandler`,
+`PipMenuActivity` in android-10.0.0_r47), drawn by Wend over its own
+windows, not by SystemUI. They answer this feedback: no double tap to
+fullscreen, no pause control, and a video window that vanished when its video
+ended.
+
+- **Tap** shows the controls over the window: a 30% black scrim, close in the
+  top right corner, fullscreen in the middle and, for the video, play/pause below
+  it (48 dp targets). The icon follows the video's session: pause while it plays
+  or buffers, play otherwise. They fade after 3 s, a press on play/pause
+  restarts that, and a tap on the scrim hides them. Like Android, a tap waits
+  out the double-tap timeout (300 ms) before showing them, so a double tap never
+  flashes them.
+- **Double tap**, or the fullscreen control, swaps (see [swapping](#swapping)).
+- **Play/pause** sends pause or play to the video's `MediaController`.
+- **Close**, or a drag or fling off the bottom edge, closes the window. The
+  video is paused and returns to its card; Maps returns to its panel and keeps
+  navigating. While a window is dragged, a dismiss target (a dark circle with a
+  cross) shows at the bottom center. Dragged, a window may leave the screen only
+  through the bottom edge; released at least 30% below it, or flung down (at
+  least 500 dp/s, mostly downward) from or into the bottom row of corners, it
+  slides down and fades out over 160 ms. Otherwise it snaps to a corner as
+  before.
+- **An ended video** (session `STOPPED`, `ERROR`, or `NONE`) keeps its controls up,
+  offering play, until it plays again.
+
+`FloatingDrag` classifies the touches (tap, double tap, control press, drag,
+snap, dismissal), `FloatingMenu` lays out the controls and maps the session's
+state, and `FloatingChrome` draws them. Unit tests cover each gesture, the
+control layout, the session mapping, and the window's behavior for each
+(`FloatingDragTest`, `FloatingPlacementTest`, `FloatingMenuTest`,
+`LiveSurfaceWindowTest`).
+
+What still differs from Android 10's PiP:
+
+- These are Wend's windows, not system PiP: the apps are not told they are in
+  PiP, so YouTube draws its full watch page (cropped to the video) and Maps its
+  panel layout (cropped to the map) rather than their own PiP layouts. Maps'
+  next-turn instruction is therefore not in the floating window.
+- The windows exist only while Wend presents them: they float above fullscreen
+  Maps, the fullscreen video, or the video app Wend opened, and close when any
+  other app comes to the front. System PiP floats above every app.
+- No settings (app info) control, no prev/next or app-supplied actions, no
+  accessibility actions, and no pinch resize. Android 10 also enlarges a PiP
+  while its menu shows; these keep their size. Positions are the four corners
+  only, where Android 10 lets PiP rest along the left and right edges.
+- The video's fullscreen is Wend's whole-screen presentation of the same
+  display, not the YouTube task moved to the front; it is interactive, so
+  another video can be chosen there, and Home returns it to its card.
+- The double-tap swap of Maps pauses before it grows while Maps lays out at full
+  size (see [swapping](#swapping)); Android's expand animates at once.
+
 ## Swapping
 
-Tapping a floating window brings that app fullscreen and floats the other one
-when its preference allows (the video also only while playing). Neither task is
+Double-tapping a floating window, or its fullscreen control, brings that app
+fullscreen and floats the other one when its preference allows (the video also
+only while playing). A single tap only shows its [controls](#pip-controls). Neither task is
 recreated or duplicated, no Play command is sent, and the video's task, virtual
 display, and decoder stay the same.
 
@@ -222,38 +296,36 @@ display, and decoder stay the same.
   with `window_ease_out`. About 0.8 s from tap to floating Maps on the fixture. With `floatingMaps` off,
   Maps just waits in its panel and Home shows it there. The video is now above
   Wend rather than Maps, so the status bar fullscreen Maps kept disappears.
-- **Floating Maps over fullscreen video (tap Maps).** Maps grows from its corner
-  until its whole panel display shows at pixel scale one, centered (never
-  enlarged, so no stretched frames). A frozen frame then holds while, beneath
-  it, Maps returns to its panel, the video hides, Maps' display is laid out at
-  the full screen size (900 ms at most), and the existing task moves to display
-  0. Only Maps stays in the frozen frame: the rest is black, as a frozen video
-  beside it read as a stalled player (device feedback). The frozen Maps is read
-  from Maps' own display layers (`ActivityViewSurface.still`, Android 10's
-  `SurfaceControl.captureLayers`) and drawn unscaled exactly where it ends.
-  Before November 8 it was cut out of a screenshot, which can still show the
-  growth one frame short of its end, so a 4 to 22 px strip of the frozen video
-  showed at Maps' top and left edges for over a second (fixture report BUG-2).
-  If Maps' layers cannot be read, the screenshot stands in, black outside Maps'
-  place, as before. If another app stops Wend during this tap, the takeover
-  ends with its frozen frame at once instead of holding it 1.5 s over that app.
-  When Maps' buffers show
-  the new width, which they usually already do after the move (300 ms at most),
-  the frozen frame crossfades away over 160 ms and the video emerges at its
-  corner. A paused video, or `floatingVideo` off,
-  returns the video to its card instead. Without a frozen frame (animations
-  off, or the screenshot failed), the video still emerges only once the task
-  has moved; before November 8 it emerged over Wend first.
+- **Floating Maps over fullscreen video (double-tap Maps).** Maps holds still in
+  its corner (a frame of its own layers drawn over the window) while, behind
+  it, its display and view take the full screen size and Maps lays out there
+  (900 ms at most, `MapFrame`). It then grows straight from its corner to the
+  whole screen at pixel scale one, already in its fullscreen layout, as the held
+  frame fades over the first 120 ms. Feedback was that it grew only to its
+  panel's size, centered, and snapped to full screen a moment later: before
+  this, the growth stopped at the centered panel display, which was laid out at
+  full size only afterwards, under a frozen frame. Once it covers the screen, a
+  frozen frame of exactly those pixels covers the task move (the video hides
+  beneath it, and the existing task moves to display 0), then crossfades over
+  160 ms once Maps' buffers show on display 0 (300 ms at most), and the video
+  emerges at its corner. The frozen frame is read from Maps' own display layers
+  (`ActivityViewSurface.still`, Android 10's `SurfaceControl.captureLayers`);
+  if they cannot be read, the screenshot stands in. If another app stops Wend
+  during this, the takeover ends at once. A paused video, or `floatingVideo`
+  off, returns the video to its card instead. Without a frozen frame (animations
+  off, or the screenshot failed), the video still emerges only once the task has
+  moved.
 
 Why the Maps direction differs: Maps' display is panel-sized, so fullscreen Maps
 needs one new layout, which must happen out of sight. The video direction hides
 it under the live video. In the Maps direction, Maps is the one growing, and the
 dock's live expansion cannot be reused as is: it reveals Wend around Maps,
 whereas here the video's overlay must stay visible below Maps until Maps covers
-the screen, and yet end above Maps. The swap therefore uses the same
-frozen-frame-and-crossfade handoff as Maps' other transitions (`MapTransition`),
-held until the task has moved. Centering Maps first keeps the map's center where
-fullscreen Maps puts it, so the crossfade barely ghosts.
+the screen, and yet end above Maps. The swap therefore lays Maps out first,
+held still in its corner, and grows the laid-out display. The cost is a pause
+before the growth: about the length of Maps' layout (0.3 to 0.9 s with real
+Maps in guidance on the loaded emulator, see below), during which the window
+shows the frame it had at the tap.
 
 Also found on the emulator: when Maps moved to its panel display while still
 visible, the fixture's map SurfaceView sometimes kept its fullscreen-sized buffer
@@ -775,6 +847,46 @@ Not exercised on a device: another app coming forward during a takeover, and
 Home during one (the frozen frame swallows touches and the device tool cannot
 time a key into the second it lasts), and the screenshot fallback of the
 frozen frame. These rest on the unit tests.
+
+### PiP controls, the Maps crop, and the straight growth, November 8 (fifth pass)
+
+Release and emulator unit tests (264 each, no failures), release and emulator
+assembly, and release lint (no errors; 54 warnings, one more
+`ClickableViewAccessibility` now that the overlay is a custom view) pass. The
+gesture, placement, and controls tests were written first and failed against
+the previous code; the rest were written with their change. New tests cover the gestures (`FloatingDragTest`, including
+taps, double taps, control presses, drags, a drag after a tap, drags and flings
+off the bottom, and a cancelled drag off the bottom), the bottom-edge geometry
+(`FloatingPlacementTest`), the controls' layout and the session mapping
+(`FloatingMenuTest`), the window's controls, their fade, close, playback, an
+ended video, the separate floating region and the straight growth
+(`LiveSurfaceWindowTest`), the crop (`FloatingMapCropTest`), and Maps laid out at
+full size before it grows (`EmbeddedMapsTest`; the takeover's interruption tests
+now interrupt while Maps lays out behind its held window, which is where a
+takeover now waits).
+
+On `road-home-api29` (fixtures, emulator build of the gesture commit; evidence
+under this worktree's git-ignored `build/evidence/variant-b/`):
+
+- The floating video without its shadow (`01-*`).
+- A tap shows the scrim with fullscreen and close (`02-*`), a double tap swaps
+  to the video with Maps floating and never flashes the controls (`03-*`),
+  Maps' close control returns it to its panel, shown on Home (`04-*`, `05-*`),
+  and a drag off the bottom shows the dismiss target, slides the video out, and
+  leaves its session paused (`06-*`, `state=2` in `media_session`).
+- The fixture's media stop was ignored (`08-*`): its session did not offer
+  `ACTION_STOP`, so Android 10 dropped the key. The fixture now offers it and
+  reports `STATE_STOPPED`, as YouTube does at a video's end.
+
+Not verified on a device: the play/pause control, a stopped video staying
+afloat with its play control, the portrait Maps crop, and the straight growth
+of double-tapped Maps. The device tool's daemon stopped answering (every
+request timed out at 90 s for over half an hour, while `adb` still answered)
+right after the video fixture was reinstalled, so these rest on the unit tests.
+The crop was chosen from crops of the real-Maps guidance screenshots of the
+first pass (`07-*`), not on the real-apps emulator. The hairline edge was kept:
+on the fixture it is barely visible, and it is meant for a dark video over a
+night map, which was not checked here.
 
 ### Known issue: Back is dropped in fullscreen Maps on the emulators
 
