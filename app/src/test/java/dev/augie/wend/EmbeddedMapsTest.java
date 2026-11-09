@@ -463,6 +463,9 @@ public class EmbeddedMapsTest {
         host.getSystemService(DisplayManager.class).getDisplay(panelDisplay(maps)).getRealSize(size);
         assertEquals("Its display takes the screen's size at the tap", new android.graphics.Point(1280, 720), size);
         assertTrue("and it holds in its corner meanwhile", floating(maps).floating());
+        // Laid out at a new size, the view's SurfaceView, which is the display's root surface,
+        // re-placed it around the held window (fixture emulator, above the live video).
+        assertEquals("Its view keeps the panel's layout", -1, activityView(maps).getLayoutParams().width);
         untilCovered();
         assertFalse("It has grown to the whole display", floating(maps).floating());
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));

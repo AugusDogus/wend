@@ -418,12 +418,13 @@ final class EmbeddedMaps extends MapPanel {
      * above the video app, it would show nowhere while Wend is stopped, and a display shown
      * nowhere is missing from SurfaceFlinger's layers, where Maps is seen laying out. Wend may be
      * stopped and lay out nothing, or still have its window (above the live video, or when the
-     * video app moved off Wend's display left it resumed), so the display and its view both
-     * take the full size.
+     * video app moved off Wend's display left it resumed), so the display itself is resized.
+     * Its view keeps the panel's size: the display's root surface is the view's SurfaceView
+     * surface, and laying that out at a new size re-places it at the view's own geometry, which
+     * showed a larger, unscaled Maps around the held still on the fixture emulator.
      */
     private Point layOutFullscreen() {
         Point panel = new Point(getWidth(), getHeight());
-        activityView.setLayoutParams(new LayoutParams(screen.x, screen.y));
         if (displayLifecycle == null) return panel;
         try {
             displayLifecycle.resize(screen.x, screen.y);
@@ -473,15 +474,13 @@ final class EmbeddedMaps extends MapPanel {
         takeoverFrame = null;
     }
 
+    /** Maps' display, resized directly for a takeover, takes its panel's size again, as its view has. */
     private void restorePanelSize() {
-        if (activityView != null && (activityView.getLayoutParams().width != -1 || activityView.getLayoutParams().height != -1)) {
-            activityView.setLayoutParams(new LayoutParams(-1, -1));
-        }
         if (displayLifecycle == null) return;
-        try { displayLifecycle.resizeWhileHidden(getWidth(), getHeight()); }
+        try { displayLifecycle.resize(getWidth(), getHeight()); }
         catch (ReflectiveOperationException | RuntimeException error) {
-            Log.w("WendMap", "Could not return Maps' hidden display to its panel size " + getWidth() + "x"
-                    + getHeight() + "; Wend's layout does when it shows the panel again", error);
+            Log.w("WendMap", "Could not return Maps' display to its panel size " + getWidth() + "x"
+                    + getHeight() + "; the panel may show it cropped until Wend's window is recreated", error);
         }
     }
 
