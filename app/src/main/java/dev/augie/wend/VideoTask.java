@@ -5,16 +5,23 @@ import android.app.ActivityManager;
 import android.app.ActivityOptions;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
 import java.util.List;
 import java.util.ArrayList;
 
 /** Restores one existing video task in fullscreen mode on our virtual display. */
 final class VideoTask {
+    /**
+     * Must match {@code dev.augie.wend.piphook.CardGrow.GROW_FROM}: the card's screen bounds, as
+     * {left, top, right, bottom}, that the pip-hook module grows a moved task from.
+     */
+    private static final String GROW_FROM = "dev.augie.wend.GROW_FROM";
+
     private VideoTask() { }
 
     static boolean embed(Activity host, int displayId) throws ReflectiveOperationException {
         if (displayId <= 0) return false;
-        return move(host, displayId, true);
+        return move(host, displayId, true, ActivityOptions.makeBasic());
     }
 
     /**
@@ -23,7 +30,17 @@ final class VideoTask {
      *     by its PICTURE_IN_PICTURE app-op, which Wend allows only for the deliberately floated app.
      */
     static boolean openFullscreen(Activity host, boolean allowAutoPip) throws ReflectiveOperationException {
-        return move(host, 0, !allowAutoPip);
+        return move(host, 0, !allowAutoPip, ActivityOptions.makeBasic());
+    }
+
+    /**
+     * Moves the video task fullscreen onto the main display, growing out of {@code card} instead of
+     * cutting to fullscreen where the pip-hook module is installed ({@link #GROW_FROM}); elsewhere
+     * Android ignores the request and the video cuts to fullscreen as before. The app it covers may not
+     * enter PiP on this move.
+     */
+    static boolean growFullscreen(Activity host, View card) throws ReflectiveOperationException {
+        return move(host, 0, true, ActivityOptions.makeBasic(), card);
     }
 
     /**
@@ -73,14 +90,26 @@ final class VideoTask {
         return selectId(ids, preferences(host).getInt("taskId", -1));
     }
 
-    private static boolean move(Activity host, int displayId, boolean suppressAutoPip) throws ReflectiveOperationException {
+    private static boolean move(Activity host, int displayId, boolean suppressAutoPip, ActivityOptions base)
+            throws ReflectiveOperationException {
+        return move(host, displayId, suppressAutoPip, base, null);
+    }
+
+    private static boolean move(Activity host, int displayId, boolean suppressAutoPip, ActivityOptions base, View growFrom)
+            throws ReflectiveOperationException {
         int selected = find(host);
         if (selected < 0) return false;
+        Bundle options = fullscreenOptions(base, displayId, suppressAutoPip).toBundle();
+        if (growFrom != null) {
+            int[] at = new int[2];
+            growFrom.getLocationOnScreen(at);
+            options.putIntArray(GROW_FROM, new int[] { at[0], at[1], at[0] + growFrom.getWidth(), at[1] + growFrom.getHeight() });
+        }
         // Moving a pinned stack directly leaves PiP as the only stack on the
         // virtual display, crashing Android 10's ActivityMetricsLogger. Restore
         // the exact task with fullscreen placement, as we do for Maps.
         Object moved = api().getMethod("startActivityFromRecents", int.class, Bundle.class)
-                .invoke(service(), selected, fullscreenOptions(displayId, suppressAutoPip).toBundle());
+                .invoke(service(), selected, options);
         if (!(moved instanceof Integer) || (Integer) moved < 0) {
             throw new IllegalStateException("Moving video task " + selected + " failed: " + moved);
         }
@@ -109,7 +138,11 @@ final class VideoTask {
 
     static ActivityOptions fullscreenOptions(int displayId, boolean suppressAutoPip)
             throws ReflectiveOperationException {
-        ActivityOptions basic = ActivityOptions.makeBasic();
+        return fullscreenOptions(ActivityOptions.makeBasic(), displayId, suppressAutoPip);
+    }
+
+    private static ActivityOptions fullscreenOptions(ActivityOptions basic, int displayId, boolean suppressAutoPip)
+            throws ReflectiveOperationException {
         // When suppressed, the app this move backgrounds must not enter PiP itself as the video
         // comes forward. When allowed, a floated Maps enters its own native PiP on the task switch.
         ActivityOptions options = suppressAutoPip ? SystemPip.withoutAutoPip(basic) : basic;

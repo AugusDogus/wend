@@ -199,7 +199,8 @@ final class EmbeddedVideo extends FrameLayout {
             pipOp.allowForFloat(host);
             // The video comes forward on display 0 (suppressing any auto-PiP as it does); the app
             // Wend then opens over it backgrounds the video, which enters its own player PiP.
-            if (!VideoTask.openFullscreen(host, false)) {
+            // Grows out of the card rather than cutting to fullscreen.
+            if (!VideoTask.growFullscreen(host, this)) {
                 throw new IllegalStateException("No playing video task was found to float as native PiP");
             }
             return true;
@@ -242,7 +243,8 @@ final class EmbeddedVideo extends FrameLayout {
         coverPlayer();
         try {
             pipRest();
-            if (!VideoTask.openFullscreen(host, false)) {
+            // Grows out of the card rather than cutting to fullscreen.
+            if (!VideoTask.growFullscreen(host, this)) {
                 throw new IllegalStateException("No playing video task was found to place fullscreen for Maps' PiP");
             }
             return true;
