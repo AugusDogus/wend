@@ -46,6 +46,8 @@ final class EmbeddedVideo extends FrameLayout {
     private boolean covered;
     private final Runnable inspect = this::inspectSurface;
     private boolean hostActive;
+    /** Wend put the video in Android's PiP: it stays there, not in the card, until Wend shows again. */
+    private boolean inSystemPip;
     private VideoCardState presentation = VideoCardState.HIDDEN;
     private int generation;
     private long preparationStarted;
@@ -137,6 +139,7 @@ final class EmbeddedVideo extends FrameLayout {
     void resume() {
         hostActive = true;
         covered = false;
+        inSystemPip = false;
         window.hostShown();
         if (window.active()) {
             // A video floating above Maps returns to its card. A whole video above Wend
@@ -150,9 +153,48 @@ final class EmbeddedVideo extends FrameLayout {
     /** Home returns any presentation to the card. */
     void home() {
         hostActive = true;
+        inSystemPip = false;
         window.hostShown();
         if (window.active()) returnToCard();
-        else maybeLaunch();
+        else {
+            maybeLaunch();
+            if (BuildConfig.SYSTEM_PIP && state != State.WAITING && state != State.PREPARING && state != State.SHOWN) {
+                // Not returning live to the card, such as paused: its PiP must not stay above Wend.
+                try { VideoTask.dismissPip(host); }
+                catch (ReflectiveOperationException | RuntimeException error) {
+                    Log.e("WendPip", "Could not close the video's picture-in-picture on Home; close it"
+                            + " with its X. The video and its task are unaffected", error);
+                }
+            }
+        }
+    }
+
+    /** Whether the video plays live in the card that Wend shows. */
+    boolean livePlaying() {
+        return hostActive && !window.active() && !inSystemPip && state == State.SHOWN && playerSurface != null
+                && presentation == VideoCardState.PLAYING;
+    }
+
+    /**
+     * Moves the live video from its card into Android's own picture-in-picture above the fullscreen
+     * app {@code besideTaskId}. The card shows its still until Wend shows again.
+     * @return the video's task, now pinned, or -1 when it stays in the card
+     */
+    int pinAbove(int besideTaskId) {
+        if (!livePlaying()) return -1;
+        cancelPreparation();
+        state = State.READY;
+        inSystemPip = true;
+        coverPlayer();
+        try {
+            return VideoTask.pin(host, besideTaskId);
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.e("WendPip", "Could not put the video in picture-in-picture above task " + besideTaskId
+                    + "; it keeps playing in its card", error);
+            inSystemPip = false;
+            maybeLaunch();
+            return -1;
+        }
     }
 
     private void returnToCard() {
@@ -370,7 +412,7 @@ final class EmbeddedVideo extends FrameLayout {
     }
 
     private void maybeLaunch() {
-        if (window.active()) return;
+        if (window.active() || inSystemPip) return;
         if (!hostActive || presentation != VideoCardState.PLAYING) return;
         if (state == State.EMPTY) {
             state = State.WAITING;

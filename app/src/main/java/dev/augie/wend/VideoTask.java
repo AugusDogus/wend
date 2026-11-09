@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.ActivityOptions;
 import android.os.Bundle;
+import android.util.Log;
 import java.util.List;
 import java.util.ArrayList;
 
@@ -20,9 +21,27 @@ final class VideoTask {
         return move(host, 0);
     }
 
-    private static boolean move(Activity host, int displayId) throws ReflectiveOperationException {
-        Object service = service();
-        Object result = api().getMethod("getTasks", int.class).invoke(service, Integer.MAX_VALUE);
+    /**
+     * Puts the video in Android's own picture-in-picture above the fullscreen app {@code besideTaskId}.
+     * @return the video's task, now pinned
+     */
+    static int pin(Activity host, int besideTaskId) throws ReflectiveOperationException {
+        int selected = find(host);
+        if (selected < 0) throw new IllegalStateException("No video task to put in picture-in-picture");
+        SystemPip.pin(selected, besideTaskId);
+        remember(host, selected);
+        return selected;
+    }
+
+    /** Closes the video's picture-in-picture, if it has one, as SystemUI's close button does. */
+    static void dismissPip(Activity host) throws ReflectiveOperationException {
+        int selected = find(host);
+        if (selected >= 0 && SystemPip.pinned(selected)) SystemPip.dismiss();
+    }
+
+    /** @return the video's task, or -1 when it has none */
+    static int find(Activity host) throws ReflectiveOperationException {
+        Object result = api().getMethod("getTasks", int.class).invoke(service(), Integer.MAX_VALUE);
         if (!(result instanceof List<?>)) throw new IllegalStateException("Task service returned no task list");
         List<Integer> ids = new ArrayList<>();
         for (Object item : (List<?>) result) {
@@ -31,20 +50,30 @@ final class VideoTask {
             if (task.baseActivity == null || !EmbeddedVideo.PACKAGE.equals(task.baseActivity.getPackageName())) continue;
             ids.add(task.taskId);
         }
-        android.content.SharedPreferences preferences = host.getSharedPreferences("video-task", Activity.MODE_PRIVATE);
-        int selected = selectId(ids, preferences.getInt("taskId", -1));
+        return selectId(ids, preferences(host).getInt("taskId", -1));
+    }
+
+    private static boolean move(Activity host, int displayId) throws ReflectiveOperationException {
+        int selected = find(host);
         if (selected < 0) return false;
         // Moving a pinned stack directly leaves PiP as the only stack on the
         // virtual display, crashing Android 10's ActivityMetricsLogger. Restore
         // the exact task with fullscreen placement, as we do for Maps.
         Object moved = api().getMethod("startActivityFromRecents", int.class, Bundle.class)
-                .invoke(service, selected, fullscreenOptions(displayId).toBundle());
+                .invoke(service(), selected, fullscreenOptions(displayId).toBundle());
         if (!(moved instanceof Integer) || (Integer) moved < 0) {
             throw new IllegalStateException("Moving video task " + selected + " failed: " + moved);
         }
-        preferences.edit().putInt("taskId", selected).apply();
+        remember(host, selected);
         if (displayId != 0) host.getSystemService(ActivityManager.class).moveTaskToFront(host.getTaskId(), 0);
+        else Log.i("WendVideo", "Moved video task " + selected + " to the main display, fullscreen");
         return true;
+    }
+
+    private static void remember(Activity host, int taskId) { preferences(host).edit().putInt("taskId", taskId).apply(); }
+
+    private static android.content.SharedPreferences preferences(Activity host) {
+        return host.getSharedPreferences("video-task", Activity.MODE_PRIVATE);
     }
 
     static int selectId(List<Integer> ids, int remembered) {
@@ -55,7 +84,8 @@ final class VideoTask {
     }
 
     static ActivityOptions fullscreenOptions(int displayId) throws ReflectiveOperationException {
-        ActivityOptions options = ActivityOptions.makeBasic();
+        // Wend decides what floats: the app on top must not enter PiP itself as the video comes forward.
+        ActivityOptions options = SystemPip.withoutAutoPip(ActivityOptions.makeBasic());
         options.setLaunchDisplayId(displayId);
         ActivityOptions.class.getMethod("setLaunchWindowingMode", int.class).invoke(options, 1);
         return options;

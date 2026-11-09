@@ -10,6 +10,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         buildConfigField("boolean", "WINDOWED_MAPS", "false")
+        // Floating video and Maps use Android's own picture-in-picture instead of Wend's windows.
+        buildConfigField("boolean", "SYSTEM_PIP", "true")
         buildConfigField("String", "MAPS_PACKAGE", "\"com.google.android.apps.maps\"")
         buildConfigField("String", "VIDEO_PACKAGE", "\"com.google.android.youtube\"")
     }
@@ -17,6 +19,7 @@ android {
         create("windowed") {
             initWith(getByName("release"))
             buildConfigField("boolean", "WINDOWED_MAPS", "true")
+            buildConfigField("boolean", "SYSTEM_PIP", "false")
         }
         create("emulator") {
             initWith(getByName("debug"))

@@ -127,6 +127,10 @@ final class MediaPanel extends LinearLayout {
         video.yieldToMaps(corner, listener);
     }
     void emergeVideo() { video.emergeAboveMaps(); }
+    /** Whether the video plays live in its card. */
+    boolean videoLive() { return video.livePlaying(); }
+    /** @return the video's task, now in Android's PiP above {@code besideTaskId}, or -1 */
+    int pinVideoAbove(int besideTaskId) { return video.pinAbove(besideTaskId); }
 
     void start() {
         started = true;
