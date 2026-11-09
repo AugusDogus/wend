@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
  * whose app is not installed stays stored, so reinstalling the app restores it in place.
  */
 final class DockPins {
-    static final String SPOTIFY = "com.spotify.music";
+    static final String MUSIC = BuildConfig.MUSIC_PACKAGE;
     private static final String SEPARATOR = ",";
     // Android package names: two or more dot-separated segments, each starting with a letter.
     private static final Pattern PACKAGE = Pattern.compile("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+");
@@ -25,9 +25,9 @@ final class DockPins {
         this.capacity = capacity;
     }
 
-    /** Google Maps, then Spotify: the dock Wend shipped with. */
+    /** Google Maps, then the music app: the dock Wend shipped with. */
     static DockPins defaults(int capacity) {
-        return from(Arrays.asList(BuildConfig.MAPS_PACKAGE, SPOTIFY), capacity);
+        return from(Arrays.asList(BuildConfig.MAPS_PACKAGE, MUSIC), capacity);
     }
 
     /**

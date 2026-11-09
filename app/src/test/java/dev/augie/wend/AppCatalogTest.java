@@ -70,7 +70,7 @@ public class AppCatalogTest {
         LauncherApp maps = catalog.pinnedApp("com.google.android.apps.maps");
         assertNotNull(maps);
         assertEquals("Maps", maps.label);
-        assertNull(catalog.pinnedApp(DockPins.SPOTIFY));
+        assertNull(catalog.pinnedApp(DockPins.MUSIC));
     }
 
     @Test public void pinsAreUnknownWhileTheListLoads() {

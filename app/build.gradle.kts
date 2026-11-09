@@ -12,6 +12,7 @@ android {
         buildConfigField("boolean", "WINDOWED_MAPS", "false")
         buildConfigField("String", "MAPS_PACKAGE", "\"com.google.android.apps.maps\"")
         buildConfigField("String", "VIDEO_PACKAGE", "\"com.google.android.youtube\"")
+        buildConfigField("String", "MUSIC_PACKAGE", "\"com.google.android.apps.youtube.music\"")
     }
     buildTypes {
         create("windowed") {

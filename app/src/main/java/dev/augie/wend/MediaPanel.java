@@ -72,7 +72,7 @@ final class MediaPanel extends LinearLayout {
         title.setMaxLines(3);
         title.setEllipsize(TextUtils.TruncateAt.END);
         addView(title, new LayoutParams(-1, -2));
-        artist = Ui.text(context, "Choose something in Spotify", 14, Ui.MUTED);
+        artist = Ui.text(context, "Choose something to play", 14, Ui.MUTED);
         artist.setSingleLine(true);
         artist.setEllipsize(TextUtils.TruncateAt.END);
         LayoutParams artistLayout = new LayoutParams(-1, Ui.dp(context, 28));
@@ -95,14 +95,14 @@ final class MediaPanel extends LinearLayout {
         controls.addView(play, new LayoutParams(0, Ui.dp(context, 56), 1));
         controls.addView(next, new LayoutParams(0, Ui.dp(context, 56), 1));
         addView(controls, new LayoutParams(-1, Ui.dp(context, 64)));
-        openApp = Ui.action(context, "Open Spotify", openMusic);
+        openApp = Ui.action(context, "Open music", openMusic);
         openApp.setSingleLine(true);
         openApp.setEllipsize(TextUtils.TruncateAt.END);
         addView(openApp, new LayoutParams(-1, Ui.dp(context, 48)));
         render();
     }
 
-    String musicPackage() { return controller == null ? "com.spotify.music" : controller.getPackageName(); }
+    String musicPackage() { return controller == null ? BuildConfig.MUSIC_PACKAGE : controller.getPackageName(); }
     /** @param reached runs once the live video shows whole and receives touches */
     boolean openVideoFullscreen(Runnable open, Runnable reached) { return video.openFullscreen(open, reached); }
     /** Whether a live video presentation is showing outside its card, or about to. */
@@ -192,7 +192,7 @@ final class MediaPanel extends LinearLayout {
                 CharSequence videoTitle = metadata == null ? null : metadata.getDescription().getTitle();
                 if (VideoCardState.fromMedia(candidate.getPackageName(), videoTitle, false)
                         == VideoCardState.THUMBNAIL) selectedVideo = candidate;
-                if (selected == null || candidate.getPackageName().equals("com.spotify.music")) selected = candidate;
+                if (selected == null || candidate.getPackageName().equals(BuildConfig.MUSIC_PACKAGE)) selected = candidate;
             }
         }
         // Audio controls follow playback; a selected paused video keeps its card even

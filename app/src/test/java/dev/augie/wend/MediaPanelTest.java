@@ -41,7 +41,7 @@ public class MediaPanelTest {
             Activity activity = host.get();
             MediaSession music = new MediaSession(activity, "music");
             MediaSession video = new MediaSession(activity, "video");
-            MediaController musicController = paused(music, "com.spotify.music");
+            MediaController musicController = paused(music, BuildConfig.MUSIC_PACKAGE);
             MediaController videoController = paused(video, EmbeddedVideo.PACKAGE);
             Shadows.shadowOf(musicController).setPlaybackState(new PlaybackState.Builder()
                     .setState(PlaybackState.STATE_PLAYING, 0, 1).build());
@@ -53,7 +53,7 @@ public class MediaPanelTest {
             MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { }, () -> { });
             try {
                 panel.start();
-                assertEquals("com.spotify.music", panel.musicPackage());
+                assertEquals(BuildConfig.MUSIC_PACKAGE, panel.musicPackage());
                 assertEquals(View.VISIBLE, panel.getChildAt(0).getVisibility());
                 assertEquals(PlaybackState.STATE_PAUSED, videoController.getPlaybackState().getState());
             } finally {
@@ -67,7 +67,7 @@ public class MediaPanelTest {
             Activity activity = host.get();
             MediaSession music = new MediaSession(activity, "music");
             MediaSession video = new MediaSession(activity, "video");
-            MediaController musicController = paused(music, "com.spotify.music");
+            MediaController musicController = paused(music, BuildConfig.MUSIC_PACKAGE);
             MediaController videoController = paused(video, EmbeddedVideo.PACKAGE);
             ShadowMediaSessionManager sessions = Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class));
             sessions.addController(musicController);
@@ -75,7 +75,7 @@ public class MediaPanelTest {
             MediaPanel panel = new MediaPanel(activity, () -> { }, () -> { }, () -> { });
             try {
                 panel.start();
-                assertEquals("com.spotify.music", panel.musicPackage());
+                assertEquals(BuildConfig.MUSIC_PACKAGE, panel.musicPackage());
                 // The active-session list is unchanged. Only the previously unselected
                 // video's metadata changes, as when a paused video is selected.
                 Shadows.shadowOf(videoController).executeOnMetadataChanged(new MediaMetadata.Builder()
@@ -86,7 +86,7 @@ public class MediaPanelTest {
                 assertEquals(PlaybackState.STATE_PAUSED, videoController.getPlaybackState().getState());
                 Shadows.shadowOf(videoController).executeOnMetadataChanged(null);
                 Shadows.shadowOf(Looper.getMainLooper()).idle();
-                assertEquals("com.spotify.music", panel.musicPackage());
+                assertEquals(BuildConfig.MUSIC_PACKAGE, panel.musicPackage());
                 assertEquals(View.GONE, panel.getChildAt(0).getVisibility());
                 assertEquals(1, Shadows.shadowOf(musicController).getCallbacks().size());
                 assertEquals(1, Shadows.shadowOf(videoController).getCallbacks().size());

@@ -28,7 +28,7 @@ public class DockTest {
 
         Dock dock = dock(catalog, DockPins.defaults(5));
 
-        // Spotify is not installed, so only Maps is pinned beside the fixed buttons.
+        // The music app is not installed, so only Maps is pinned beside the fixed buttons.
         assertEquals(Arrays.asList("Maps", "Apps", "Settings"), buttons(dock));
     }
 

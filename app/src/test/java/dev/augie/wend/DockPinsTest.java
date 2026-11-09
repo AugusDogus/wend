@@ -12,9 +12,9 @@ import static org.junit.Assert.fail;
 public class DockPinsTest {
     private static final int CAPACITY = 5;
 
-    @Test public void defaultsPinMapsThenSpotify() {
+    @Test public void defaultsPinMapsThenYouTubeMusic() {
         DockPins pins = DockPins.defaults(CAPACITY);
-        assertEquals(Arrays.asList(BuildConfig.MAPS_PACKAGE, "com.spotify.music"), pins.packages());
+        assertEquals(Arrays.asList(BuildConfig.MAPS_PACKAGE, "com.google.android.apps.youtube.music"), pins.packages());
         assertEquals(CAPACITY, pins.capacity());
     }
 

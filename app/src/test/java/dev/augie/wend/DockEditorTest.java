@@ -45,7 +45,7 @@ public class DockEditorTest {
 
         List<String> texts = visibleTexts(editor.view());
         assertTrue(texts.toString(), texts.contains("Maps"));
-        // Spotify is missing from PackageManager too, so it really is not installed.
+        // The music app is missing from PackageManager too, so it really is not installed.
         assertEquals(texts.toString(), 1, Collections.frequency(texts, "Not installed"));
     }
 

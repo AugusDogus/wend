@@ -100,7 +100,7 @@ public class LauncherSettingsTest {
     }
 
     @Test public void anEmptiedDockStaysEmpty() {
-        settings.setDockPins(DockPins.defaults(5).remove(BuildConfig.MAPS_PACKAGE).remove(DockPins.SPOTIFY));
+        settings.setDockPins(DockPins.defaults(5).remove(BuildConfig.MAPS_PACKAGE).remove(DockPins.MUSIC));
         assertTrue(settings.dockPins(5).packages().isEmpty());
     }
 
