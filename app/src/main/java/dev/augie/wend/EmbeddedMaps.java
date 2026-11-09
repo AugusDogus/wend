@@ -15,10 +15,12 @@ import android.os.Process;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.Display;
+import android.view.SurfaceView;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import java.lang.reflect.Field;
 
 /** Owns the Android 10 map display and its task transitions, without a root shell. */
 final class EmbeddedMaps extends MapPanel {
@@ -338,6 +340,7 @@ final class EmbeddedMaps extends MapPanel {
             result.stayed("Maps could not be prepared to float: " + error);
             return;
         }
+        paintEmptyPanel();
         // From here Maps leaves its panel on its own: Wend stopping, resuming, or seeing the panel
         // empty must not re-adopt it, or the adoption pulls Maps straight back out of its PiP.
         nativePipFloating = true;
@@ -349,6 +352,21 @@ final class EmbeddedMaps extends MapPanel {
                 result.stayed(why);
             }
         });
+    }
+
+    /**
+     * Shows Wend's panel color, not Android's default black, in the panel Maps is about to fly out of.
+     * The ActivityView's SurfaceView background layer is what shows there once Maps' display is empty;
+     * Android recreates that layer with its surface, so it is painted before every float.
+     */
+    private void paintEmptyPanel() {
+        try {
+            Field field = ActivityView.class.getDeclaredField("mSurfaceView");
+            field.setAccessible(true);
+            SurfaceView.class.getMethod("setResizeBackgroundColor", int.class).invoke(field.get(activityView), Ui.PANEL);
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("WendPip", "Could not color Maps' empty panel; it shows black while Maps floats out of it", error);
+        }
     }
 
     /**
