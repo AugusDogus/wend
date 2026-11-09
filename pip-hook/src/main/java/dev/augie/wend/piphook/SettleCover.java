@@ -1,6 +1,7 @@
 package dev.augie.wend.piphook;
 
 import android.os.Handler;
+import android.os.SystemClock;
 import de.robv.android.xposed.XposedBridge;
 import java.util.HashMap;
 import java.util.Map;
@@ -22,6 +23,13 @@ final class SettleCover {
     private static final Object lock = new Object();
     /** The cover waiting on each app, by its task id; guarded by {@link #lock}. */
     private static final Map<Integer, SettleCover> current = new HashMap<>();
+    /**
+     * Reports that came before their cover, by task id, with when they came: an app moved into its
+     * panel can redraw and report before the move's cover is set up. Guarded by {@link #lock}.
+     */
+    private static final Map<Integer, Long> early = new HashMap<>();
+    /** How recent an early report must be for a new cover to take it. */
+    private static final long EARLY_MS = 3000;
 
     private final int taskId;
     private final Reveal target;
@@ -42,7 +50,11 @@ final class SettleCover {
     static SettleCover hold(int taskId, Reveal target, Handler thread, String what) {
         SettleCover cover = new SettleCover(taskId, target, thread, what);
         SettleCover previous;
-        synchronized (lock) { previous = current.put(taskId, cover); }
+        synchronized (lock) {
+            previous = current.put(taskId, cover);
+            Long reported = early.remove(taskId);
+            cover.settled = reported != null && SystemClock.uptimeMillis() - reported < EARLY_MS;
+        }
         if (previous != null) previous.reveal("a newer cover replaced it");
         return cover;
     }
@@ -64,7 +76,10 @@ final class SettleCover {
         boolean now;
         synchronized (lock) {
             cover = current.get(taskId);
-            if (cover == null) return;
+            if (cover == null) {
+                early.put(taskId, SystemClock.uptimeMillis());
+                return;
+            }
             cover.settled = true;
             now = cover.landed;
         }
