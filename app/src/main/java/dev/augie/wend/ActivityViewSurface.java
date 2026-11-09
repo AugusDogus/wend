@@ -33,8 +33,16 @@ class ActivityViewSurface {
         KEPT
     }
 
-    /** Layer of a display presented in another window: below that window's own buffer. */
+    /**
+     * Layer of a display presented in another window: below that window's own buffer, which then
+     * draws over it, such as a floating window's controls.
+     */
     static final int BELOW_WINDOW = -1;
+    /**
+     * Above that window: its input portal, a child of this surface, then takes touches before the
+     * window does, as a display shown whole and interactive must.
+     */
+    static final int ABOVE_WINDOW = 1;
     private final SurfaceControl surface;
     private final PreviewInput previewInput;
     private final SurfaceView parent;
@@ -163,6 +171,13 @@ class ActivityViewSurface {
             transaction.apply();
         }
         inPreview = false;
+    }
+
+    /** @param layer {@link #BELOW_WINDOW} or {@link #ABOVE_WINDOW} in the window it is presented in */
+    void layer(int layer) {
+        try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+            transaction.setLayer(surface, layer).apply();
+        }
     }
 
     void transform(float scale, float x, float y, Rect bounds) throws ReflectiveOperationException {

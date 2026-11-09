@@ -506,6 +506,8 @@ final class LiveSurfaceWindow {
             }
             animateTo(Target.WHOLE, MOTION_MS, motion, () -> {
                 if (interactive) {
+                    // Its input portal must sit above this window, which otherwise takes every touch.
+                    surface.layer(ActivityViewSurface.ABOVE_WINDOW);
                     surface.input(wholeInput);
                     // Touches now reach the presented display, which then receives the Home key.
                     routeHome();
@@ -545,6 +547,8 @@ final class LiveSurfaceWindow {
             stopAnimator();
             touches.only(new Rect());
             surface.input(new Rect());
+            // Below the window again, where its floating controls draw over it.
+            surface.layer(ActivityViewSurface.BELOW_WINDOW);
             // The tap that covered it was on the main display, where Home works again.
             stopRoutingHome();
             origin = target;

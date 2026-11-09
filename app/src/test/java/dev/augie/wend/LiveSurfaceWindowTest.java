@@ -216,6 +216,23 @@ public class LiveSurfaceWindowTest {
         window.cancel();
     }
 
+    /**
+     * Found on the fixture emulator: a whole, interactive video below its window's buffer, where
+     * floating controls draw, left every touch with that window and none for the video app.
+     */
+    @Test public void aWholeInteractiveDisplayTakesTouchesAboveItsWindowAndFloatsBelowIt() throws Exception {
+        DrawnSurface surface = DrawnSurface.of(host);
+        openWhole(surface);
+        commitFrame();
+        settle();
+        assertEquals(List.of("reached"), events);
+        assertEquals(List.of(ActivityViewSurface.ABOVE_WINDOW), surface.layers);
+        assertTrue(window.hideForCorner(PLACEMENT, FloatingPlacement.Corner.TOP_LEFT, listener()));
+        assertEquals("Floating, its controls draw over it again",
+                List.of(ActivityViewSurface.ABOVE_WINDOW, ActivityViewSurface.BELOW_WINDOW), surface.layers);
+        window.cancel();
+    }
+
     @Test public void onlyAWholeDisplayCanHideForACorner() throws Exception {
         DrawnSurface floatingSurface = DrawnSurface.of(host);
         openFloating(floatingSurface, LiveSurfaceWindow.Entry.FROM_CARD);
@@ -620,6 +637,11 @@ public class LiveSurfaceWindowTest {
         }
 
         RectF last() { return drawn.get(drawn.size() - 1); }
+
+        /** Layers it was given in its presenting window, after the one {@link #attach} sets. */
+        final List<Integer> layers = new ArrayList<>();
+
+        @Override void layer(int layer) { layers.add(layer); }
     }
 
     @Test public void growingBeforeTheWindowIsReadyNeverReportsReachingTheWholeDisplay() {
