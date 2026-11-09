@@ -229,6 +229,19 @@ languages.
   dock." (only for pinned apps; work-profile apps never count as matches) or "Every
   app is already in the dock." At capacity, Add app is dimmed and explains "The dock
   is full. Remove an app to add another."
+- Music app: its own section below the Dock, a single card row showing the chosen music
+  app's icon and label, or its package name and "Not installed" (like a dock pin) when the
+  app is absent, and "Loading…" while the app list loads. The row opens the same `AppBrowser`
+  picker page (grid and search), offering every app in Wend's own profile with nothing
+  hidden; choosing one calls `LauncherSettings.setMusicApp` and returns to the sheet. The
+  choice is stored in `layout` under the key `musicApp`, defaulting to
+  `BuildConfig.MUSIC_PACKAGE` (`com.google.android.apps.youtube.music`); a wrongly-typed or
+  non-package value is logged and reads as that default until an app is chosen. It is a
+  dedicated section rather than part of Layout or the Dock because it configures the media
+  sidebar, not the map geometry or the dock pins, and stays independent of the dock. The
+  media panel reads it live through a `Supplier<String>`, so the empty-panel "Open <app>"
+  fallback and the paused-session tie-break follow a new choice without rebuilding the panel;
+  `MainActivity`'s settings host relabels the panel when it changes.
 - Floating windows: "Video over fullscreen Maps" (`floatingVideo`) and "Maps over
   fullscreen video" (`floatingMaps`), both default on, stored in `layout` and read
   through `LauncherSettings.floatingVideo()` and `floatingMaps()`. `MainActivity`
@@ -307,9 +320,12 @@ load, kept through a retry), `DockEditorTest` (loading versus not installed, an
 interrupted fade-in), `AppCatalogTest` (an unreadable icon or label, own-profile pins,
 the PackageManager fallback), `AppBrowserTest` (work-profile apps left out of the
 picker, the pinned message, TalkBack reading the query, announced results),
-`SettingsSheetTest` (when a layout change reaches the launcher, in each build),
-`LauncherSettingsTest` (defaults, existing keys, wrong types, unknown widths, floating
-keys and corners, pins), `LayoutPreviewTest` (map geometry and corner rounding) and
+`SettingsSheetTest` (when a layout change reaches the launcher, in each build; choosing a
+music app through the reused picker stores it and relabels the media panel),
+`MediaPanelTest` (the empty-panel fallback and the paused-session tie-break follow the chosen
+music app), `LauncherSettingsTest` (defaults, existing keys, wrong types, unknown widths,
+floating keys and corners, pins, the music app's default, round trip and bad value),
+`LayoutPreviewTest` (map geometry and corner rounding) and
 `SegmentedControlTest` (selection, listener, accessibility, a segment measured in its
 settings row).
 
