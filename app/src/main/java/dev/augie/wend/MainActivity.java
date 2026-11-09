@@ -63,7 +63,8 @@ public final class MainActivity extends Activity {
         body.leftMargin = 0;
         root.addView(content, body);
         maps = BuildConfig.WINDOWED_MAPS ? new WindowedMaps(this) : new EmbeddedMaps(this);
-        media = new MediaPanel(this, this::openMusic, this::openVideo, () -> maps.returnFromFloating());
+        media = new MediaPanel(this, settings::musicApp, this::openMusic, this::openVideo,
+                () -> maps.returnFromFloating());
         // The dock and the map side are places in the car, not reading order, so the row of
         // panels never mirrors; each panel still lays out its own content for the locale.
         root.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);

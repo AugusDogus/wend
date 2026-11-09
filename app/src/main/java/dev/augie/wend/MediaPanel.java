@@ -21,6 +21,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.function.Supplier;
 
 // Created in code with its required navigation action, never inflated from XML.
 @android.annotation.SuppressLint("ViewConstructor")
@@ -35,18 +36,28 @@ final class MediaPanel extends LinearLayout {
     private final ImageButton previous;
     private final ImageButton play;
     private final ImageButton next;
+    private final Supplier<String> musicApp;
     private MediaController controller;
     private MediaController videoController;
     private boolean started;
     private final MediaSessionSubscriptions subscriptions = new MediaSessionSubscriptions(handler, this::refresh);
     private final MediaSessionManager.OnActiveSessionsChangedListener sessionListener = this::select;
 
+    /** Uses the build's default music app; kept for tests and callers without a settings host. */
+    MediaPanel(Activity context, Runnable openMusic, Runnable openVideo, Runnable videoPresentationEnded) {
+        this(context, () -> BuildConfig.MUSIC_PACKAGE, openMusic, openVideo, videoPresentationEnded);
+    }
+
     /**
+     * @param musicApp supplies the chosen music app's package; read live, so the panel follows
+     *     the setting without being rebuilt
      * @param openVideo opens the video app, as a tap on the video card does
      * @param videoPresentationEnded runs when a fullscreen or floating video has finished
      */
-    MediaPanel(Activity context, Runnable openMusic, Runnable openVideo, Runnable videoPresentationEnded) {
+    MediaPanel(Activity context, Supplier<String> musicApp, Runnable openMusic, Runnable openVideo,
+            Runnable videoPresentationEnded) {
         super(context);
+        this.musicApp = musicApp;
         sessions = context.getSystemService(MediaSessionManager.class);
         setOrientation(VERTICAL);
         setGravity(Gravity.CENTER_VERTICAL);
@@ -102,7 +113,13 @@ final class MediaPanel extends LinearLayout {
         render();
     }
 
-    String musicPackage() { return controller == null ? BuildConfig.MUSIC_PACKAGE : controller.getPackageName(); }
+    String musicPackage() { return controller == null ? musicApp.get() : controller.getPackageName(); }
+
+    /** The chosen music app changed: re-pick among sessions and relabel the Open button. */
+    void onMusicAppChanged() {
+        if (started && sessions != null) refresh();
+        else render();
+    }
     /** @param reached runs once the live video shows whole and receives touches */
     boolean openVideoFullscreen(Runnable open, Runnable reached) { return video.openFullscreen(open, reached); }
     /** Whether a live video presentation is showing outside its card, or about to. */
@@ -192,7 +209,7 @@ final class MediaPanel extends LinearLayout {
                 CharSequence videoTitle = metadata == null ? null : metadata.getDescription().getTitle();
                 if (VideoCardState.fromMedia(candidate.getPackageName(), videoTitle, false)
                         == VideoCardState.THUMBNAIL) selectedVideo = candidate;
-                if (selected == null || candidate.getPackageName().equals(BuildConfig.MUSIC_PACKAGE)) selected = candidate;
+                if (selected == null || candidate.getPackageName().equals(musicApp.get())) selected = candidate;
             }
         }
         // Audio controls follow playback; a selected paused video keeps its card even

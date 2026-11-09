@@ -328,6 +328,44 @@ public class MediaPanelTest {
         return drawn;
     }
 
+    /** The empty-panel fallback names the chosen music app, not the build default. */
+    @Test public void theEmptyFallbackUsesTheChosenMusicApp() {
+        try (ActivityController<Activity> host = Robolectric.buildActivity(Activity.class).setup()) {
+            Activity activity = host.get();
+            MediaPanel panel = new MediaPanel(activity, () -> "com.example.player", () -> { }, () -> { }, () -> { });
+            try {
+                panel.start();
+                assertEquals("com.example.player", panel.musicPackage());
+            } finally {
+                panel.stop(); panel.release();
+            }
+        }
+    }
+
+    /** Among paused sessions the tie-break prefers the chosen music app, even listed last. */
+    @Test public void thePausedSessionTieBreakFollowsTheChosenMusicApp() {
+        try (ActivityController<Activity> host = Robolectric.buildActivity(Activity.class).setup()) {
+            Activity activity = host.get();
+            String chosen = "com.example.player";
+            MediaSession chosenSession = new MediaSession(activity, "chosen");
+            MediaSession otherSession = new MediaSession(activity, "other");
+            MediaController chosenController = paused(chosenSession, chosen);
+            MediaController otherController = paused(otherSession, "com.example.other");
+            ShadowMediaSessionManager sessions = Shadows.shadowOf(activity.getSystemService(MediaSessionManager.class));
+            // The non-music app is listed first, so only the tie-break can prefer the chosen app.
+            sessions.addController(otherController);
+            sessions.addController(chosenController);
+            MediaPanel panel = new MediaPanel(activity, () -> chosen, () -> { }, () -> { }, () -> { });
+            try {
+                panel.start();
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                assertEquals(chosen, panel.musicPackage());
+            } finally {
+                panel.stop(); panel.release(); chosenSession.release(); otherSession.release();
+            }
+        }
+    }
+
     @Test public void onlyStoppedFailedOrResetPlaybackEndsAFloatingVideo() {
         for (int state : new int[]{PlaybackState.STATE_STOPPED, PlaybackState.STATE_NONE, PlaybackState.STATE_ERROR}) {
             assertTrue("state " + state, MediaPanel.videoPlaybackEnded(playback(state)));
