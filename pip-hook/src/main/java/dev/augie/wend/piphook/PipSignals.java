@@ -2,6 +2,7 @@ package dev.augie.wend.piphook;
 
 import android.app.PictureInPictureParams;
 import android.graphics.Rect;
+import de.robv.android.xposed.XposedHelpers;
 
 /**
  * The private signal from the Maps hook to the system_server hook. Maps' own
@@ -18,6 +19,7 @@ final class PipSignals {
     }
 
     static boolean isLayoutSettled(PictureInPictureParams params) {
-        return params != null && LAYOUT_SETTLED.equals(params.getSourceRectHint());
+        // Hidden on Android 10 (public from API 33), present in system_server.
+        return params != null && LAYOUT_SETTLED.equals(XposedHelpers.callMethod(params, "getSourceRectHint"));
     }
 }

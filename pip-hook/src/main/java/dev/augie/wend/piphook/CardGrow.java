@@ -123,8 +123,10 @@ final class CardGrow {
             Surface surface = new Surface(layer);
             try { XposedHelpers.callMethod(surface, "attachAndQueueBuffer", XposedHelpers.callMethod(backdrop, "getGraphicBuffer")); }
             finally { surface.release(); }
-            new SurfaceControl.Transaction().setLayer(layer, Integer.MIN_VALUE).setPosition(layer, 0, 0)
-                    .setVisibility(layer, true).apply();
+            SurfaceControl.Transaction t = new SurfaceControl.Transaction().setLayer(layer, Integer.MIN_VALUE)
+                    .setVisibility(layer, true);
+            XposedHelpers.callMethod(t, "setPosition", layer, 0f, 0f);
+            t.apply();
             return layer;
         } catch (Throwable error) {
             XposedBridge.log(PipHook.TAG + ": no backdrop layer for the card grow: " + error);
