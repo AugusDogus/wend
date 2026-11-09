@@ -850,7 +850,7 @@ frozen frame. These rest on the unit tests.
 
 ### PiP controls, the Maps crop, and the straight growth, November 8 (fifth pass)
 
-Release and emulator unit tests (264 each, no failures), release and emulator
+Release and emulator unit tests (265 each, no failures), release and emulator
 assembly, and release lint (no errors; 54 warnings, one more
 `ClickableViewAccessibility` now that the overlay is a custom view) pass. The
 gesture, placement, and controls tests were written first and failed against
@@ -878,15 +878,46 @@ under this worktree's git-ignored `build/evidence/variant-b/`):
   `ACTION_STOP`, so Android 10 dropped the key. The fixture now offers it and
   reports `STATE_STOPPED`, as YouTube does at a video's end.
 
-Not verified on a device: the play/pause control, a stopped video staying
-afloat with its play control, the portrait Maps crop, and the straight growth
-of double-tapped Maps. The device tool's daemon stopped answering (every
-request timed out at 90 s for over half an hour, while `adb` still answered)
-right after the video fixture was reinstalled, so these rest on the unit tests.
-The crop was chosen from crops of the real-Maps guidance screenshots of the
-first pass (`07-*`), not on the real-apps emulator. The hairline edge was kept:
-on the fixture it is barely visible, and it is meant for a dark video over a
-night map, which was not checked here.
+The device tool then stopped answering for over half an hour (a stuck
+`am start -W` from one of its fixture launches held the emulator's queue).
+Once it was cleared, the final build was checked on the same emulator:
+
+- Maps floats as its portrait above the video app the dock opens (`10-*`).
+- The floating video's play/pause control paused and resumed its session (the
+  icon flips to play over the frozen frame; `11-*`, and `11-play-pause-log.txt`
+  with the session back in `state=3`).
+- `media dispatch stop` while the video floats: the session reports `state=1`
+  and the window stays, its controls up and offering play, well past 3 s
+  (`13-*`). Its fullscreen control then shows the video app whole, with Maps
+  floating as its portrait, and that app takes touches: its own Play button
+  started the video (`14-*`, `state=3`).
+- The fullscreen control on floating Maps, above the live video and above the
+  video app: Maps holds still in its corner while it lays out at 1280 px
+  (340 to 671 ms in the log), then grows straight to full screen and moves
+  (`15-*`, `16-*`). The held frame fades over the growth's first 120 ms at the
+  corner, so for those frames it shows faintly beside the growing window
+  (`15b-mid-growth.png`).
+
+Two bugs were found this way and fixed, each with a test:
+
+- With the video's display below its overlay's buffer (where the controls
+  draw), the whole, interactive video's input portal was below the overlay
+  window too, which then took every touch: the fullscreen video, also the
+  card's Open, ignored touches. The display now moves above its window while
+  it is whole and interactive, and below again when it floats.
+- Above the live video, where Wend still lays out, giving Maps' view the full
+  size during the hold made its SurfaceView (the display's root surface)
+  re-place Maps at the view's geometry, showing a larger, unscaled Maps around
+  the held frame. The display alone is now resized, and back afterwards.
+
+The device tool's double tap arrives with its two taps more than 300 ms apart
+here, so it counted as a tap and then a press on the fullscreen control (same
+result). Two quick taps are covered by `FloatingDragTest` and
+`LiveSurfaceWindowTest`. The crop was chosen from crops of the real-Maps
+guidance screenshots of the first pass (`07-*`), not on the real-apps
+emulator; the fixture's map only shows that the crop and shape apply. The
+hairline edge was kept: on the fixture it is barely visible, and it is meant
+for a dark video over a night map, which was not checked here.
 
 ### Known issue: Back is dropped in fullscreen Maps on the emulators
 
