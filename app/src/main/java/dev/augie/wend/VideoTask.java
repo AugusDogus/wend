@@ -14,23 +14,16 @@ final class VideoTask {
 
     static boolean embed(Activity host, int displayId) throws ReflectiveOperationException {
         if (displayId <= 0) return false;
-        return move(host, displayId);
-    }
-
-    static boolean openFullscreen(Activity host) throws ReflectiveOperationException {
-        return move(host, 0);
+        return move(host, displayId, true);
     }
 
     /**
-     * Puts the video in Android's own picture-in-picture above the fullscreen app {@code besideTaskId}.
-     * @return the video's task, now pinned
+     * @param allowAutoPip true lets the app this move backgrounds enter its own native PiP on the
+     *     task switch (the video covering a floated Maps). Which app actually pins is still gated
+     *     by its PICTURE_IN_PICTURE app-op, which Wend allows only for the deliberately floated app.
      */
-    static int pin(Activity host, int besideTaskId) throws ReflectiveOperationException {
-        int selected = find(host);
-        if (selected < 0) throw new IllegalStateException("No video task to put in picture-in-picture");
-        SystemPip.pin(selected, besideTaskId);
-        remember(host, selected);
-        return selected;
+    static boolean openFullscreen(Activity host, boolean allowAutoPip) throws ReflectiveOperationException {
+        return move(host, 0, !allowAutoPip);
     }
 
     /** Closes the video's picture-in-picture, if it has one, as SystemUI's close button does. */
@@ -53,14 +46,14 @@ final class VideoTask {
         return selectId(ids, preferences(host).getInt("taskId", -1));
     }
 
-    private static boolean move(Activity host, int displayId) throws ReflectiveOperationException {
+    private static boolean move(Activity host, int displayId, boolean suppressAutoPip) throws ReflectiveOperationException {
         int selected = find(host);
         if (selected < 0) return false;
         // Moving a pinned stack directly leaves PiP as the only stack on the
         // virtual display, crashing Android 10's ActivityMetricsLogger. Restore
         // the exact task with fullscreen placement, as we do for Maps.
         Object moved = api().getMethod("startActivityFromRecents", int.class, Bundle.class)
-                .invoke(service(), selected, fullscreenOptions(displayId).toBundle());
+                .invoke(service(), selected, fullscreenOptions(displayId, suppressAutoPip).toBundle());
         if (!(moved instanceof Integer) || (Integer) moved < 0) {
             throw new IllegalStateException("Moving video task " + selected + " failed: " + moved);
         }
@@ -84,8 +77,15 @@ final class VideoTask {
     }
 
     static ActivityOptions fullscreenOptions(int displayId) throws ReflectiveOperationException {
-        // Wend decides what floats: the app on top must not enter PiP itself as the video comes forward.
-        ActivityOptions options = SystemPip.withoutAutoPip(ActivityOptions.makeBasic());
+        return fullscreenOptions(displayId, true);
+    }
+
+    static ActivityOptions fullscreenOptions(int displayId, boolean suppressAutoPip)
+            throws ReflectiveOperationException {
+        ActivityOptions basic = ActivityOptions.makeBasic();
+        // When suppressed, the app this move backgrounds must not enter PiP itself as the video
+        // comes forward. When allowed, a floated Maps enters its own native PiP on the task switch.
+        ActivityOptions options = suppressAutoPip ? SystemPip.withoutAutoPip(basic) : basic;
         options.setLaunchDisplayId(displayId);
         ActivityOptions.class.getMethod("setLaunchWindowingMode", int.class).invoke(options, 1);
         return options;

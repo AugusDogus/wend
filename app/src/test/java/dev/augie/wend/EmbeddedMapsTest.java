@@ -203,37 +203,31 @@ public class EmbeddedMapsTest {
         maps.release();
     }
 
-    /** Open YouTube: Maps leaves its panel straight for PiP above the video, which stays on top. */
-    @Test public void mapsInItsPanelIsPinnedAboveTheFullscreenVideo() throws Exception {
+    /** Open the video: Maps leaves its panel for the main display, where it enters its own nav PiP. */
+    @Test public void mapsFloatsAsItsOwnNativePipAboveTheVideo() throws Exception {
         FakeTasks tasks = new FakeTasks(host);
         EmbeddedMaps maps = readyMaps(tasks);
         tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
-        maps.resume();
-        maps.suspend();
-        assertEquals(7, maps.pinToSystemPip(9));
-        assertEquals(List.of("pin 7 above 9"), tasks.calls);
-        tasks.calls.clear();
-        assertEquals("Already pinned", 7, maps.pinToSystemPip(9));
+        assertTrue(maps.beginNativePipFloat());
+        assertEquals(List.of("move to 0"), tasks.calls);
+        maps.release();
+    }
+
+    @Test public void noMapsTaskDoesNotFloat() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        assertFalse(maps.beginNativePipFloat());
         assertEquals(List.of(), tasks.calls);
         maps.release();
     }
 
-    @Test public void noMapsTaskIsNotPinned() throws Exception {
+    @Test public void mapsThatCannotReachTheMainDisplayDoesNotFloat() throws Exception {
         FakeTasks tasks = new FakeTasks(host);
         EmbeddedMaps maps = readyMaps(tasks);
-        assertEquals(-1, maps.pinToSystemPip(9));
-        assertEquals(List.of(), tasks.calls);
-        maps.release();
-    }
-
-    @Test public void mapsThatCannotBePinnedStaysWhereItIs() throws Exception {
-        FakeTasks tasks = new FakeTasks(host);
-        EmbeddedMaps maps = readyMaps(tasks);
-        tasks.maps = new MapsTask.Task(7, 0, 1);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
         tasks.failMoves = true;
-        assertEquals(-1, maps.pinToSystemPip(9));
-        assertEquals(0, tasks.maps.displayId);
-        assertEquals(1, tasks.maps.windowingMode);
+        assertFalse(maps.beginNativePipFloat());
+        assertEquals(panelDisplay(maps), tasks.maps.displayId);
         maps.release();
     }
 
@@ -617,19 +611,13 @@ public class EmbeddedMapsTest {
 
         @Override MapsTask.Task find() { return maps; }
 
-        @Override void move(MapsTask.Task task, int displayId) {
+        @Override void move(MapsTask.Task task, int displayId, boolean suppressAutoPip) {
             if (failMoves) throw new IllegalStateException("Moving Maps task " + task.id + " failed: -96");
             calls.add("move to " + displayId);
             maps = new MapsTask.Task(task.id, displayId, 1);
         }
 
         @Override void showHost() { calls.add("show Wend"); }
-
-        @Override void pin(MapsTask.Task task, int besideTaskId) {
-            if (failMoves) throw new IllegalStateException("Android did not pin task " + task.id);
-            calls.add("pin " + task.id + " above " + besideTaskId);
-            maps = new MapsTask.Task(task.id, 0, SystemPip.PINNED);
-        }
     }
 
     /**

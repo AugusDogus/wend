@@ -70,8 +70,17 @@ class MapsTask {
         throw new IllegalStateException("Multiple Maps tasks exist and none is the remembered navigation task");
     }
 
-    void move(Task task, int displayId) throws ReflectiveOperationException {
-        ActivityOptions options = SystemPip.withoutAutoPip(ActivityOptions.makeCustomAnimation(host, 0, 0));
+    void move(Task task, int displayId) throws ReflectiveOperationException { move(task, displayId, true); }
+
+    /**
+     * @param suppressAutoPip true keeps the app this move backgrounds out of PiP (every panel and
+     *     plain fullscreen move). False lets Maps cover an app that should enter its own native PiP
+     *     on the task switch: Android marks the backgrounded app
+     *     {@code supportsEnterPipOnTaskSwitch} and, with its op allowed, it enters its own PiP.
+     */
+    void move(Task task, int displayId, boolean suppressAutoPip) throws ReflectiveOperationException {
+        ActivityOptions animation = ActivityOptions.makeCustomAnimation(host, 0, 0);
+        ActivityOptions options = suppressAutoPip ? SystemPip.withoutAutoPip(animation) : animation;
         options.setLaunchDisplayId(displayId);
         ActivityOptions.class.getMethod("setLaunchWindowingMode", int.class).invoke(options, 1);
         Object result = api().getMethod("startActivityFromRecents", int.class, Bundle.class)

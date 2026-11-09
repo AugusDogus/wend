@@ -40,6 +40,12 @@ final class EmbeddedVideo extends FrameLayout {
     private final Point displaySize = new Point();
     private final ExecutorService geometryReader = Executors.newSingleThreadExecutor();
     private final VideoStills stills;
+    /**
+     * The video's PICTURE_IN_PICTURE app-op. Held at ignore so the fullscreen video never flashes
+     * its own PiP on Home; allowed only while Wend deliberately floats it, so YouTube renders its
+     * own player PiP with its own aspect ratio.
+     */
+    private final PipAppOp pipOp = new PipAppOp(PACKAGE);
     /** The video the cover's still belongs to. */
     private String stillTitle;
     /** A sheet or fullscreen Maps covers the card, so its pixels are not the video's. */
@@ -165,6 +171,8 @@ final class EmbeddedVideo extends FrameLayout {
                     Log.e("WendPip", "Could not close the video's picture-in-picture on Home; close it"
                             + " with its X. The video and its task are unaffected", error);
                 }
+                // The PiP is gone, so end any float allowance and hold the op at ignore again.
+                pipRestore();
             }
         }
     }
@@ -176,24 +184,60 @@ final class EmbeddedVideo extends FrameLayout {
     }
 
     /**
-     * Moves the live video from its card into Android's own picture-in-picture above the fullscreen
-     * app {@code besideTaskId}. The card shows its still until Wend shows again.
-     * @return the video's task, now pinned, or -1 when it stays in the card
+     * Moves the live video to the main display, fullscreen, and allows its PICTURE_IN_PICTURE
+     * app-op so it enters its own native player PiP once Wend opens Maps over it. The card shows
+     * its still until Wend shows again.
+     * @return true when the video is on its way into its own PiP, false when it stays in the card
      */
-    int pinAbove(int besideTaskId) {
-        if (!livePlaying()) return -1;
+    boolean beginNativePipFloat() {
+        if (!livePlaying()) return false;
         cancelPreparation();
         state = State.READY;
         inSystemPip = true;
         coverPlayer();
         try {
-            return VideoTask.pin(host, besideTaskId);
+            pipOp.allowForFloat(host);
+            // The video comes forward on display 0 (suppressing any auto-PiP as it does); the app
+            // Wend then opens over it backgrounds the video, which enters its own player PiP.
+            if (!VideoTask.openFullscreen(host, false)) {
+                throw new IllegalStateException("No playing video task was found to float as native PiP");
+            }
+            return true;
         } catch (ReflectiveOperationException | RuntimeException error) {
-            Log.e("WendPip", "Could not put the video in picture-in-picture above task " + besideTaskId
-                    + "; it keeps playing in its card", error);
+            Log.e("WendPip", "Could not move the video to the main display for its own picture-in-picture;"
+                    + " it keeps playing in its card", error);
+            pipRestore();
             inSystemPip = false;
             maybeLaunch();
-            return -1;
+            return false;
+        }
+    }
+
+    /**
+     * Opens the video fullscreen on the main display over the current app, allowing that app's
+     * own native PiP on the task switch. Used to cover a Maps that is floating in its nav PiP.
+     */
+    boolean coverFullscreen() {
+        try { return VideoTask.openFullscreen(host, true); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.e("WendVideo", "Could not open the video fullscreen to cover floating Maps", error);
+            return false;
+        }
+    }
+
+    private void pipRest() {
+        try { pipOp.holdResting(host); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("WendPip", "Could not hold the video picture-in-picture app-op at ignore; the"
+                    + " fullscreen video may briefly show its own PiP on Home", error);
+        }
+    }
+
+    private void pipRestore() {
+        try { pipOp.restore(host); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("WendPip", "Could not restore the video picture-in-picture app-op to ignore after"
+                    + " its float; turn PiP off for the video in Settings if it flashes on Home", error);
         }
     }
 
@@ -465,10 +509,15 @@ final class EmbeddedVideo extends FrameLayout {
             preparationStarted = SystemClock.uptimeMillis();
             previousBounds = null;
             generation++;
+            // Keep the op at ignore while the video sits embedded in the card, so that when Wend
+            // later opens it fullscreen as the cover it does not flash its own PiP on Home.
+            pipRest();
             if (!VideoTask.embed(host, player.getVirtualDisplayId())) {
                 fail(new IllegalStateException("Playing YouTube task was not found on the main display"));
                 return;
             }
+            // Back on its own display and unpinned: safe to end any deliberate float's allowance.
+            pipRestore();
             inspectSurface();
         } catch (ReflectiveOperationException | RuntimeException error) { fail(error); }
     }
@@ -573,6 +622,8 @@ final class EmbeddedVideo extends FrameLayout {
 
     void release() {
         hostActive = false;
+        // Never leave the video's PiP op allowed once Wend is gone.
+        pipRestore();
         window.release();
         appSwitches.stop();
         cancelPreparation();

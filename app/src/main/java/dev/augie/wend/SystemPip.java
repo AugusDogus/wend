@@ -179,9 +179,11 @@ final class SystemPip {
         return stacks;
     }
 
-    /** Reports, on the main thread, each task Android takes out of PiP. */
+    /** Reports, on the main thread, each task Android pins or takes out of PiP. */
     static final class Watcher {
         interface Listener {
+            /** A task entered PiP: an app's own native PiP, which Wend may have just triggered. */
+            default void pinned(String packageName, int taskId) { }
             /** For any reason: expanded, closed, or moved by Wend. */
             void unpinned(String packageName, int taskId);
         }
@@ -221,6 +223,7 @@ final class SystemPip {
                 main.post(() -> {
                     pinnedPackage = packageName;
                     pinnedTask = taskId;
+                    if (packageName != null) listener.pinned(packageName, taskId);
                 });
             }
 

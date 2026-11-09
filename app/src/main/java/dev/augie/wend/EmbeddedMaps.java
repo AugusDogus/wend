@@ -96,7 +96,12 @@ final class EmbeddedMaps extends MapPanel {
     };
     private boolean hostActive;
     private boolean launching;
-    private boolean pictureInPictureChecked;
+    /**
+     * Maps' PICTURE_IN_PICTURE app-op. Held at ignore so fullscreen Maps never shrinks itself into
+     * a PiP window on plain Home; allowed only while Wend deliberately floats Maps, so Maps renders
+     * its own compact navigation PiP card.
+     */
+    private final PipAppOp pipOp = new PipAppOp(PACKAGE);
     private final LinearLayout status;
     private final TextView message;
     private View topCorner;
@@ -268,19 +273,47 @@ final class EmbeddedMaps extends MapPanel {
                 && !(motion != null && motion.pending()) && !transition.pending();
     }
 
-    @Override int pinToSystemPip(int besideTaskId) {
+    @Override boolean beginNativePipFloat() {
+        if (activityView == null || state != State.READY) return false;
         try {
             MapsTask.Task existing = tasks.find();
             if (existing == null) {
-                Log.w("WendPip", "No Maps task to put in picture-in-picture above task " + besideTaskId);
-                return -1;
+                Log.w("WendPip", "No Maps task to float as its own navigation picture-in-picture");
+                return false;
             }
-            if (existing.windowingMode != SystemPip.PINNED) tasks.pin(existing, besideTaskId);
-            return existing.id;
+            pipOp.allowForFloat(getContext());
+            // Maps goes fullscreen on display 0 (suppressing any auto-PiP as it comes forward); the
+            // video Wend then opens over it backgrounds Maps, which enters its own nav PiP card
+            // because its op is now allowed.
+            if (existing.displayId != 0 || existing.windowingMode != SystemPip.FULLSCREEN) {
+                tasks.move(existing, 0, true);
+            }
+            launching = false;
+            return true;
         } catch (ReflectiveOperationException | RuntimeException error) {
-            Log.e("WendPip", "Could not put Maps in picture-in-picture above task " + besideTaskId
-                    + "; Maps and its route stay where they were, and Home returns Maps to its panel", error);
-            return -1;
+            Log.e("WendPip", "Could not move Maps to the main display for its own picture-in-picture;"
+                    + " Maps and its route stay where they were, and Home returns Maps to its panel", error);
+            restorePipOp();
+            return false;
+        }
+    }
+
+    private void restMapsOp() {
+        try { pipOp.holdResting(getContext()); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.e("Wend", "Could not hold Maps' picture-in-picture app-op at ignore. Maps and its route"
+                    + " are unaffected, but Home can briefly show the small PiP window before Maps returns"
+                    + " to the panel. Turn it off in Settings > Apps > Special app access >"
+                    + " Picture-in-picture.", error);
+        }
+    }
+
+    private void restorePipOp() {
+        try { pipOp.restore(getContext()); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.e("Wend", "Could not restore Maps' picture-in-picture app-op to ignore after its float."
+                    + " Turn it off in Settings > Apps > Special app access > Picture-in-picture if Maps"
+                    + " flashes a PiP on Home.", error);
         }
     }
 
@@ -543,15 +576,25 @@ final class EmbeddedMaps extends MapPanel {
         launching = false;
     }
 
-    @Override void openFullscreen(Covering covering) { cancelPendingTransition(); openOnDisplay(0, covering); }
+    @Override void openFullscreen(Covering covering, boolean allowCoveredAutoPip) {
+        cancelPendingTransition();
+        openOnDisplay(0, covering, allowCoveredAutoPip);
+    }
+
+    private void openOnDisplay(int displayId, Covering request) { openOnDisplay(displayId, request, false); }
 
     /**
      * @param request is told once, as Maps visibly starts covering Wend on display 0, and
      *     told again if Maps then fails to move
+     * @param allowCoveredAutoPip lets the app Maps covers on display 0 enter its own native PiP
+     *     (its op gates whether it actually does); never set for a panel return
      */
-    private void openOnDisplay(int displayId, Covering request) {
+    private void openOnDisplay(int displayId, Covering request, boolean allowCoveredAutoPip) {
         if (launching) return;
-        preventSystemPictureInPicture();
+        // Hold Maps' op at ignore so it never pins itself on plain Home; a deliberate float keeps
+        // it allowed (holdResting is then a no-op) until Maps is back in its panel.
+        restMapsOp();
+        boolean suppressAutoPip = !(displayId == 0 && allowCoveredAutoPip);
         CoverOnce covering = new CoverOnce(request);
         try {
             MapsTask.Task existing = tasks.find();
@@ -562,9 +605,9 @@ final class EmbeddedMaps extends MapPanel {
                         launching = false;
                         if (state == State.CLOSED) { covering.abandoned(); return; }
                         try {
-                            tasks.move(existing, displayId);
+                            tasks.move(existing, displayId, suppressAutoPip);
                             if (displayId == 0) covering.moved(existing.id);
-                            else revealSurface();
+                            else { restorePipOp(); revealSurface(); }
                             status.setVisibility(View.GONE);
                         } catch (ReflectiveOperationException | RuntimeException error) {
                             transition.cancel();
@@ -586,9 +629,9 @@ final class EmbeddedMaps extends MapPanel {
                         if (displayId == 0) transition.conceal(covering.starting());
                     });
                 } else {
-                    if (existing.windowingMode != 1 || displayId == 0) tasks.move(existing, displayId);
+                    if (existing.windowingMode != 1 || displayId == 0) tasks.move(existing, displayId, suppressAutoPip);
                     if (displayId == 0) { covering.moved(existing.id); covering.starting(); }
-                    if (displayId != 0) revealSurface();
+                    if (displayId != 0) { restorePipOp(); revealSurface(); }
                     status.setVisibility(View.GONE);
                 }
                 return;
@@ -597,23 +640,6 @@ final class EmbeddedMaps extends MapPanel {
         } catch (ReflectiveOperationException | RuntimeException error) {
             Log.e("Wend", "Could not reuse Maps task on display " + displayId, error);
             showError("Maps could not be restored. Existing tasks were left intact. Open Maps from Recents to recover your route.");
-        }
-    }
-
-    // Home from fullscreen Maps calls its onUserLeaveHint, and navigation apps then enter
-    // PiP before this panel can reclaim the task, flashing the small system window.
-    private void preventSystemPictureInPicture() {
-        if (pictureInPictureChecked) return;
-        try {
-            // An uninstalled Maps is checked again on the next launch request.
-            pictureInPictureChecked = MapsPictureInPicture.disable(getContext(), PACKAGE)
-                    != MapsPictureInPicture.Outcome.NOT_INSTALLED;
-        } catch (ReflectiveOperationException | RuntimeException error) {
-            pictureInPictureChecked = true;
-            Log.e("Wend", "Could not turn off system picture-in-picture for " + PACKAGE
-                    + ". Maps and its route are unaffected, but Home can briefly show the small PiP"
-                    + " window before Maps returns to the panel. Turn it off in Settings > Apps >"
-                    + " Special app access > Picture-in-picture.", error);
         }
     }
 
@@ -731,6 +757,8 @@ final class EmbeddedMaps extends MapPanel {
     void release() {
         cancelPendingFloat();
         cancelTakeover();
+        // Never leave Maps' PiP op allowed once Wend is gone.
+        restorePipOp();
         floating.release();
         if (motion != null) motion.release();
         transition.cancel();

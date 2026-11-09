@@ -22,9 +22,16 @@ public final class MainActivity extends Activity {
     private AppDrawer drawer;
     private SettingsSheet settingsSheet;
     private boolean resumed;
-    /** The task Wend put in Android's PiP, or -1: Home takes it back, and only its expansion swaps. */
+    /** The Maps or video task now in its own native PiP, or -1: Home takes it back, and only its expansion swaps. */
     private int pinnedByWend = -1;
-    private final SystemPip.Watcher pip = new SystemPip.Watcher(this::pipUnpinned);
+    private final SystemPip.Watcher pip = new SystemPip.Watcher(new SystemPip.Watcher.Listener() {
+        @Override public void pinned(String packageName, int taskId) {
+            if (packageName.equals(EmbeddedMaps.PACKAGE) || packageName.equals(EmbeddedVideo.PACKAGE)) {
+                pinnedByWend = taskId;
+            }
+        }
+        @Override public void unpinned(String packageName, int taskId) { pipUnpinned(packageName, taskId); }
+    });
     private final LiveSurfaceWindow.Listener floatingVideo = new LiveSurfaceWindow.Listener() {
         @Override public void settled(FloatingPlacement.Corner corner) {
             settings.setFloatingVideoCorner(corner);
@@ -124,13 +131,15 @@ public final class MainActivity extends Activity {
         // Maps sweeps over the card before Wend stops.
         media.videoCardCovered();
         if (BuildConfig.SYSTEM_PIP) {
-            // Decided at the tap: Wend can be paused by the time Maps has moved.
-            boolean pinVideo = resumed && settings.floatingVideo() && media.videoLive();
+            // Native PiP: the live video floats in its own player PiP. The video goes fullscreen
+            // first and allows its PiP op; Maps then covers it, so the video enters its own PiP on
+            // the task switch. Decided at the tap: Wend can be paused by the time Maps has moved.
+            boolean floatVideo = resumed && settings.floatingVideo() && media.videoLive()
+                    && media.beginVideoNativePipFloat();
             maps.openFullscreen(new MapPanel.Covering() {
                 @Override public Rect starting() { return null; }
                 @Override public void abandoned() { media.videoCardShown(); }
-                @Override public void moved(int taskId) { if (pinVideo) pinnedByWend = media.pinVideoAbove(taskId); }
-            });
+            }, floatVideo);
             return;
         }
         maps.openFullscreen(new MapPanel.Covering() {
@@ -146,24 +155,32 @@ public final class MainActivity extends Activity {
     }
 
     /**
-     * The driver took the task Wend put in Android's PiP out of it. Expanded (its menu's fullscreen
-     * button or a double tap), it is now the fullscreen app on the main display, and the other app,
-     * just below it, takes its place in PiP when allowed. Closed or flung away, or returned by Home,
-     * nothing follows.
+     * The driver took the app's own PiP out of it. Expanded (its menu's fullscreen button or a
+     * double tap), it is now the fullscreen app on the main display, so the other app floats in its
+     * own native PiP above it: it goes fullscreen, then the expanded app covers it again. Closed or
+     * flung away, or returned by Home, nothing follows.
      */
     private void pipUnpinned(String packageName, int taskId) {
         if (taskId != pinnedByWend) return;
         pinnedByWend = -1;
         try {
             if (!SystemPip.showsFullscreen(taskId)) return;
-            if (packageName.equals(EmbeddedVideo.PACKAGE)) {
-                if (settings.floatingMaps()) pinnedByWend = maps.pinToSystemPip(taskId);
-            } else if (packageName.equals(EmbeddedMaps.PACKAGE) && settings.floatingVideo()) {
-                pinnedByWend = VideoTask.pin(this, taskId);
-            }
         } catch (ReflectiveOperationException | RuntimeException error) {
-            Log.e("WendPip", "Could not put the app below expanded " + packageName + " (task " + taskId
-                    + ") in picture-in-picture; it keeps running behind it, and Home returns it to Wend", error);
+            Log.e("WendPip", "Could not read whether " + packageName + " (task " + taskId + ") expanded"
+                    + " from its PiP; the other app stays where it is and Home returns both to Wend", error);
+            return;
+        }
+        if (packageName.equals(EmbeddedVideo.PACKAGE)) {
+            // The video's player PiP expanded: float Maps in its nav PiP above the fullscreen video.
+            if (settings.floatingMaps() && maps.beginNativePipFloat()) media.coverWithVideo();
+        } else if (packageName.equals(EmbeddedMaps.PACKAGE) && settings.floatingVideo()) {
+            // Maps' nav PiP expanded: float the video in its player PiP above fullscreen Maps.
+            if (media.beginVideoNativePipFloat()) {
+                maps.openFullscreen(new MapPanel.Covering() {
+                    @Override public Rect starting() { return null; }
+                    @Override public void abandoned() { media.videoCardShown(); }
+                }, true);
+            }
         }
     }
 
@@ -209,23 +226,20 @@ public final class MainActivity extends Activity {
      */
     void videoAppOpening() {
         externalAppOpening();
-        if (!BuildConfig.SYSTEM_PIP && settings.floatingMaps()) {
-            maps.floatAboveVideoApp(settings.floatingMapsCorner(), floatingMaps);
+        if (BuildConfig.SYSTEM_PIP) {
+            // Native PiP: Maps goes fullscreen first and allows its PiP op; opening the video over
+            // it (AppLaunch, auto-PiP allowed) backgrounds Maps, which enters its own nav PiP card.
+            if (resumed && settings.floatingMaps()) maps.beginNativePipFloat();
+            return;
         }
+        if (settings.floatingMaps()) maps.floatAboveVideoApp(settings.floatingMapsCorner(), floatingMaps);
     }
 
-    /** The video app is fullscreen on the main display: Maps goes into Android's PiP above it. */
-    void videoOpened() {
-        media.videoOpened();
-        if (!BuildConfig.SYSTEM_PIP || !settings.floatingMaps()) return;
-        try {
-            int video = VideoTask.find(this);
-            if (video >= 0) pinnedByWend = maps.pinToSystemPip(video);
-        } catch (ReflectiveOperationException | RuntimeException error) {
-            Log.e("WendPip", "Could not find the video task that Maps' picture-in-picture floats above;"
-                    + " Maps stays in its panel, where Home shows it", error);
-        }
-    }
+    /** Whether Wend has just floated Maps into its own native PiP; lets AppLaunch allow the video's auto-PiP cover. */
+    boolean floatingMapsIntoPip() { return BuildConfig.SYSTEM_PIP; }
+
+    /** The video app is fullscreen on the main display; a floated Maps has entered its own PiP above it. */
+    void videoOpened() { media.videoOpened(); }
 
     private void arrangePanels() {
         content.removeAllViews();

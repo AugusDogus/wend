@@ -60,8 +60,13 @@ final class AppLaunch {
 
     private static boolean openExternal(Activity activity, String packageName) {
         if (EmbeddedVideo.PACKAGE.equals(packageName)) {
+            // Under SYSTEM_PIP, let the app this move backgrounds (a floated Maps) enter its own
+            // native PiP; whether Maps actually pins is gated by its op, which Wend allowed only
+            // when it floated Maps.
+            boolean allowAutoPip = activity instanceof MainActivity
+                    && ((MainActivity) activity).floatingMapsIntoPip();
             try {
-                if (VideoTask.openFullscreen(activity)) return true;
+                if (VideoTask.openFullscreen(activity, allowAutoPip)) return true;
             } catch (ReflectiveOperationException | RuntimeException error) {
                 Log.e("Wend", "Could not restore the existing video task", error);
                 Toast.makeText(activity, "The video could not be restored. Open it from Recents; existing tasks were left intact.",

@@ -38,7 +38,13 @@ abstract class MapPanel extends FrameLayout {
     abstract void suspend();
     abstract void launch();
     /** @param covering never starts if the request fails first or is canceled */
-    abstract void openFullscreen(Covering covering);
+    void openFullscreen(Covering covering) { openFullscreen(covering, false); }
+    /**
+     * @param covering never starts if the request fails first or is canceled
+     * @param allowCoveredAutoPip lets the app Maps covers enter its own native PiP on the task
+     *     switch (Maps covering a floated video under {@code SYSTEM_PIP}); gated by that app's op
+     */
+    abstract void openFullscreen(Covering covering, boolean allowCoveredAutoPip);
     abstract void setInnerCorners(boolean mapsOnRight);
     abstract void release();
 
@@ -75,11 +81,11 @@ abstract class MapPanel extends FrameLayout {
     void returnBeneathVideo(Runnable ready) { }
 
     /**
-     * Puts Maps in Android's own picture-in-picture above the fullscreen app on the main display.
-     * @param besideTaskId that app's task
-     * @return Maps' task, now pinned, or -1 when it stays where it is
+     * Makes Maps the fullscreen app on the main display and allows its PICTURE_IN_PICTURE app-op,
+     * so Maps enters its own native navigation PiP once Wend opens the video over it.
+     * @return false, leaving Maps where it is, when this host cannot float it now
      */
-    int pinToSystemPip(int besideTaskId) { return -1; }
+    boolean beginNativePipFloat() { return false; }
 
     /** Floating Maps was tapped: it takes the screen from the fullscreen video below it. */
     void openFullscreenFromFloating(Takeover takeover) { takeover.failed(); }
