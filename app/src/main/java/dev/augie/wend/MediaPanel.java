@@ -257,6 +257,8 @@ final class MediaPanel extends LinearLayout {
         FloatingMenu.Playback floating = videoState == VideoCardState.HIDDEN ? FloatingMenu.Playback.NONE
                 : FloatingMenu.Playback.of(videoPlayback);
         video.playback(floating, () -> {
+            Log.i("WendVideo", "Floating control " + (floating == FloatingMenu.Playback.PLAYING ? "pause" : "play")
+                    + " for " + (videoSession == null ? "no session" : videoSession.getPackageName()));
             if (videoSession == null) return;
             if (floating == FloatingMenu.Playback.PLAYING) videoSession.getTransportControls().pause();
             else videoSession.getTransportControls().play();
