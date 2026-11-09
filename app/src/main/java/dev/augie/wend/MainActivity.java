@@ -31,10 +31,41 @@ public final class MainActivity extends Activity {
      * took 0.6 to 0.9 s to lay out on this loaded emulator.
      */
     private static final long PIP_SETTLE_MS = 900;
+    /**
+     * How long the video, moved fullscreen on the main display, is left to composite before a still
+     * of it is captured to cover Maps' arming for Case B. Captured sooner, the still could catch the
+     * tail of the video's open transition rather than the video.
+     */
+    private static final long VIDEO_COMPOSITE_MS = 250;
+    /**
+     * A safety net, used only if Android never reports Maps pinned, after which the video still that
+     * hides Maps' arming is revealed regardless, so it can never stay stuck over the screen. It must
+     * be comfortably longer than Maps takes to enter PiP after the covering task switch (hundreds of
+     * ms on this loaded emulator); the reveal normally fires on the {@code pinned} watcher as Maps
+     * begins its shrink, so the still masks Maps' brief fullscreen frame and the shrink shows beneath.
+     */
+    private static final long PIP_REVEAL_FALLBACK_MS = 2500;
+    /**
+     * How long after Android reports Maps pinned the video still is held before it is revealed, to
+     * let SystemUI finish shrinking Maps into its corner behind the still. Android marks the task
+     * pinned when it enters the pinned stack, but on this loaded emulator SystemUI takes several
+     * hundred ms more to actually animate it down; revealing on the pinned report alone showed Maps
+     * at fullscreen in the pinned stack before it shrank. Held past the shrink, the user sees only
+     * the video, then Maps already in its corner.
+     */
+    private static final long REVEAL_AFTER_PIN_MS = 500;
+    /** Holds a still of the fullscreen video over the screen while Maps arms its own nav PiP behind it. */
+    private PipEntryCover pipEntry;
     private final SystemPip.Watcher pip = new SystemPip.Watcher(new SystemPip.Watcher.Listener() {
         @Override public void pinned(String packageName, int taskId) {
             if (packageName.equals(EmbeddedMaps.PACKAGE) || packageName.equals(EmbeddedVideo.PACKAGE)) {
                 pinnedByWend = taskId;
+            }
+            // Case B: Maps entered its nav PiP. Hold the video still a little longer so SystemUI's
+            // shrink finishes behind it, then reveal: the user never sees Maps at fullscreen. No-op
+            // when nothing is covered.
+            if (packageName.equals(EmbeddedMaps.PACKAGE) && pipEntry != null) {
+                content.postDelayed(pipEntry::reveal, REVEAL_AFTER_PIN_MS);
             }
         }
         @Override public void unpinned(String packageName, int taskId) { pipUnpinned(packageName, taskId); }
@@ -88,6 +119,7 @@ public final class MainActivity extends Activity {
         for (View panel : new View[]{dock, maps, media}) panel.setLayoutDirection(View.LAYOUT_DIRECTION_LOCALE);
         arrangePanels();
         setContentView(root);
+        pipEntry = new PipEntryCover(this);
         if (BuildConfig.SYSTEM_PIP) {
             try { pip.start(); }
             catch (ReflectiveOperationException | RuntimeException error) {
@@ -244,17 +276,11 @@ public final class MainActivity extends Activity {
             // Capture the live video before suspending, since suspend clears its live state.
             if (media.placeVideoFullscreen()) {
                 externalAppOpening();
-                if (maps.beginNativePipFloat()) {
-                    videoOpened();
-                    // Let Maps resume into active navigation on display 0 before the video covers
-                    // it. Covered while still starting, Maps is not yet RESUMED, so Android does not
-                    // deliver onUserLeaveHint and Maps never enters its own PiP.
-                    content.postDelayed(media::coverMapsIntoPip, PIP_SETTLE_MS);
-                    return true;
-                }
-                // Maps did not float: the video is already fullscreen, so leave it fullscreen
-                // plainly. Maps returns to its panel on Home and restores its op there.
-                videoOpened();
+                // The video is opening fullscreen. Once it has composited, cover it with a held
+                // still and arm Maps behind that still, so steps 2 and 3 above are never seen: the
+                // user sees only the video, then the native PiP shrink. postDelayed runs on the
+                // main thread even while Wend is stopped under the fullscreen video.
+                content.postDelayed(this::floatMapsIntoPipBehindVideo, VIDEO_COMPOSITE_MS);
                 return true;
             }
         }
@@ -267,6 +293,33 @@ public final class MainActivity extends Activity {
         }
         if (settings.floatingMaps()) maps.floatAboveVideoApp(settings.floatingMapsCorner(), floatingMaps);
         return false;
+    }
+
+    /**
+     * Case B, continued once the video shows fullscreen: hold a still of the video over the whole
+     * screen, launch Maps fullscreen behind it and let it settle into navigation, then cover Maps
+     * with the video so it enters its own native nav PiP. The still is revealed as Maps pins (the
+     * {@code pinned} watcher), so SystemUI's PiP shrink is the only motion the user sees.
+     */
+    private void floatMapsIntoPipBehindVideo() {
+        // Launch Maps only once the still is actually drawn over the screen, so Maps never flashes
+        // fullscreen before the still covers it.
+        pipEntry.cover(() -> {
+            if (!maps.beginNativePipFloat()) {
+                // No Maps task to float: the video is already fullscreen, so leave it fullscreen
+                // plainly. Maps returns to its panel on Home and restores its op there.
+                pipEntry.dispose();
+                videoOpened();
+                return;
+            }
+            videoOpened();
+            content.postDelayed(() -> {
+                media.coverMapsIntoPip();
+                // The pinned watcher reveals the still as Maps shrinks; this fallback guarantees
+                // the still is never left stuck over the screen if Android never reports Maps pinned.
+                content.postDelayed(pipEntry::reveal, PIP_REVEAL_FALLBACK_MS);
+            }, PIP_SETTLE_MS);
+        });
     }
 
     /** Whether Wend has just floated Maps into its own native PiP; lets AppLaunch allow the video's auto-PiP cover. */
@@ -317,6 +370,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onDestroy() {
         pip.stop();
+        if (pipEntry != null) pipEntry.dispose();
         if (drawer != null) drawer.release();
         if (settingsSheet != null) settingsSheet.release();
         backdrop.release();
@@ -334,6 +388,8 @@ public final class MainActivity extends Activity {
         hideSystemBars();
         // Home takes back whatever Wend put in Android's PiP.
         pinnedByWend = -1;
+        // Home wins over a Case B entry still mid-flight: never keep a video still over the screen.
+        pipEntry.dispose();
         // Moving an embedded task fullscreen can leave Home started. Its return intent
         // must restore Maps even when Android does not deliver another onStart.
         // Floating Maps lands over its panel first; the fullscreen video then shrinks into its
