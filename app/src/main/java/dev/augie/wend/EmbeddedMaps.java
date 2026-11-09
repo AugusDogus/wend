@@ -325,6 +325,32 @@ final class EmbeddedMaps extends MapPanel {
         }
     }
 
+    @Override void floatFromPanelIntoPip(MapsPanelPip.Result result) {
+        try {
+            MapsTask.Task existing = activityView == null || state != State.READY ? null : tasks.find();
+            if (existing == null || existing.displayId != activityView.getVirtualDisplayId()) {
+                result.stayed("Maps is not in its panel");
+                return;
+            }
+            pipOp.allowForFloat(getContext());
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.e("WendPip", "Could not prepare Maps to float from its panel; Maps and its route stay in the panel", error);
+            result.stayed("Maps could not be prepared to float: " + error);
+            return;
+        }
+        // From here Maps leaves its panel on its own: Wend stopping, resuming, or seeing the panel
+        // empty must not re-adopt it, or the adoption pulls Maps straight back out of its PiP.
+        nativePipFloating = true;
+        MapsPanelPip.request(getContext(), new MapsPanelPip.Result() {
+            @Override public void entered() { result.entered(); }
+            @Override public void stayed(String why) {
+                nativePipFloating = false;
+                restorePipOp();
+                result.stayed(why);
+            }
+        });
+    }
+
     /**
      * Brings the existing Maps task fullscreen on display 0 with a foreground launch (reusing the
      * task, so the ongoing route stays), which re-arms Maps' own auto-PiP. Unlike

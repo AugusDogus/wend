@@ -226,47 +226,70 @@ public final class MainActivity extends Activity {
     void externalAppFailed() { maps.resume(); media.resumeVideo(); }
 
     /**
-     * Wend opens the video app itself on the main display (a paused or unavailable preview,
-     * or no live video): live Maps floats above it when allowed, as above the live video.
+     * Wend opens the video app itself on the main display: live Maps floats above it when allowed.
+     * Under Android's PiP, Maps first enters its own nav PiP straight from its panel; without the
+     * pip-hook module that enables it, Maps floats by the task-switch path instead.
      *
-     * @return true when this fully handled opening the video (Case B placed the video fullscreen and
-     *     floated Maps into its own native PiP over it); false to let the caller open it plainly
+     * @param openApp opens the video app plainly on the main display (it reports videoOpened or
+     *     externalAppFailed itself); run unless a live video is placed fullscreen instead
      */
-    boolean videoAppOpening() {
-        if (BuildConfig.SYSTEM_PIP && resumed && settings.floatingMaps() && media.videoLive()) {
-            // Case B: the live video goes fullscreen and Maps enters its OWN native nav PiP above it.
-            // Order matters so Android marks Maps supportsEnterPipOnTaskSwitch on the covering switch:
-            //   1. Place the live video fullscreen on display 0 as its own task (its op stays ignore).
-            //   2. Bring Maps fullscreen on display 0 on top of the video, allowing Maps' PiP op.
-            //   3. Cover Maps with the video via a plain task switch (not startActivityFromRecents,
-            //      whose Home-stack reorder would stop Maps being flagged): Maps backgrounds as the
-            //      top activity and enters its own nav PiP via onUserLeaveHint.
-            // Capture the live video before suspending, since suspend clears its live state.
-            if (media.placeVideoFullscreen()) {
-                externalAppOpening();
-                if (maps.beginNativePipFloat()) {
-                    videoOpened();
-                    // Let Maps resume into active navigation on display 0 before the video covers
-                    // it. Covered while still starting, Maps is not yet RESUMED, so Android does not
-                    // deliver onUserLeaveHint and Maps never enters its own PiP.
-                    content.postDelayed(media::coverMapsIntoPip, PIP_SETTLE_MS);
-                    return true;
-                }
-                // Maps did not float: the video is already fullscreen, so leave it fullscreen
-                // plainly. Maps returns to its panel on Home and restores its op there.
-                videoOpened();
-                return true;
-            }
+    void videoAppOpening(Runnable openApp) {
+        if (BuildConfig.SYSTEM_PIP && resumed && settings.floatingMaps()) {
+            maps.floatFromPanelIntoPip(new MapsPanelPip.Result() {
+                @Override public void entered() { openVideoUnderMapsPip(openApp); }
+                @Override public void stayed(String why) { floatMapsByTaskSwitch(openApp); }
+            });
+            return;
         }
         externalAppOpening();
-        if (BuildConfig.SYSTEM_PIP) {
-            // No live video to float Maps over (paused or unavailable): Maps goes fullscreen and
-            // allows its op; opening the video over it backgrounds Maps into its own nav PiP card.
-            if (resumed && settings.floatingMaps()) maps.beginNativePipFloat();
-            return false;
+        if (!BuildConfig.SYSTEM_PIP && settings.floatingMaps()) {
+            maps.floatAboveVideoApp(settings.floatingMapsCorner(), floatingMaps);
         }
-        if (settings.floatingMaps()) maps.floatAboveVideoApp(settings.floatingMapsCorner(), floatingMaps);
-        return false;
+        openApp.run();
+    }
+
+    /**
+     * Maps is already shrinking from its panel into its own PiP: the video takes the screen below it,
+     * the live video as it plays (placed fullscreen), otherwise the video app.
+     */
+    private void openVideoUnderMapsPip(Runnable openApp) {
+        // Capture the live video before suspending, since suspend clears its live state.
+        boolean placed = media.videoLive() && media.placeVideoFullscreen();
+        externalAppOpening();
+        if (placed) videoOpened();
+        else openApp.run();
+    }
+
+    /**
+     * Without the pip-hook module, Maps can only enter its own PiP when it is the fullscreen, resumed
+     * app on display 0 and another task is brought over it:
+     *   1. Place the live video fullscreen on display 0 as its own task (its op stays ignore).
+     *   2. Bring Maps fullscreen on display 0 on top of the video, allowing Maps' PiP op.
+     *   3. Cover Maps with the video via a plain task switch (not startActivityFromRecents,
+     *      whose Home-stack reorder would stop Maps being flagged): Maps backgrounds as the
+     *      top activity and enters its own nav PiP via onUserLeaveHint.
+     * Without a live video, Maps goes fullscreen and the video app opened over it does step 3.
+     */
+    private void floatMapsByTaskSwitch(Runnable openApp) {
+        // Capture the live video before suspending, since suspend clears its live state.
+        if (media.videoLive() && media.placeVideoFullscreen()) {
+            externalAppOpening();
+            if (maps.beginNativePipFloat()) {
+                videoOpened();
+                // Let Maps resume into active navigation on display 0 before the video covers
+                // it. Covered while still starting, Maps is not yet RESUMED, so Android does not
+                // deliver onUserLeaveHint and Maps never enters its own PiP.
+                content.postDelayed(media::coverMapsIntoPip, PIP_SETTLE_MS);
+                return;
+            }
+            // Maps did not float: the video is already fullscreen, so leave it fullscreen
+            // plainly. Maps returns to its panel on Home and restores its op there.
+            videoOpened();
+            return;
+        }
+        externalAppOpening();
+        maps.beginNativePipFloat();
+        openApp.run();
     }
 
     /** Whether Wend has just floated Maps into its own native PiP; lets AppLaunch allow the video's auto-PiP cover. */

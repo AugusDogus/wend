@@ -88,6 +88,13 @@ abstract class MapPanel extends FrameLayout {
     boolean beginNativePipFloat() { return false; }
 
     /**
+     * Asks Maps, navigating in its panel, to enter its own navigation PiP straight from the panel
+     * ({@link MapsPanelPip}), allowing its PICTURE_IN_PICTURE app-op for the float.
+     * @param result told once, on the main thread; {@code stayed} leaves Maps and its op as they were
+     */
+    void floatFromPanelIntoPip(MapsPanelPip.Result result) { result.stayed("this map panel cannot float Maps"); }
+
+    /**
      * Moves Maps fullscreen on the main display over a video that has just gone fullscreen, allowing
      * that video's own native PiP on the task switch. A direct move, so it survives Wend stopping.
      * @return false, leaving Maps where it is, when this host cannot cover now

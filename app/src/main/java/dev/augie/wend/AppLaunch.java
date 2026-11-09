@@ -49,14 +49,18 @@ final class AppLaunch {
         }
         MainActivity home = activity instanceof MainActivity ? (MainActivity) activity : null;
         boolean video = EmbeddedVideo.PACKAGE.equals(packageName);
-        if (home != null) {
-            // Case B fully handles opening the video (placed fullscreen, Maps floated into its PiP).
-            if (video) { if (home.videoAppOpening()) return; }
-            else home.externalAppOpening();
+        if (home != null && video) {
+            // Maps floats first; the video then opens below it, placed live or as the app.
+            home.videoAppOpening(() -> openVideoApp(home));
+            return;
         }
-        if (openExternal(activity, packageName)) {
-            if (home != null && video) home.videoOpened();
-        } else if (home != null) home.externalAppFailed();
+        if (home != null) home.externalAppOpening();
+        if (!openExternal(activity, packageName) && home != null) home.externalAppFailed();
+    }
+
+    private static void openVideoApp(MainActivity home) {
+        if (openExternal(home, EmbeddedVideo.PACKAGE)) home.videoOpened();
+        else home.externalAppFailed();
     }
 
     private static boolean openExternal(Activity activity, String packageName) {
