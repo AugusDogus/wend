@@ -26,6 +26,33 @@ final class VideoTask {
         return move(host, 0, !allowAutoPip);
     }
 
+    /**
+     * Brings the existing video task forward over the fullscreen app on the main display with a
+     * plain task switch (a launcher start, not {@code startActivityFromRecents}), so the video must
+     * already be a task on the main display under that app. Unlike {@code startActivityFromRecents},
+     * this does not move the Home stack to the front first, so Android keeps the covered app as the
+     * top activity and marks it {@code supportsEnterPipOnTaskSwitch}: with that app's PiP app-op
+     * allowed, it enters its own native PiP via {@code onUserLeaveHint} as the video covers it.
+     *
+     * @return false when no video task is found to bring forward
+     */
+    static boolean coverViaTaskSwitch(Activity host) throws ReflectiveOperationException {
+        int selected = find(host);
+        if (selected < 0) return false;
+        // moveTaskToFront, unlike startActivityFromRecents, does not move the Home stack to the
+        // front first, so the covered app stays the top activity and is marked
+        // supportsEnterPipOnTaskSwitch; and unlike a background startActivity it goes through
+        // findTaskToMoveToFront, which sets mUserLeaving so Android delivers onUserLeaveHint to the
+        // covered app. With that app's PiP app-op allowed, it enters its own native PiP.
+        Class<?> appThread = Class.forName("android.app.IApplicationThread");
+        api().getMethod("moveTaskToFront", appThread, String.class, int.class, int.class, Bundle.class)
+                .invoke(service(), null, host.getPackageName(), selected, 0, null);
+        remember(host, selected);
+        Log.i("WendPip", "Covered the fullscreen app with video task " + selected
+                + " via moveTaskToFront so it enters its own native PiP");
+        return true;
+    }
+
     /** Closes the video's picture-in-picture, if it has one, as SystemUI's close button does. */
     static void dismissPip(Activity host) throws ReflectiveOperationException {
         int selected = find(host);

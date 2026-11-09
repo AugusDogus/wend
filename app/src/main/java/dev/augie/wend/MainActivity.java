@@ -24,6 +24,13 @@ public final class MainActivity extends Activity {
     private boolean resumed;
     /** The Maps or video task now in its own native PiP, or -1: Home takes it back, and only its expansion swaps. */
     private int pinnedByWend = -1;
+    /**
+     * How long Maps, moved fullscreen on the main display, is left to resume into active navigation
+     * before the video covers it for Case B. Covered sooner, Maps is still starting (not RESUMED),
+     * so Android does not deliver onUserLeaveHint and Maps never enters its own nav PiP. Real Maps
+     * took 0.6 to 0.9 s to lay out on this loaded emulator.
+     */
+    private static final long PIP_SETTLE_MS = 900;
     private final SystemPip.Watcher pip = new SystemPip.Watcher(new SystemPip.Watcher.Listener() {
         @Override public void pinned(String packageName, int taskId) {
             if (packageName.equals(EmbeddedMaps.PACKAGE) || packageName.equals(EmbeddedVideo.PACKAGE)) {
@@ -221,16 +228,45 @@ public final class MainActivity extends Activity {
     /**
      * Wend opens the video app itself on the main display (a paused or unavailable preview,
      * or no live video): live Maps floats above it when allowed, as above the live video.
+     *
+     * @return true when this fully handled opening the video (Case B placed the video fullscreen and
+     *     floated Maps into its own native PiP over it); false to let the caller open it plainly
      */
-    void videoAppOpening() {
+    boolean videoAppOpening() {
+        if (BuildConfig.SYSTEM_PIP && resumed && settings.floatingMaps() && media.videoLive()) {
+            // Case B: the live video goes fullscreen and Maps enters its OWN native nav PiP above it.
+            // Order matters so Android marks Maps supportsEnterPipOnTaskSwitch on the covering switch:
+            //   1. Place the live video fullscreen on display 0 as its own task (its op stays ignore).
+            //   2. Bring Maps fullscreen on display 0 on top of the video, allowing Maps' PiP op.
+            //   3. Cover Maps with the video via a plain task switch (not startActivityFromRecents,
+            //      whose Home-stack reorder would stop Maps being flagged): Maps backgrounds as the
+            //      top activity and enters its own nav PiP via onUserLeaveHint.
+            // Capture the live video before suspending, since suspend clears its live state.
+            if (media.placeVideoFullscreen()) {
+                externalAppOpening();
+                if (maps.beginNativePipFloat()) {
+                    videoOpened();
+                    // Let Maps resume into active navigation on display 0 before the video covers
+                    // it. Covered while still starting, Maps is not yet RESUMED, so Android does not
+                    // deliver onUserLeaveHint and Maps never enters its own PiP.
+                    content.postDelayed(media::coverMapsIntoPip, PIP_SETTLE_MS);
+                    return true;
+                }
+                // Maps did not float: the video is already fullscreen, so leave it fullscreen
+                // plainly. Maps returns to its panel on Home and restores its op there.
+                videoOpened();
+                return true;
+            }
+        }
         externalAppOpening();
         if (BuildConfig.SYSTEM_PIP) {
-            // Native PiP: Maps goes fullscreen first and allows its PiP op; opening the video over
-            // it (AppLaunch, auto-PiP allowed) backgrounds Maps, which enters its own nav PiP card.
+            // No live video to float Maps over (paused or unavailable): Maps goes fullscreen and
+            // allows its op; opening the video over it backgrounds Maps into its own nav PiP card.
             if (resumed && settings.floatingMaps()) maps.beginNativePipFloat();
-            return;
+            return false;
         }
         if (settings.floatingMaps()) maps.floatAboveVideoApp(settings.floatingMapsCorner(), floatingMaps);
+        return false;
     }
 
     /** Whether Wend has just floated Maps into its own native PiP; lets AppLaunch allow the video's auto-PiP cover. */

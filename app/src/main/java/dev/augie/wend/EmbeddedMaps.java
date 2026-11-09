@@ -102,6 +102,14 @@ final class EmbeddedMaps extends MapPanel {
      * its own compact navigation PiP card.
      */
     private final PipAppOp pipOp = new PipAppOp(PACKAGE);
+    /**
+     * True while Maps is deliberately floated into, or resting in, its own native PiP on display 0
+     * for Case B. Wend coming forward (such as the Home-stack reorder that startActivityFromRecents
+     * triggers as the video is placed and covers Maps) must then NOT re-adopt Maps into its panel:
+     * that startActivityFromRecents back onto the virtual display is exactly what pulls Maps out of
+     * PiP. Home clears it and re-adopts Maps from its PiP into the panel.
+     */
+    private boolean nativePipFloating;
     private final LinearLayout status;
     private final TextView message;
     private View topCorner;
@@ -200,6 +208,9 @@ final class EmbeddedMaps extends MapPanel {
         cancelTakeover();
         // The video app left, or failed to open: Maps returns from above it to its panel.
         if (overVideoApp != null) { returnFromFloating(); return; }
+        // Floating into or resting in its own native PiP on display 0: never re-adopt Maps here,
+        // or the adoption's startActivityFromRecents pulls it straight back out of its PiP.
+        if (nativePipFloating) return;
         if (returningBeneath) {
             // Wend now covers fullscreen Maps under the video. Move Maps after Wend's
             // next frame, once Maps has been hidden behind it and the panel is laid out.
@@ -217,7 +228,9 @@ final class EmbeddedMaps extends MapPanel {
         // Above the video app Wend opened, Wend's stop is expected whenever Android
         // delivers it, also halfway through a tap taking the screen: Maps keeps floating, or keeps
         // going fullscreen, until another app comes to the front.
-        if (overVideoApp != null
+        // While Maps floats in its own native PiP, Wend stopping under the fullscreen video is
+        // expected; Maps stays in its PiP until Home re-adopts it.
+        if (overVideoApp != null || nativePipFloating
                 || takeover != null && takeover.above == ScreenTakeover.Above.VIDEO_APP) return;
         cancelPendingTransition();
         cancelPendingFloat();
@@ -231,6 +244,15 @@ final class EmbeddedMaps extends MapPanel {
         // Home wins over a takeover still behind its frozen frame, and over a covered move that
         // has not run yet; resume() then asks for Maps in its panel again.
         cancelTakeover();
+        // Maps is in its own native PiP: stop floating and re-adopt it from the PiP into the panel.
+        // openOnDisplay leaves the PiP for the panel directly and restores Maps' op to resting.
+        if (nativePipFloating) {
+            nativePipFloating = false;
+            hostActive = true;
+            launch();
+            then.run();
+            return;
+        }
         if (transition.active()) {
             transition.cancel();
             launching = false;
@@ -282,20 +304,41 @@ final class EmbeddedMaps extends MapPanel {
                 return false;
             }
             pipOp.allowForFloat(getContext());
-            // Maps goes fullscreen on display 0 (suppressing any auto-PiP as it comes forward); the
-            // video Wend then opens over it backgrounds Maps, which enters its own nav PiP card
-            // because its op is now allowed.
+            // Bring Maps fullscreen on display 0 with a foreground activity launch, never with
+            // startActivityFromRecents. A recents restore resumes Maps without re-arming its own
+            // auto-PiP, so the covering task switch never makes it pin (verified on-device); a
+            // launch re-arms it and still shows the ongoing route. The video Wend then brings over
+            // it backgrounds Maps, which enters its own nav PiP card because its op is now allowed.
             if (existing.displayId != 0 || existing.windowingMode != SystemPip.FULLSCREEN) {
-                tasks.move(existing, 0, true);
+                launchOnMainDisplay();
             }
             launching = false;
+            // Wend coming forward while the video is placed and covers Maps must not re-adopt it.
+            nativePipFloating = true;
             return true;
         } catch (ReflectiveOperationException | RuntimeException error) {
             Log.e("WendPip", "Could not move Maps to the main display for its own picture-in-picture;"
                     + " Maps and its route stay where they were, and Home returns Maps to its panel", error);
+            nativePipFloating = false;
             restorePipOp();
             return false;
         }
+    }
+
+    /**
+     * Brings the existing Maps task fullscreen on display 0 with a foreground launch (reusing the
+     * task, so the ongoing route stays), which re-arms Maps' own auto-PiP. Unlike
+     * {@code startActivityFromRecents} it does not reorder the Home stack, so Wend does not come
+     * forward and try to re-adopt Maps.
+     */
+    private void launchOnMainDisplay() {
+        Intent intent = getContext().getPackageManager().getLaunchIntentForPackage(PACKAGE);
+        if (intent == null) {
+            throw new IllegalStateException("Google Maps has no launch intent to float as its own picture-in-picture");
+        }
+        ActivityOptions options = ActivityOptions.makeBasic();
+        options.setLaunchDisplayId(0);
+        getContext().startActivity(intent, options.toBundle());
     }
 
     @Override boolean coverVideoNativePip() {
@@ -780,6 +823,7 @@ final class EmbeddedMaps extends MapPanel {
     void release() {
         cancelPendingFloat();
         cancelTakeover();
+        nativePipFloating = false;
         // Never leave Maps' PiP op allowed once Wend is gone.
         restorePipOp();
         floating.release();

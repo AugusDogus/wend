@@ -50,7 +50,8 @@ final class AppLaunch {
         MainActivity home = activity instanceof MainActivity ? (MainActivity) activity : null;
         boolean video = EmbeddedVideo.PACKAGE.equals(packageName);
         if (home != null) {
-            if (video) home.videoAppOpening();
+            // Case B fully handles opening the video (placed fullscreen, Maps floated into its PiP).
+            if (video) { if (home.videoAppOpening()) return; }
             else home.externalAppOpening();
         }
         if (openExternal(activity, packageName)) {

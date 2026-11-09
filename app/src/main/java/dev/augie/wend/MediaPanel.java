@@ -133,6 +133,10 @@ final class MediaPanel extends LinearLayout {
     boolean beginVideoNativePipFloat() { return video.beginNativePipFloat(); }
     /** Opens the video fullscreen over floating Maps so Maps enters its own native PiP. */
     boolean coverWithVideo() { return video.coverFullscreen(); }
+    /** Case B step 1: places the live video fullscreen under the Maps that will cover it. */
+    boolean placeVideoFullscreen() { return video.placeFullscreen(); }
+    /** Case B step 3: covers fullscreen Maps with the video so Maps enters its own native nav PiP. */
+    boolean coverMapsIntoPip() { return video.coverIntoMapsPip(); }
 
     void start() {
         started = true;

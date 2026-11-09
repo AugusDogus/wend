@@ -39,6 +39,7 @@ import org.robolectric.shadows.ShadowViewRootImpl;
 import org.robolectric.shadows.ShadowWindowManagerImpl;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.robolectric.Shadows.shadowOf;
@@ -207,9 +208,15 @@ public class EmbeddedMapsTest {
     @Test public void mapsFloatsAsItsOwnNativePipAboveTheVideo() throws Exception {
         FakeTasks tasks = new FakeTasks(host);
         EmbeddedMaps maps = readyMaps(tasks);
+        registerMapsLauncher();
         tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
         assertTrue(maps.beginNativePipFloat());
-        assertEquals(List.of("move to 0"), tasks.calls);
+        // Maps reaches the main display by a foreground launch, not a recents restore: a restore
+        // resumes Maps without re-arming its own auto-PiP, so it would never pin.
+        assertEquals(List.of(), tasks.calls);
+        Intent launched = shadowOf(host).getNextStartedActivity();
+        assertNotNull("Maps is launched onto the main display", launched);
+        assertEquals(EmbeddedMaps.PACKAGE, launched.getComponent().getPackageName());
         maps.release();
     }
 
@@ -225,10 +232,22 @@ public class EmbeddedMapsTest {
         FakeTasks tasks = new FakeTasks(host);
         EmbeddedMaps maps = readyMaps(tasks);
         tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
-        tasks.failMoves = true;
+        // With no launch intent resolvable for Maps, it cannot be launched onto the main display,
+        // so it does not float and stays in its panel.
         assertFalse(maps.beginNativePipFloat());
         assertEquals(panelDisplay(maps), tasks.maps.displayId);
+        assertNull("Maps was not launched", shadowOf(host).getNextStartedActivity());
         maps.release();
+    }
+
+    private void registerMapsLauncher() {
+        ResolveInfo resolved = new ResolveInfo();
+        resolved.activityInfo = new ActivityInfo();
+        resolved.activityInfo.packageName = EmbeddedMaps.PACKAGE;
+        resolved.activityInfo.name = "com.google.android.maps.MapsActivity";
+        Intent launcher = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                .setPackage(EmbeddedMaps.PACKAGE);
+        shadowOf(host.getPackageManager()).addResolveInfoForIntent(launcher, resolved);
     }
 
     @Test public void mapsReachingTheMainDisplayIsReportedSoTheVideoCanBePinned() throws Exception {

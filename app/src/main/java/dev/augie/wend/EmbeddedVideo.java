@@ -225,6 +225,49 @@ final class EmbeddedVideo extends FrameLayout {
         }
     }
 
+    /**
+     * Moves the live video fullscreen on the main display, under the Maps that Wend is about to
+     * bring fullscreen on top of it, keeping the video's own PiP app-op at ignore (the video is the
+     * cover, not the PiP). The card shows its still until Wend shows again. This is the first step
+     * of Case B: the video must be a plain fullscreen task on the main display so that the later
+     * task switch ({@link #coverIntoMapsPip}) keeps Maps the top activity and floats Maps' own PiP.
+     *
+     * @return true when the video is fullscreen on the main display, false when it stays in the card
+     */
+    boolean placeFullscreen() {
+        if (!livePlaying()) return false;
+        cancelPreparation();
+        state = State.READY;
+        inSystemPip = true;
+        coverPlayer();
+        try {
+            pipRest();
+            if (!VideoTask.openFullscreen(host, false)) {
+                throw new IllegalStateException("No playing video task was found to place fullscreen for Maps' PiP");
+            }
+            return true;
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.e("WendPip", "Could not place the video fullscreen under Maps; it keeps playing in its card", error);
+            pipRest();
+            inSystemPip = false;
+            maybeLaunch();
+            return false;
+        }
+    }
+
+    /**
+     * Brings the fullscreen video (placed by {@link #placeFullscreen}) forward over Maps with a
+     * plain task switch, so Maps is backgrounded as the top activity and enters its own native nav
+     * PiP. The video's op stays ignore, so only Maps (whose op Wend allowed) pins.
+     */
+    boolean coverIntoMapsPip() {
+        try { return VideoTask.coverViaTaskSwitch(host); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.e("WendPip", "Could not cover Maps with the video for Maps' own PiP", error);
+            return false;
+        }
+    }
+
     private void pipRest() {
         try { pipOp.holdResting(host); }
         catch (ReflectiveOperationException | RuntimeException error) {
