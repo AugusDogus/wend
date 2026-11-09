@@ -7,6 +7,66 @@ fixes of November 8 were checked on the combined tree, on the real Google Maps
 and YouTube emulator (`road-home-google-api29`) with the `release` variant; see
 [validation](#validation). The PX6 was not available for either pass.
 
+## Variant A: Android's own picture-in-picture (`SYSTEM_PIP`)
+
+The `pip-variant-system` branch sets the build flag `SYSTEM_PIP` (true for
+`release` and `emulator`, false for `windowed`). The same `floatingVideo` and
+`floatingMaps` switches then put the other app in SystemUI's real PiP window
+instead of Wend's overlay. That window drags, flings away, opens SystemUI's menu
+on a tap (the app's actions, or the media session's play/pause and skip when the
+app gives none, plus fullscreen, settings and close), and goes fullscreen on a
+double tap. Everything below this section describes the overlay windows, which
+remain in the code for `SYSTEM_PIP = false`.
+
+- **Maps from the dock while the video plays in its card.** Maps opens fullscreen
+  as before. Once its task is on the main display, the video task moves into
+  Maps' stack on top and is pinned (`MapPanel.Covering.moved`,
+  `EmbeddedVideo.pinAbove`). The card shows its still.
+- **Open YouTube, the card, or the dock's video icon.** The video app opens
+  directly on the main display, fullscreen (the paused-video path). Maps then
+  moves from its panel into the video's stack on top and is pinned
+  (`MainActivity.videoOpened`, `EmbeddedMaps.pinToSystemPip`).
+- **Expanding a PiP** (menu fullscreen or double tap) makes that task the
+  fullscreen app. `SystemPip.Watcher` hears `onActivityUnpinned`; when the task
+  Wend pinned is now the topmost fullscreen stack on the main display, the other
+  app, just below it, is pinned in its place, if its switch allows. A PiP closed
+  or flung away is not fullscreen, so nothing follows.
+- **Home** returns both: Maps leaves PiP straight for its panel with
+  `startActivityFromRecents` and fullscreen mode (no Home animation, which would
+  wait for a fullscreen Maps window), and a playing video re-embeds in its card
+  the same way. A video that cannot return live, such as a paused one, has its
+  PiP closed as SystemUI's close does (`removeStacksInWindowingModes`).
+- **A stopped or ended video stays in PiP**, as YouTube leaves it. Expanding it
+  shows YouTube to pick another video, and Maps then takes the PiP.
+
+Why these Android 10 calls (AOSP android-10.0.0_r47):
+
+- `IActivityTaskManager.moveTopActivityToPinnedStack(stackId, bounds)` reaches
+  `RootActivityContainer.moveActivityToPinnedStack`, the same move an app's own
+  `enterPictureInPictureMode` makes, including `notifyActivityPinned`, the
+  bounds animation, and `onPictureInPictureModeChanged` for the app. It checks
+  only `supportsPictureInPicture`, not the `PICTURE_IN_PICTURE` app-op, so Maps'
+  op stays `ignore` and Maps still never pins itself on Home. SystemUI's
+  `PipAppOpsListener` dismisses a PiP only when the op changes while pinned, so
+  toggling it for Wend's own pin would have closed it. The call passes no source
+  rectangle or aspect ratio: the PiP uses SystemUI's default 16:9 bounds and
+  animates from full screen, and an app's own `PictureInPictureParams` apply
+  only if it sets them again while pinned.
+- `startActivityFromRecents` always brings the Home stack forward first, so
+  pinning after it left Wend, not the other app, under the PiP. The task to pin
+  therefore joins the fullscreen app's own stack on top with `moveTaskToStack`,
+  and that stack's top activity is pinned (`SystemPip.plan`).
+- Letting YouTube enter PiP itself from `onUserLeaveHint` depends on YouTube's
+  own settings and on Android's `supportsEnterPipOnTaskSwitch`; Maps does so only
+  while navigating, and only with its app-op allowed. Neither is deterministic.
+- `startActivityFromRecents` with pinned windowing mode creates a pinned stack
+  without the bounds animation or PiP callbacks. Never used.
+- Wend's own task moves carry `setDisallowEnterPictureInPictureWhileLaunching`, so
+  the app on top does not enter PiP itself as another task comes forward.
+- Moving a pinned stack onto Wend's virtual display remains forbidden (the
+  system_server crash in `ActivityMetricsLogger` described in the README); every return uses the exact task with
+  `startActivityFromRecents` and fullscreen mode.
+
 ## Maps no longer shrinks into system PiP on Home
 
 **Symptom.** With Maps fullscreen (dock button) and navigating, Home showed
