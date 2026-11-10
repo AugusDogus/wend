@@ -1,5 +1,6 @@
 package dev.augie.wend;
 
+import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -26,6 +27,12 @@ public final class NavigationNotifications extends NotificationListenerService {
     private static NavigationCard current;
     /** When guidance was last seen to end, in uptime ms, or null if it never was. */
     private static Long endedAt;
+    /** When guidance last began, in uptime ms, or null if it never did. */
+    private static Long beganAt;
+    /** The key of guidance Maps reports itself, where Android's notifications have Android's key. */
+    private static final String FROM_MAPS = "maps-bridge";
+    /** Whether Maps reports its guidance itself. Android's copy of it, if it delivers one, is then left alone. */
+    private static boolean reportedByMaps;
 
     /** @return the next turn, or null */
     static NavigationCard current() { return current; }
@@ -36,6 +43,36 @@ public final class NavigationNotifications extends NotificationListenerService {
      */
     static boolean guidedWithin(long ms) {
         return current != null || endedAt != null && SystemClock.uptimeMillis() - endedAt <= ms;
+    }
+
+    /** @return when the guidance that runs now, or ran last, began, in uptime ms; null if none ever did */
+    static Long began() { return beganAt; }
+
+    /**
+     * Maps handed over its guidance notification itself, through the Maps bridge module
+     * ({@link MapsTrips}), or null once its guidance ended. Android hands a listener nothing while
+     * Maps' notifications are turned off; this needs none of Android's. Main thread.
+     */
+    static void reportedByMaps(Notification guidance) {
+        reportedByMaps = true;
+        boolean reported = current != null && FROM_MAPS.equals(current.key);
+        NavigationCard card = guidance == null ? null
+                : NavigationCard.from(EmbeddedMaps.PACKAGE, FROM_MAPS, guidance, EmbeddedMaps.PACKAGE, current);
+        // The first report takes over from Android's copy; an end ends only what Maps reported.
+        if (card != null || reported) publish(card);
+    }
+
+    /** Maps' process is gone. Guidance it reported itself ended with it, as Android removes a dead app's notification. */
+    static void mapsGone() {
+        if (current != null && FROM_MAPS.equals(current.key)) publish(null);
+    }
+
+    /** As in a new process: no guidance, and no word from Maps yet. */
+    static void forget() {
+        reportedByMaps = false;
+        current = null;
+        endedAt = null;
+        beganAt = null;
     }
 
     static void listen(Listener listener) { listeners.add(listener); }
@@ -60,6 +97,7 @@ public final class NavigationNotifications extends NotificationListenerService {
     }
 
     @Override public void onListenerConnected() {
+        if (reportedByMaps) return;
         NavigationCard found = null;
         StatusBarNotification[] active = getActiveNotifications();
         if (active != null) {
@@ -71,9 +109,10 @@ public final class NavigationNotifications extends NotificationListenerService {
         publish(found);
     }
 
-    @Override public void onListenerDisconnected() { publish(null); }
+    @Override public void onListenerDisconnected() { if (!reportedByMaps) publish(null); }
 
     @Override public void onNotificationPosted(StatusBarNotification posted) {
+        if (reportedByMaps) return;
         NavigationCard card = cardOf(posted);
         if (card != null) publish(card);
         // The same notification, no longer guidance.
@@ -81,7 +120,7 @@ public final class NavigationNotifications extends NotificationListenerService {
     }
 
     @Override public void onNotificationRemoved(StatusBarNotification removed) {
-        if (current != null && current.key.equals(removed.getKey())) publish(null);
+        if (!reportedByMaps && current != null && current.key.equals(removed.getKey())) publish(null);
     }
 
     private static NavigationCard cardOf(StatusBarNotification notification) {
@@ -91,6 +130,7 @@ public final class NavigationNotifications extends NotificationListenerService {
 
     private static void publish(NavigationCard card) {
         if (current != null && card == null) endedAt = SystemClock.uptimeMillis();
+        if (current == null && card != null) beganAt = SystemClock.uptimeMillis();
         current = card;
         for (Listener listener : new ArrayList<>(listeners)) listener.changed(card);
     }

@@ -271,12 +271,43 @@ press it:
   start) it restored the route every time (`build/guidance-resume/`). Wend
   cannot start that trip itself: the destination is in none of Maps'
   guidance notification, its content intent, its task's intents, its
-  navigation service's dump or its accessibility tree while it guides. The emulator's Maps has only English strings, so the label
+  navigation service's dump or its accessibility tree while it guides. It is
+  in Maps' own files, which the Maps bridge module reads (below). All of this
+  section's detection also needs Android to deliver Maps' guidance
+  notification: with Maps' notifications turned off, Wend sees no guidance
+  unless that module is installed. The emulator's Maps has only English strings, so the label
   from Maps' strings was checked there in English only (it pressed "Start"
   labelled `[Start]`). A running
   UI test session (`UiAutomation`, as the device tool's snapshot helper holds)
   suspends every accessibility service, this one included: the wait then ends
   with a log line and Maps stays at its route preview.
+
+### With the Maps bridge module
+
+`maps-bridge` is an optional LSPosed module that runs inside Maps (see its
+README). With it:
+
+- **Maps tells Wend where each trip goes** (`MapsTrips`, a provider only Maps'
+  uid may call). A Maps that died while guiding is then reopened with the link
+  that navigates there (`google.navigation:q=`), not as it is: it guides at
+  once, with no press on Start, and also where Maps restores no route. A
+  reported destination counts only for the guidance that died: reported while
+  it ran, or in the 30 s before it began (Maps also saves directions the driver
+  only looked at). `GuidanceResume` still waits for a Start button, and stops
+  as soon as guidance runs again.
+- **Maps hands Wend its guidance itself**, read where Maps builds it, before
+  Android's notification service (`NavigationNotifications.reportedByMaps`).
+  With Maps' notifications turned off in Android's settings, Android delivers a
+  listener none, and Wend otherwise has no next turn, no "Arrived" and nothing
+  to resume. Once Maps reports, Android's copy is left alone. Guidance Maps
+  reported ends when Maps says so or when its task is destroyed.
+- Checked on the emulator (November 10, `build/guidance-resume/`,
+  `build/maps-bridge/`): killed 934 m from the motel, where Maps alone came
+  back with no route 3 of 3 times, it guided again within 6 s, 3 of 3; from the
+  route's start too. With Maps' notifications turned off (no Maps notification
+  in `dumpsys notification`): the next-turn card showed on floating Maps, the
+  window turned to "Arrived" at the motel, Maps killed 934 m from it guided
+  again within 6 s, and leaving navigation took the card away.
 
 ## Live Maps floats above the video app Wend opens
 

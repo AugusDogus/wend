@@ -43,6 +43,7 @@ public final class MainActivity extends Activity {
         settings = new LauncherSettings(getSharedPreferences(LauncherSettings.PREFERENCES, MODE_PRIVATE));
         AppCatalog.get(this); // Loads apps in the background so the drawer opens with them.
         NavigationNotifications.allow(this);
+        MapsTrips.ask(this);
         backdrop = new FrostedBackdrop(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemBars();

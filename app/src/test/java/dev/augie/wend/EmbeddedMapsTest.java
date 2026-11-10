@@ -471,6 +471,64 @@ public class EmbeddedMapsTest {
         }
     }
 
+    /**
+     * Maps restores no route for a trip nearly over (killed 934 m from its end it came back to its
+     * home screen), and waits for Start on the ones it does restore. With the Maps bridge module,
+     * Maps has told Wend where the trip goes, and Wend reopens it with the link that navigates there.
+     */
+    @Test public void mapsThatDiedWhileGuidingReopensNavigatingToTheTripItReported() throws Exception {
+        installMaps();
+        resumesGuidance = true;
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        NavigationNotifications notifications = new NavigationNotifications();
+        StatusBarNotification guidance = guidance();
+        try {
+            notifications.onNotificationPosted(guidance);
+            MapsTrips.reported("1340 N State St, Ukiah, CA 95482");
+            notifications.onNotificationRemoved(guidance);
+            tasks.maps = null;
+            taskRemovals(maps).onTaskRemoved(7);
+            shadowOf(Looper.getMainLooper()).idle();
+            Intent started = shadowOf(host).getNextStartedActivity();
+            assertNotNull("Wend reopens Maps", started);
+            assertEquals(EmbeddedMaps.PACKAGE, started.getPackage());
+            assertEquals("google.navigation:q=1340%20N%20State%20St%2C%20Ukiah%2C%20CA%2095482", started.getDataString());
+            assertNull("Only once", shadowOf(host).getNextStartedActivity());
+            assertTrue("Start is still pressed if Maps shows it instead of guiding", guidanceResumeRequested());
+        } finally {
+            MapsTrips.forget();
+            notifications.onListenerDisconnected();
+            maps.release();
+        }
+    }
+
+    /** With the setting off the driver did not ask for guidance to resume, by a link either. */
+    @Test public void aReportedTripIsNotResumedWithTheSettingOff() throws Exception {
+        installMaps();
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        NavigationNotifications notifications = new NavigationNotifications();
+        StatusBarNotification guidance = guidance();
+        try {
+            notifications.onNotificationPosted(guidance);
+            MapsTrips.reported("1340 N State St, Ukiah, CA 95482");
+            notifications.onNotificationRemoved(guidance);
+            tasks.maps = null;
+            taskRemovals(maps).onTaskRemoved(7);
+            shadowOf(Looper.getMainLooper()).idle();
+            assertReopened("Wend reopens Maps as it is");
+        } finally {
+            MapsTrips.forget();
+            notifications.onListenerDisconnected();
+            maps.release();
+        }
+    }
+
     @Test public void mapsThatDiedWhileGuidingIsNotAskedToResumeWithTheSettingOff() throws Exception {
         installMaps();
         resumesGuidance = false;

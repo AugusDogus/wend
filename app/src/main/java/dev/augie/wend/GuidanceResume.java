@@ -39,6 +39,8 @@ public final class GuidanceResume extends AccessibilityService {
     private static final Handler main = new Handler(Looper.getMainLooper());
     /** When to stop waiting for Maps' Start, in uptime ms, or null if no press is wanted. Main thread only. */
     private static Long until;
+    /** When the press was last asked for, in uptime ms. Main thread only. */
+    private static long requestedAt;
     /** The connected service, or null. Main thread only. */
     private static GuidanceResume connected;
 
@@ -66,7 +68,8 @@ public final class GuidanceResume extends AccessibilityService {
                     + " Maps' Start. Maps is open at its route; press Start there", error);
             return;
         }
-        until = SystemClock.uptimeMillis() + WAIT_MS;
+        requestedAt = SystemClock.uptimeMillis();
+        until = requestedAt + WAIT_MS;
         Log.i(TAG, "Waiting up to " + WAIT_MS + " ms for the reopened Maps to show Start, to resume its guidance");
         if (connected != null) connected.look();
         // If Android never connects the service, nothing else ends the wait.
@@ -180,6 +183,14 @@ public final class GuidanceResume extends AccessibilityService {
         Long deadline = until;
         // Turned on by hand, or already done: it is only for the moment after Maps reopens.
         if (deadline == null) { disableSelf(); return; }
+        // A Maps reopened by a navigation link (MapsTrips) guides without showing Start.
+        Long began = NavigationNotifications.began();
+        if (began != null && began >= requestedAt && NavigationNotifications.current() != null) {
+            until = null;
+            Log.i(TAG, "The reopened Maps guides again; no press on Start was needed");
+            disableSelf();
+            return;
+        }
         AccessibilityNodeInfo start = find();
         if (start != null) {
             until = null;

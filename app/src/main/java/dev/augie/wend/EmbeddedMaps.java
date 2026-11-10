@@ -306,6 +306,7 @@ final class EmbeddedMaps extends MapPanel {
     private void taskRemoved(int taskId) {
         // A launch has no task yet.
         if (state != State.READY || launching || !mapsGone("after task " + taskId + " was destroyed")) return;
+        NavigationNotifications.mapsGone();
         cancelTakeover();
         cancelPendingFloat();
         // A message already says Maps closed and offers Open Maps: nothing reopens under it.
@@ -829,6 +830,10 @@ final class EmbeddedMaps extends MapPanel {
             showError("Google Maps is not installed. Install Maps, then tap Open Maps.");
             return false;
         }
+        // Where the guidance that died was going, if Maps reported it (the Maps bridge module): a
+        // Maps opened by that link navigates there, even where it would restore no route.
+        Intent trip = resumeGuidance ? MapsTrips.navigation(NavigationNotifications.began(), PACKAGE) : null;
+        if (trip != null) intent = trip;
         try {
             if (displayId == 0) {
                 ActivityOptions options = ActivityOptions.makeBasic();
@@ -848,7 +853,8 @@ final class EmbeddedMaps extends MapPanel {
                 }
             }
             status.setVisibility(View.GONE);
-            Log.i("Wend", "Requested Maps launch after no task was found, display " + displayId);
+            Log.i("Wend", "Requested Maps launch after no task was found, display " + displayId
+                    + (trip != null ? ", with the navigation link to the destination Maps reported" : ""));
             if (resumeGuidance) {
                 resumeGuidance = false;
                 GuidanceResume.request(getContext());
