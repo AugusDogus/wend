@@ -193,14 +193,17 @@ corner, default bottom right (the passenger side).
   Without guidance, or without the listener, Maps floats as before, without one.
 - **Enter.** Maps shrinks from its panel into its corner while the video expands
   from its card beneath it, both in the same 280 ms. For part of that neither
-  covers the panel, so a picture of Maps' display, taken as Maps lifts out, is
-  left in the panel under both (`EmbeddedMaps.leavePicture`); the panel showed
-  empty there, which is why Maps used to wait for the video and move second.
-  Home is the same in reverse: the video shrinks into its card as Maps lands
-  over its panel, over a picture of Maps taken as Home begins. The video card's
-  cover shows for one frame as the video lands in it, so it is given the
-  video's current frame as the video starts back (`EmbeddedVideo.freshenStill`);
-  it used to flash the still kept from before the video left.
+  covers the panel, which then shows empty in its own color: a color layer
+  under Maps' display, inside the panel's surface (`PanelBackdrop`). Without
+  it Android 10 shows black there, from the background layer it keeps under
+  each SurfaceView; the video card's is as large as the video's display, so it
+  lies under the Maps panel as well. (A picture of Maps left in the panel
+  instead read as a second map under the moving one.) Home is the same in
+  reverse: the video shrinks into its card as Maps lands over its empty panel.
+  The video card's cover shows for one frame as the video lands in it, so it is
+  given the video's current frame as the video starts back
+  (`EmbeddedVideo.freshenStill`); it used to flash the still kept from before
+  the video left.
 - **Drag, snap, outline, corners, catch mid-snap, tap grace after entering, PiP
   controls:** as for the floating video, without a playback control. Closed, Maps
   returns to its panel (beneath the fullscreen video) and keeps navigating.
@@ -1216,6 +1219,17 @@ Scripts, traces and method profiles are in `build/stall/`; `layer_gaps.py` and
   emulator it cannot be told from the host. The recorder is no measure either:
   of three opens recorded and traced together, one had an 82 ms gap in the
   recording and none in the compositor's trace.
+- **The empty panel** (`build/home-overlap`; `head`, `blank2`, `blank3`).
+  With animations ten times slower (`animator_duration_scale`), frames of both
+  moves show the panel in its own color behind Maps, on the live video and the
+  video app paths; before, a second map (the picture), and with neither, black.
+  The backdrop sits at the lowest layer of the panel's surface: at -1 it tied
+  with Maps' display, which comes back from a floating window at -1, and
+  covered it. Frame timing was traced while the host was busy with other work
+  (load 11 to 18), so it compares builds and proves nothing more: the build
+  before dropped none in 10 of 15 moves (worst 120 ms), this one none in 21 of
+  30 (worst 132 ms), with the gaps of the bad runs spread through the move as
+  when the whole compositor is starved. To be traced again on a quiet host.
 - **A stall that is real, on another path.** Opening the video app from the
   dock (not the live video) while YouTube has a video to resume stalls Maps'
   move to its corner every time: 8 to 18 frames, gaps of 82 to 200 ms, in 5 of 5
