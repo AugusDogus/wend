@@ -75,6 +75,7 @@ final class SettingsSheet implements AppCatalog.Listener {
     private final TextView musicStatus;
     private final Switch floatingVideo;
     private final Switch floatingMaps;
+    private final Switch resumeGuidance;
     private final Handler main = new Handler(Looper.getMainLooper());
     // Rearranging reattaches the Maps window, which stalls the shared render thread for about
     // 100 ms on the emulator. It runs once the preview has settled, or as the sheet closes.
@@ -184,6 +185,12 @@ final class SettingsSheet implements AppCatalog.Listener {
         rows.addRows(floating, floatingVideo, floatingMaps);
         rows.addSection(column, R.string.settings_floating, floating, true);
 
+        LinearLayout navigation = Ui.card(activity);
+        resumeGuidance = rows.toggle(R.string.settings_resume_guidance, R.string.settings_resume_guidance_hint,
+                settings.resumeGuidance(), settings::setResumeGuidance);
+        rows.addRows(navigation, resumeGuidance);
+        rows.addSection(column, R.string.settings_navigation, navigation, true);
+
         LinearLayout system = Ui.card(activity);
         rows.addRows(system,
                 rows.link(R.string.settings_android, () -> openSystemScreen(R.string.settings_android,
@@ -243,6 +250,7 @@ final class SettingsSheet implements AppCatalog.Listener {
         preview.show(settings.mapSide(), settings.mapWidth());
         floatingVideo.setChecked(settings.floatingVideo());
         floatingMaps.setChecked(settings.floatingMaps());
+        resumeGuidance.setChecked(settings.resumeGuidance());
         sheet.show();
     }
 

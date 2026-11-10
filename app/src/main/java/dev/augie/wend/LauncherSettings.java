@@ -29,6 +29,7 @@ final class LauncherSettings {
     private static final String FLOATING_VIDEO_CORNER = "floatingVideoCorner";
     private static final String FLOATING_MAPS = "floatingMaps";
     private static final String FLOATING_MAPS_CORNER = "floatingMapsCorner";
+    private static final String RESUME_GUIDANCE = "resumeGuidance";
     private static final String TAG = "Wend";
 
     private final SharedPreferences preferences;
@@ -64,6 +65,11 @@ final class LauncherSettings {
     boolean floatingMaps() { return readBoolean(FLOATING_MAPS, true); }
 
     void setFloatingMaps(boolean enabled) { preferences.edit().putBoolean(FLOATING_MAPS, enabled).apply(); }
+
+    /** Whether Wend presses Start in a Maps it reopened because Maps' process died while guiding. */
+    boolean resumeGuidance() { return readBoolean(RESUME_GUIDANCE, true); }
+
+    void setResumeGuidance(boolean enabled) { preferences.edit().putBoolean(RESUME_GUIDANCE, enabled).apply(); }
 
     /**
      * The corner the floating video last settled in. Top right by default: landscape guidance

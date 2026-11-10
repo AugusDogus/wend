@@ -17,6 +17,7 @@ import android.graphics.drawable.Icon;
 import android.hardware.display.DisplayManager;
 import android.os.Looper;
 import android.os.Process;
+import android.provider.Settings;
 import android.service.notification.StatusBarNotification;
 import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
@@ -57,10 +58,12 @@ public class EmbeddedMapsTest {
     /** The head unit's 1280 x 720 screen, in pixels. */
     private static final String SCREEN = "w1280dp-h720dp-land-mdpi";
     private final List<String> events = new ArrayList<>();
+    /** The "resume guidance" setting each test's Maps panel reads. */
+    private boolean resumesGuidance;
 
     @Test public void reusingAnExistingTaskDoesNotWaitForTaskCreated() throws Exception {
         installMaps();
-        EmbeddedMaps maps = new EmbeddedMaps(host);
+        EmbeddedMaps maps = new EmbeddedMaps(host, () -> false);
         ReusingActivityView view = new ReusingActivityView(host);
         Field activityView = EmbeddedMaps.class.getDeclaredField("activityView");
         activityView.setAccessible(true);
@@ -358,6 +361,107 @@ public class EmbeddedMapsTest {
         assertReopened("Maps reopens in its panel");
         assertNull(panelMessage(maps));
         maps.release();
+    }
+
+    /**
+     * A reopened Maps restores its route preview but waits for Start. With the setting on, Wend asks
+     * for that press when it reopens a Maps that died while guiding.
+     */
+    @Test public void mapsThatDiedWhileGuidingIsAskedToResumeAsItReopens() throws Exception {
+        installMaps();
+        resumesGuidance = true;
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        NavigationNotifications notifications = new NavigationNotifications();
+        StatusBarNotification guidance = guidance();
+        try {
+            notifications.onNotificationPosted(guidance);
+            assertFalse(guidanceResumeRequested());
+            notifications.onNotificationRemoved(guidance);
+            tasks.maps = null;
+            taskRemovals(maps).onTaskRemoved(7);
+            shadowOf(Looper.getMainLooper()).idle();
+            assertReopened("Wend reopens Maps in its panel");
+            assertTrue("And asks for Maps' Start to be pressed", guidanceResumeRequested());
+        } finally {
+            notifications.onListenerDisconnected();
+            maps.release();
+        }
+    }
+
+    @Test public void mapsThatDiedWhileGuidingIsNotAskedToResumeWithTheSettingOff() throws Exception {
+        installMaps();
+        resumesGuidance = false;
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        NavigationNotifications notifications = new NavigationNotifications();
+        try {
+            notifications.onNotificationPosted(guidance());
+            tasks.maps = null;
+            taskRemovals(maps).onTaskRemoved(7);
+            shadowOf(Looper.getMainLooper()).idle();
+            assertReopened("Wend reopens Maps in its panel");
+            assertFalse(guidanceResumeRequested());
+        } finally {
+            notifications.onListenerDisconnected();
+            maps.release();
+        }
+    }
+
+    /** Guidance that ended a while before Maps died was over: Maps had arrived, or the driver stopped it. */
+    @Test public void mapsThatDiedAfterGuidanceEndedIsNotAskedToStartAnything() throws Exception {
+        installMaps();
+        resumesGuidance = true;
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        NavigationNotifications notifications = new NavigationNotifications();
+        StatusBarNotification guidance = guidance();
+        try {
+            notifications.onNotificationPosted(guidance);
+            notifications.onNotificationRemoved(guidance);
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(10));
+            tasks.maps = null;
+            taskRemovals(maps).onTaskRemoved(7);
+            shadowOf(Looper.getMainLooper()).idle();
+            assertReopened("Wend reopens Maps in its panel");
+            assertFalse(guidanceResumeRequested());
+        } finally {
+            notifications.onListenerDisconnected();
+            maps.release();
+        }
+    }
+
+    /** Above the video app Wend is hidden: Maps reopens on Home, however much later, and is asked then. */
+    @Test public void mapsThatDiedWhileGuidingAboveTheVideoAppIsAskedToResumeWhenHomeReopensIt() throws Exception {
+        installMaps();
+        resumesGuidance = true;
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        NavigationNotifications notifications = new NavigationNotifications();
+        try {
+            notifications.onNotificationPosted(guidance());
+            maps.suspend();
+            assertTrue(maps.floatAboveVideoApp(FloatingPlacement.Corner.BOTTOM_RIGHT, listener()));
+            maps.suspend();
+            tasks.maps = null;
+            taskRemovals(maps).onTaskRemoved(7);
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(3));
+            assertFalse("Nothing is reopened yet", guidanceResumeRequested());
+            maps.resume();
+            assertReopened("Home reopens Maps in its panel");
+            assertTrue(guidanceResumeRequested());
+        } finally {
+            notifications.onListenerDisconnected();
+            maps.release();
+        }
     }
 
     /** Maps that dies again right after Wend reopened it would otherwise be reopened in a loop. */
@@ -824,7 +928,7 @@ public class EmbeddedMapsTest {
      */
     private EmbeddedMaps readyMaps(FakeTasks tasks) throws ReflectiveOperationException {
         ShadowProcess.setUid(1000);
-        EmbeddedMaps maps = new EmbeddedMaps(host, tasks);
+        EmbeddedMaps maps = new EmbeddedMaps(host, tasks, () -> resumesGuidance);
         FrameLayout content = new FrameLayout(host);
         content.addView(maps, new FrameLayout.LayoutParams(833, 720));
         host.setContentView(content);
@@ -863,6 +967,13 @@ public class EmbeddedMapsTest {
         Field field = EmbeddedMaps.class.getDeclaredField("floating");
         field.setAccessible(true);
         return (LiveSurfaceWindow) field.get(maps);
+    }
+
+    /** Whether Wend turned on its accessibility service that presses Maps' Start. */
+    private boolean guidanceResumeRequested() {
+        String enabled = Settings.Secure.getString(host.getContentResolver(),
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        return enabled != null && enabled.contains(host.getPackageName() + "/" + GuidanceResume.class.getName());
     }
 
     /** Maps' ongoing guidance notification, as it posts it while navigating. */

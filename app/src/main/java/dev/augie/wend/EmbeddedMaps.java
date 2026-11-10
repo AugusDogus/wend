@@ -20,6 +20,7 @@ import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import java.util.function.BooleanSupplier;
 
 /** Owns the Android 10 map display and its task transitions, without a root shell. */
 final class EmbeddedMaps extends MapPanel {
@@ -50,6 +51,11 @@ final class EmbeddedMaps extends MapPanel {
     private static final long REOPEN_AGAIN_MS = 30_000;
     /** When Wend last reopened Maps because its process had died, in uptime ms, or null if never. */
     private Long reopenedAt;
+    private final BooleanSupplier resumesGuidance;
+    /** Guidance that ended this long before Maps' process died was over: Maps had arrived, or the driver stopped it. */
+    private static final long GUIDING_MS = 5_000;
+    /** Maps' process died while it guided and the setting is on: its next opening asks for Start to be pressed. */
+    private boolean resumeGuidance;
     private final Point screen = new Point();
     /** Maps leaves display 0 beneath the fullscreen video once Wend has drawn behind it. */
     private boolean returningBeneath;
@@ -118,11 +124,15 @@ final class EmbeddedMaps extends MapPanel {
     private View topCorner;
     private View bottomCorner;
 
-    EmbeddedMaps(Activity context) { this(context, new MapsTask(context)); }
+    /** @param resumesGuidance the "resume after Maps restarts" setting, read when Maps' process dies */
+    EmbeddedMaps(Activity context, BooleanSupplier resumesGuidance) {
+        this(context, new MapsTask(context), resumesGuidance);
+    }
 
-    EmbeddedMaps(Activity context, MapsTask tasks) {
+    EmbeddedMaps(Activity context, MapsTask tasks, BooleanSupplier resumesGuidance) {
         super(context);
         this.tasks = tasks;
+        this.resumesGuidance = resumesGuidance;
         transition = new MapTransition(context, this);
         floating = new LiveSurfaceWindow(context, BuildConfig.APPLICATION_ID + " live map", "WendMap");
         turns = this::turnCardChanged;
@@ -242,6 +252,8 @@ final class EmbeddedMaps extends MapPanel {
                 showError("Maps keeps closing. Tap Open Maps to try again.");
                 reopen = false;
             } else reopenedAt = now;
+            // Asked as Maps next opens (launchNew), which is on Home if Wend is hidden now.
+            resumeGuidance = resumesGuidance.getAsBoolean() && NavigationNotifications.guidedWithin(GUIDING_MS);
         }
         // The end of the float asks for Maps in its panel, unless a message stays (floatingEnded).
         if (floating.active()) floating.dismiss("Maps is gone");
@@ -757,6 +769,10 @@ final class EmbeddedMaps extends MapPanel {
             }
             status.setVisibility(View.GONE);
             Log.i("Wend", "Requested Maps launch after no task was found, display " + displayId);
+            if (resumeGuidance) {
+                resumeGuidance = false;
+                GuidanceResume.request(getContext());
+            }
             return true;
         } catch (RuntimeException error) {
             launching = false;

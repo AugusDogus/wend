@@ -3,6 +3,7 @@ package dev.augie.wend;
 import android.app.NotificationManager;
 import android.content.ComponentName;
 import android.content.Context;
+import android.os.SystemClock;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
@@ -23,9 +24,19 @@ public final class NavigationNotifications extends NotificationListenerService {
     private static final String TAG = "WendNav";
     private static final List<Listener> listeners = new ArrayList<>();
     private static NavigationCard current;
+    /** When guidance was last seen to end, in uptime ms, or null if it never was. */
+    private static Long endedAt;
 
     /** @return the next turn, or null */
     static NavigationCard current() { return current; }
+
+    /**
+     * @return whether Maps guides now or stopped within the last {@code ms}. Android removes the
+     *     notification of a Maps whose process died about when it destroys its task, in either order.
+     */
+    static boolean guidedWithin(long ms) {
+        return current != null || endedAt != null && SystemClock.uptimeMillis() - endedAt <= ms;
+    }
 
     static void listen(Listener listener) { listeners.add(listener); }
 
@@ -79,6 +90,7 @@ public final class NavigationNotifications extends NotificationListenerService {
     }
 
     private static void publish(NavigationCard card) {
+        if (current != null && card == null) endedAt = SystemClock.uptimeMillis();
         current = card;
         for (Listener listener : new ArrayList<>(listeners)) listener.changed(card);
     }

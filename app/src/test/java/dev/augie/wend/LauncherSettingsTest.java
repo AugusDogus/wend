@@ -31,6 +31,7 @@ public class LauncherSettingsTest {
         assertEquals(LauncherSettings.MapWidth.MORE_MAP, settings.mapWidth());
         assertTrue(settings.floatingVideo());
         assertTrue(settings.floatingMaps());
+        assertTrue(settings.resumeGuidance());
         assertEquals(DockPins.defaults(5).packages(), settings.dockPins(5).packages());
         assertEquals(BuildConfig.MUSIC_PACKAGE, settings.musicApp());
     }
@@ -73,6 +74,12 @@ public class LauncherSettingsTest {
         assertFalse(preferences.getBoolean("floatingMaps", true));
         assertFalse(settings.floatingVideo());
         assertFalse(settings.floatingMaps());
+    }
+
+    @Test public void resumingGuidanceCanBeTurnedOffAndStaysOff() {
+        settings.setResumeGuidance(false);
+        assertFalse(preferences.getBoolean("resumeGuidance", true));
+        assertFalse(new LauncherSettings(preferences).resumeGuidance());
     }
 
     @Test public void videoFloatsTopRightAndMapsBottomRightUntilACornerIsRemembered() {

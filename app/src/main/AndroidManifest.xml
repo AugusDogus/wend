@@ -34,6 +34,15 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+        <!-- Presses Maps' Start after Wend reopens a Maps that died while guiding; on only while it waits for that button. -->
+        <service android:name=".GuidanceResume" android:exported="true"
+            android:label="@string/settings_resume_guidance"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/guidance_resume" />
+        </service>
         <activity android:name=".LaunchActivity" android:exported="true"
             android:excludeFromRecents="true" android:noHistory="true">
             <intent-filter>

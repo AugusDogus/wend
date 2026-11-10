@@ -198,7 +198,8 @@ corner, default bottom right (the passenger side).
     panel showing Maps' empty display. Maps now reopens in its panel, at once if
     Wend shows (also beneath the live video), otherwise as Wend next shows. The
     same holds when it dies in its panel, which stayed empty until Home was
-    pressed. Maps starts over, at its map or route preview, without guidance. If
+    pressed. Maps starts over, at its map or route preview, without guidance;
+    see [resuming guidance](#resuming-guidance-after-maps-restarts). If
     it dies again within 30 s of being reopened, the panel says "Maps keeps
     closing. Tap Open Maps to try again." instead of reopening it in a loop.
   - **Closed or crashed** (`onTaskRemovalStarted`): the panel says "Maps was
@@ -210,6 +211,36 @@ corner, default bottom right (the passenger side).
 
   The "Maps was closed" message also appears when Maps is gone as a tapped
   floating video becomes fullscreen, instead of Maps floating.
+
+## Resuming guidance after Maps restarts
+
+A Maps that Wend reopens after its process died restores its route preview by
+itself, but waits there for Start. The `layout` preference `resumeGuidance`
+(Settings, Navigation, "Resume after Maps restarts"; on by default) lets Wend
+press it:
+
+- **When.** Only for a Maps whose process died while it guided, or within 5 s
+  of its guidance notification going (`NavigationNotifications.guidedWithin`),
+  and only as Wend opens it again (`EmbeddedMaps.launchNew`): at once in its
+  panel or beneath the live video, or on Home if Wend was hidden. A Maps the
+  driver closed, or one that crashed and shows "Maps was closed", is not
+  resumed.
+- **How.** Maps' guidance notification names no destination (its content intent
+  only opens `MapsActivity`), so Wend cannot hand the trip back to Maps with a
+  navigation link. `GuidanceResume` is an accessibility service, the way Android
+  lets one app press another's button. It looks every 500 ms, for up to 30 s,
+  for Maps' enabled, visible `android.widget.Button` whose content description
+  (or text) is exactly `maps_start_button` ("Start"), presses it once, and turns
+  itself off (`disableSelf`). Wend turns it on only for that wait, by adding it
+  to `enabled_accessibility_services` as the system user, and it hears only
+  Maps' package.
+- **Limits.** It presses whatever route Maps restored. If Maps restores none
+  (seen once, after two deaths 10 s apart), nothing is pressed and Maps stays
+  open at its map. The label is matched in English, so a Maps in another
+  language is not resumed until `maps_start_button` is translated. A running
+  UI test session (`UiAutomation`, as the device tool's snapshot helper holds)
+  suspends every accessibility service, this one included: the wait then ends
+  with a log line and Maps stays at its route preview.
 
 ## Live Maps floats above the video app Wend opens
 
@@ -993,7 +1024,16 @@ dock so Maps floats, run `adb shell am force-stop com.google.android.apps.maps`
   racing each float, notification access revoked, YouTube killed while its video
   floats, Wend killed), with guidance still running after each.
 - Not covered: the PX6, a real low-memory kill, and Maps dying while Wend is
-  behind another app for long. A reopened Maps does not resume guidance.
+  behind another app for long.
+- Resuming guidance, on the rebased build with the pip-hook module disabled and
+  the device tool's snapshot helper stopped (it suspends accessibility
+  services): Maps killed (`kill -9`) while guiding in its panel was guiding
+  again 10 s later without a touch (start screen at 3 s, route preview at 6 s);
+  killed above the live video (force-stop) it was guiding in its panel by the
+  time Home was pressed 12 s later; killed above the video app (`kill -9`) it
+  was guiding within 12 s of Home. With the setting off, Maps stayed at its
+  route preview. The service was off again after each run
+  (`enabled_accessibility_services` empty).
 
 ### Known issue: Back is dropped in fullscreen Maps on the emulators
 
