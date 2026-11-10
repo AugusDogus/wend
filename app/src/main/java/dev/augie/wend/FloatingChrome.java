@@ -57,6 +57,8 @@ final class FloatingChrome extends View {
     private float stillAlpha;
     /** Darkens the arrow's square, as Maps' own PiP card does. */
     private static final int ARROW_SHADE = 0x33000000;
+    /** What Maps' own PiP fills its window with at the destination, in its day and night colors alike. */
+    private static final int ARRIVED = 0xff1e8e3e;
     private final Paint band = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint primary = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint secondary = new TextPaint(Paint.ANTI_ALIAS_FLAG);
@@ -206,15 +208,15 @@ final class FloatingChrome extends View {
         cardClip.reset();
         cardClip.addRoundRect(new RectF(cardWindow), cardRadius, cardRadius, Path.Direction.CW);
         canvas.clipPath(cardClip);
-        band.setColor(next.color);
-        band.setAlpha(Math.round(Color.alpha(next.color) * alpha));
-        canvas.drawRect(next.arrived ? cardWindow : at, band);
         int side = at.height();
         if (next.arrived) {
             drawArrived(canvas, side, alpha);
             canvas.restore();
             return;
         }
+        band.setColor(next.color);
+        band.setAlpha(Math.round(Color.alpha(next.color) * alpha));
+        canvas.drawRect(at, band);
         band.setColor(ARROW_SHADE);
         band.setAlpha(Math.round(Color.alpha(ARROW_SHADE) * alpha));
         canvas.drawRect(at.left, at.top, at.left + side, at.bottom, band);
@@ -247,25 +249,23 @@ final class FloatingChrome extends View {
     }
 
     /**
-     * As Maps' own PiP at the destination: the destination's pin above "Arrived", in the middle of
-     * the window, which is filled with Maps' guidance color.
+     * As Maps' own PiP at the destination: the window filled green, a map pin above "Arrived" in
+     * its middle, in the proportions of that window (a 28 px pin and 26 px text in 254 px).
      *
-     * @param side the height of the turn card this replaces, which sizes the pin and the text alike
+     * @param side the height of the turn card this replaces, 26.5% of the window's
      */
     private void drawArrived(Canvas canvas, int side, float alpha) {
+        band.setColor(ARRIVED);
+        band.setAlpha(Math.round(Color.alpha(ARRIVED) * alpha));
+        canvas.drawRect(cardWindow, band);
         String arrived = getContext().getString(R.string.maps_arrived);
-        int size = Math.round(side * .6f);
-        primary.setTextSize(side * .3f);
+        int pin = Math.round(side * .46f);
+        primary.setTextSize(side * .38f);
         primary.setAlpha(Math.round(255 * alpha));
-        float gap = side * .1f, top = cardWindow.exactCenterY() - (size + gap + primary.getTextSize()) / 2;
-        int left = cardWindow.centerX() - size / 2;
-        if (arrow != null) {
-            arrow.setBounds(left, Math.round(top), left + size, Math.round(top) + size);
-            arrow.setAlpha(Math.round(255 * alpha));
-            arrow.draw(canvas);
-        }
+        float gap = side * .16f, top = cardWindow.exactCenterY() - (pin + gap + primary.getTextSize()) / 2;
+        draw(canvas, Ui.Icon.PIN, cardWindow.centerX(), Math.round(top + pin / 2f), pin, alpha);
         canvas.drawText(arrived, cardWindow.exactCenterX() - primary.measureText(arrived) / 2,
-                top + size + gap + primary.getTextSize() * .85f, primary);
+                top + pin + gap + primary.getTextSize() * .85f, primary);
     }
 
     private Ui.Icon iconFor(FloatingMenu.Control control) {

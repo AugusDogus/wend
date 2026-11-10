@@ -33,7 +33,7 @@ final class Ui {
     /** Controls that cannot be used right now keep their place at this opacity. */
     static final float DISABLED_ALPHA = 0.38f;
 
-    enum Icon { APPS, SETTINGS, PLAY, PAUSE, PREVIOUS, NEXT, CLOSE, BACK, ADD, REMOVE, UP, DOWN, FORWARD, FULLSCREEN }
+    enum Icon { APPS, SETTINGS, PLAY, PAUSE, PREVIOUS, NEXT, CLOSE, BACK, ADD, REMOVE, UP, DOWN, FORWARD, FULLSCREEN, PIN }
 
     private Ui() { }
 
@@ -182,6 +182,20 @@ final class Ui {
                     polyline(canvas, 20, 15, 20, 20, 15, 20);
                     polyline(canvas, 9, 20, 4, 20, 4, 15); break;
                 case PLAY: triangle(canvas, 7, 4, 20, 12, 7, 20); break;
+                case PIN: {
+                    // A map pin: a round head with a hole, drawn down to a point.
+                    Path pin = new Path();
+                    pin.moveTo(12, 2);
+                    pin.cubicTo(8.13f, 2, 5, 5.13f, 5, 9);
+                    pin.cubicTo(5, 14.25f, 12, 22, 12, 22);
+                    pin.cubicTo(12, 22, 19, 14.25f, 19, 9);
+                    pin.cubicTo(19, 5.13f, 15.87f, 2, 12, 2);
+                    pin.close();
+                    pin.addCircle(12, 9, 2.5f, Path.Direction.CW);
+                    pin.setFillType(Path.FillType.EVEN_ODD);
+                    canvas.drawPath(pin, paint);
+                    break;
+                }
                 case PAUSE:
                     canvas.drawRoundRect(6, 4, 10, 20, 1, 1, paint);
                     canvas.drawRoundRect(14, 4, 18, 20, 1, 1, paint); break;

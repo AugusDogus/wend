@@ -179,8 +179,10 @@ corner, default bottom right (the passenger side).
   (`NavigationCard.fittedTextSize`). The card
   fades in as the window reaches its corner and moves with it when dragged.
   At the destination Maps covers its map with an "Arriving at" sheet, so the
-  card fills the window, as Maps' own PiP does: the destination's pin above
-  "Arrived". Maps posts no arrival, only the place without a distance, as it
+  card fills the window, as Maps' own PiP does: green (`#1e8e3e`, where its
+  turn card keeps Maps' guidance color) with a map pin above "Arrived", in the
+  proportions measured from Maps' own PiP on the emulator
+  (`build/arrival/official/pip-arrived.png`). Maps posts no arrival, only the place without a distance, as it
   also posts a road for a second or two mid-route and "Rerouting..." (that one
   without an arrow). Wend takes it for arriving when it follows the last turn,
   whose distance is all that is left of the trip ("350 ft", of "0 min · 350 ft
@@ -1093,7 +1095,8 @@ for these checks unless noted.
   drew over it, Home returned Maps to its panel, and the next trip showed its
   turn card again. Maps' notification was logged through a reroute and a trip
   to a plain address (`reroute.log`, `address.log`), which is where the rule
-  for telling arrival comes from.
+  for telling arrival comes from. A trip to that plain address with Maps
+  floating showed "Arrived" the same way (`address/`).
 - **With lane guidance** Maps' own turn card is taller than the 100 dp the crop
   leaves out, so a strip of its lane arrows showed at the window's top. The crop
   now starts below the card as measured (`build/lanes/`): driven through Exit
