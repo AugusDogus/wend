@@ -287,6 +287,12 @@ final class LiveSurfaceWindow {
 
     void updateSource(RectF source) { if (running != null) running.updateSource(source); }
 
+    /**
+     * From now on a floating window shows {@code source} of its display, such as Maps' map under a
+     * next-turn card that came or went: at once where it rests, otherwise as it next rests.
+     */
+    void floatingSource(RectF source) { if (running != null) running.floatingSource(source); }
+
     private final class Running {
         final FloatingChrome overlay = new FloatingChrome(host);
         final float density = host.getResources().getDisplayMetrics().density;
@@ -309,6 +315,8 @@ final class LiveSurfaceWindow {
         RectF source;
         /** The region shown while it floats, if it differs from its card's. */
         RectF floatingSource;
+        /** {@link #floatingSource} changed during a motion that ends at rest in the corner. */
+        boolean floatedChanged;
         Runnable reached;
         /** Runs once it is drawn over its card, or as it is handed back to the card. */
         Runnable overCard;
@@ -490,6 +498,7 @@ final class LiveSurfaceWindow {
 
         void rest() {
             snapping = false;
+            if (floatedChanged) showFloated();
             touches.only(placement.rest(corner));
             if (playback.keepsControls()) menu(true);
         }
@@ -695,6 +704,20 @@ final class LiveSurfaceWindow {
             surface.input(new Rect());
             if (touches != null) touches.only(new Rect());
             animateTo(Target.GONE, FADE_MS, motion, () -> finish(true));
+        }
+
+        void floatingSource(RectF next) {
+            // A window that floats what its card shows has no part of its own.
+            if (floatingSource == null || floatingSource.equals(next)) return;
+            floatingSource = new RectF(next);
+            // A drag shows it with its next move, and a motion in flight as it comes to rest.
+            if (resting()) showFloated();
+            else floatedChanged = true;
+        }
+
+        void showFloated() {
+            floatedChanged = false;
+            show(SurfacePlacement.fit(floated(), placement.rest(corner)), radius, 1, 1);
         }
 
         void updateSource(RectF next) {

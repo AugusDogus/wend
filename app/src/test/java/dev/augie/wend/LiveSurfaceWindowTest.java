@@ -376,6 +376,45 @@ public class LiveSurfaceWindowTest {
         window.cancel();
     }
 
+    /** Maps' next-turn card can come or go while Maps floats; the map under it then moves at once. */
+    @Test public void aRestingWindowShowsANewPartOfItsDisplayAtOnce() throws Exception {
+        DrawnSurface surface = DrawnSurface.of(host);
+        card.layout(0, 0, 320, 180);
+        RectF panel = new RectF(0, 0, 833, 720), map = new RectF(236.5f, 150, 596.5f, 600);
+        RectF underCard = new RectF(236.5f, 220.5f, 596.5f, 670.5f);
+        Rect corner = new Rect(966, 334, 1256, 696);
+        window.openFloating(card, surface, panel, map, new Point(833, 720),
+                new FloatingPlacement(new Rect(0, 0, 1280, 720), 290, 362, 24),
+                FloatingPlacement.Corner.BOTTOM_RIGHT, LiveSurfaceWindow.Entry.FROM_CARD, listener(),
+                () -> events.add("restored"));
+        commitFrame();
+        settle();
+        assertEquals(map, surface.shown.get(surface.shown.size() - 1));
+        window.floatingSource(underCard);
+        assertEquals(underCard, surface.shown.get(surface.shown.size() - 1));
+        Rect at = new Rect();
+        surface.last().round(at);
+        assertEquals("In the same place", corner, at);
+        window.cancel();
+    }
+
+    /** Changed on its way to the corner, it shows the new part once it rests there. */
+    @Test public void aMovingWindowShowsANewPartOfItsDisplayOnceItRests() throws Exception {
+        DrawnSurface surface = DrawnSurface.of(host);
+        card.layout(0, 0, 320, 180);
+        RectF panel = new RectF(0, 0, 833, 720), map = new RectF(236.5f, 150, 596.5f, 600);
+        RectF underCard = new RectF(236.5f, 220.5f, 596.5f, 670.5f);
+        window.openFloating(card, surface, panel, map, new Point(833, 720),
+                new FloatingPlacement(new Rect(0, 0, 1280, 720), 290, 362, 24),
+                FloatingPlacement.Corner.BOTTOM_RIGHT, LiveSurfaceWindow.Entry.FROM_CARD, listener(),
+                () -> events.add("restored"));
+        commitFrame();
+        window.floatingSource(underCard);
+        settle();
+        assertEquals(underCard, surface.shown.get(surface.shown.size() - 1));
+        window.cancel();
+    }
+
     /** Feedback: tapped, floating Maps grew to a small area first and snapped to fullscreen later. */
     @Config(qualifiers = "w1280dp-h720dp-land-mdpi")
     @Test public void aHeldWindowGrowsStraightToItsResizedDisplay() throws Exception {
@@ -610,6 +649,8 @@ public class LiveSurfaceWindowTest {
      */
     private static final class DrawnSurface extends ActivityViewSurface {
         final List<RectF> drawn = new ArrayList<>();
+        /** The part of the display each placement showed. */
+        final List<RectF> shown = new ArrayList<>();
         boolean failing;
 
         private DrawnSurface(ActivityView view) throws ReflectiveOperationException {
@@ -627,12 +668,14 @@ public class LiveSurfaceWindowTest {
 
         @Override void attach(View destination, SurfacePlacement placement, float radius, float alpha) {
             drawn.add(placement.visible());
+            shown.add(new RectF(placement.crop));
         }
 
         @Override void place(SurfaceControl.Transaction transaction, SurfacePlacement placement, float radius,
                 float alpha) throws ReflectiveOperationException {
             if (failing) throw new IllegalStateException("The test compositor rejected the placement");
             drawn.add(placement.visible());
+            shown.add(new RectF(placement.crop));
             super.place(transaction, placement, radius, alpha);
         }
 

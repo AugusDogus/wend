@@ -125,7 +125,7 @@ final class EmbeddedMaps extends MapPanel {
         this.tasks = tasks;
         transition = new MapTransition(context, this);
         floating = new LiveSurfaceWindow(context, BuildConfig.APPLICATION_ID + " live map", "WendMap");
-        turns = floating::turnCard;
+        turns = this::turnCardChanged;
         floating.turnCard(NavigationNotifications.current());
         NavigationNotifications.listen(turns);
         context.getWindowManager().getDefaultDisplay().getRealSize(screen);
@@ -196,6 +196,16 @@ final class EmbeddedMaps extends MapPanel {
             Log.e("Wend", "ActivityView creation failed", error);
             showError("The map panel could not start. Open Maps from Apps while the display issue is checked.");
         }
+    }
+
+    /** Guidance began, ended, or reached its next step: floating Maps shows the card, and its map makes room. */
+    private void turnCardChanged(NavigationCard card) {
+        floating.turnCard(card);
+        boolean under = card != null;
+        // A tap taking the screen holds the window still and grows it from the crop it has.
+        if (under == cropUnderTurnCard || takeover != null || !floating.active()) return;
+        cropUnderTurnCard = under;
+        floating.floatingSource(floatingCrop());
     }
 
     private void watchTaskRemovals() {

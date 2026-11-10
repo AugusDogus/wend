@@ -1,6 +1,7 @@
 package dev.augie.wend;
 
 import android.app.Activity;
+import android.app.Notification;
 import android.app.ActivityView;
 import android.app.PendingIntent;
 import android.app.TaskStackListener;
@@ -10,9 +11,13 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Icon;
 import android.hardware.display.DisplayManager;
 import android.os.Looper;
+import android.os.Process;
+import android.service.notification.StatusBarNotification;
 import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
 import android.view.View;
@@ -155,6 +160,32 @@ public class EmbeddedMapsTest {
         assertEquals(List.of("video returns"), events);
         assertEquals("Maps was closed. Tap Open Maps to bring it back.", panelMessage(maps));
         maps.release();
+    }
+
+    /**
+     * The crop for floating Maps was chosen once, as it started floating. Guidance that began or
+     * ended while it floated left the card over the car, or the trip sheet's top showing.
+     */
+    @Test public void theMapMovesUnderATurnCardThatComesOrGoesWhileMapsFloats() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        NavigationNotifications notifications = new NavigationNotifications();
+        StatusBarNotification guidance = guidance();
+        try {
+            assertTrue(maps.floatAboveVideo(FloatingPlacement.Corner.BOTTOM_RIGHT, listener(),
+                    LiveSurfaceWindow.Entry.HELD_AT_CARD));
+            float density = host.getResources().getDisplayMetrics().density;
+            assertEquals(FloatingMapCrop.of(833, 720, density, false), floatingSource(maps));
+            notifications.onNotificationPosted(guidance);
+            assertEquals("Under the card", FloatingMapCrop.of(833, 720, density, true), floatingSource(maps));
+            notifications.onNotificationRemoved(guidance);
+            assertEquals("Without it", FloatingMapCrop.of(833, 720, density, false), floatingSource(maps));
+        } finally {
+            notifications.onListenerDisconnected();
+            maps.release();
+        }
     }
 
     /**
@@ -832,6 +863,27 @@ public class EmbeddedMapsTest {
         Field field = EmbeddedMaps.class.getDeclaredField("floating");
         field.setAccessible(true);
         return (LiveSurfaceWindow) field.get(maps);
+    }
+
+    /** Maps' ongoing guidance notification, as it posts it while navigating. */
+    private StatusBarNotification guidance() {
+        Notification notification = new Notification.Builder(host, "1_foreground_1")
+                .setSmallIcon(Icon.createWithBitmap(Bitmap.createBitmap(36, 36, Bitmap.Config.ARGB_8888)))
+                .setCategory(Notification.CATEGORY_NAVIGATION).setOngoing(true)
+                .setContentTitle("0 ft").setContentText("CA-20 W").build();
+        return new StatusBarNotification(EmbeddedMaps.PACKAGE, EmbeddedMaps.PACKAGE, 1, null, 10111, 0, 0,
+                notification, Process.myUserHandle(), 0);
+    }
+
+    /** The part of Maps' display its floating window shows. */
+    private static RectF floatingSource(EmbeddedMaps maps) throws ReflectiveOperationException {
+        Field running = LiveSurfaceWindow.class.getDeclaredField("running");
+        running.setAccessible(true);
+        Object window = running.get(floating(maps));
+        assertNotNull("Maps floats", window);
+        Field source = window.getClass().getDeclaredField("floatingSource");
+        source.setAccessible(true);
+        return (RectF) source.get(window);
     }
 
     /** Google Maps is installed, so Wend can ask Android to open it. */

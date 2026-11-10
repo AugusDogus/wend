@@ -164,7 +164,9 @@ corner, default bottom right (the passenger side).
   listener, hears; Wend allows itself to bind it as the system user
   (`setNotificationListenerAccessGranted`). With a card the crop moves 47 dp down
   (`FloatingMapCrop`), so the car, which Maps draws 468 of 720 px down in
-  guidance, stays above the card and the trip sheet's top goes under it. The card
+  guidance, stays above the card and the trip sheet's top goes under it. The crop
+  follows the card: if guidance begins or ends while Maps floats, the map moves
+  at once (`LiveSurfaceWindow.floatingSource`). The card
   fades in as the window reaches its corner and moves with it when dragged.
   Without guidance, or without the listener, Maps floats as before, without one.
 - **Enter.** Maps lifts out of its panel into its own overlay without moving,
