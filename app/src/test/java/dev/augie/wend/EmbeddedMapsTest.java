@@ -180,11 +180,11 @@ public class EmbeddedMapsTest {
             assertTrue(maps.floatAboveVideo(FloatingPlacement.Corner.BOTTOM_RIGHT, listener(),
                     LiveSurfaceWindow.Entry.HELD_AT_CARD));
             float density = host.getResources().getDisplayMetrics().density;
-            assertEquals(FloatingMapCrop.of(833, 720, density, false), floatingSource(maps));
+            assertEquals(FloatingMapCrop.of(833, 720, density, false, 0), floatingSource(maps));
             notifications.onNotificationPosted(guidance);
-            assertEquals("Under the card", FloatingMapCrop.of(833, 720, density, true), floatingSource(maps));
+            assertEquals("Under the card", FloatingMapCrop.of(833, 720, density, true, 0), floatingSource(maps));
             notifications.onNotificationRemoved(guidance);
-            assertEquals("Without it", FloatingMapCrop.of(833, 720, density, false), floatingSource(maps));
+            assertEquals("Without it", FloatingMapCrop.of(833, 720, density, false, 0), floatingSource(maps));
         } finally {
             notifications.onListenerDisconnected();
             maps.release();

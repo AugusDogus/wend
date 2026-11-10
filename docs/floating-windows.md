@@ -166,7 +166,15 @@ corner, default bottom right (the passenger side).
   (`FloatingMapCrop`), so the car, which Maps draws 468 of 720 px down in
   guidance, stays above the card and the trip sheet's top goes under it. The crop
   follows the card: if guidance begins or ends while Maps floats, the map moves
-  at once (`LiveSurfaceWindow.floatingSource`). A road name too long for the
+  at once (`LiveSurfaceWindow.floatingSource`). Maps' own card is not always
+  95 dp tall: it ends 143 px down with one road line, 188 px with two and 273 px
+  with lane arrows, a darker strip along its bottom. Maps tells no one, so while
+  a window floats with Wend's card, `MapsCardEdge` reads the top of Maps'
+  display once a second (Android 10's layer capture, off the main thread) and
+  finds where the card's flat color ends down two columns inside its sides; the
+  crop then starts 2 px below it, no lower than keeps Maps' trip sheet under
+  Wend's card (`FloatingMapCrop`). A display with no such card on both sides
+  keeps the usual crop. A road name too long for the
   window shrinks to no less than two thirds of its size before it is cut
   (`NavigationCard.fittedTextSize`). The card
   fades in as the window reaches its corner and moves with it when dragged.
@@ -1073,7 +1081,13 @@ for these checks unless noted.
   to a plain address (`reroute.log`, `address.log`), which is where the rule
   for telling arrival comes from.
 - **With lane guidance** Maps' own turn card is taller than the 100 dp the crop
-  leaves out, so a strip of its lane arrows shows at the window's top.
+  leaves out, so a strip of its lane arrows showed at the window's top. The crop
+  now starts below the card as measured (`build/lanes/`): driven through Exit
+  551 with Maps floating, in Maps' night colors and again in its day colors, no
+  screenshot showed any of the card (`float-sheet.png`, `day-sheet.png`), and
+  the map returned to its usual place after the exit. With Maps floating above
+  live video in guidance, SurfaceFlinger's missed-frame count did not change
+  over three 40 s windows with the once-a-second read running (`cost.sh`).
 - **The crop follows the card**: with Maps floating, revoking Wend's notification
   access removed the card and moved the map up, with none of the trip sheet
   showing; restoring it brought both back (`card-follows-and-long-name.png`).

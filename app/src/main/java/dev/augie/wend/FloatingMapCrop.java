@@ -9,7 +9,9 @@ import android.graphics.RectF;
  * on real Maps in guidance in the 70% panel: its next-turn card covers the top 95 dp, its trip
  * sheet the bottom 75 dp, and its side buttons the outer 77 dp, while the car stays centered.
  * Under the next-turn card ({@link NavigationCard}) the same portrait sits lower, so the car stays in
- * the part of the map the card leaves visible and the trip sheet's top goes under the card.
+ * the part of the map the card leaves visible and the trip sheet's top goes under the card. Maps'
+ * own card is taller with a second road line or lane arrows ({@link MapsCardEdge}); the portrait
+ * then starts below it.
  */
 final class FloatingMapCrop {
     private static final int TOP_DP = 100, BOTTOM_DP = 80;
@@ -17,19 +19,28 @@ final class FloatingMapCrop {
     private static final float ASPECT = .8f;
     /** Moves the portrait down under the turn card: in guidance Maps draws the car 468 of 720 px down. */
     private static final int UNDER_CARD_DP = 47;
+    /** Maps' trip sheet starts this far above the display's bottom. */
+    private static final int SHEET_DP = 75;
+    /** Past the rows where Maps' card blends into the map. */
+    private static final int BELOW_CARD_PX = 2;
 
     private FloatingMapCrop() { }
 
     /**
      * @param underTurnCard whether the floating window draws the next-turn card across its bottom
+     * @param mapsCardBottom the row just below Maps' own card in the display, or 0 if not known
      * @return the crop in the display's own pixels, or the whole display if it is too small for one
      */
-    static RectF of(int width, int height, float density, boolean underTurnCard) {
-        float shift = underTurnCard ? UNDER_CARD_DP * density : 0;
-        float top = TOP_DP * density + shift;
+    static RectF of(int width, int height, float density, boolean underTurnCard, int mapsCardBottom) {
         float shown = height - TOP_DP * density - BOTTOM_DP * density;
         float across = shown * ASPECT;
         if (shown <= 0 || across > width) return new RectF(0, 0, width, height);
+        float top = TOP_DP * density;
+        if (underTurnCard) {
+            // No lower than keeps Maps' trip sheet under the window's card.
+            float lowest = height - SHEET_DP * density - shown * (1 - NavigationCard.BAND);
+            top = Math.max(top + UNDER_CARD_DP * density, Math.min(mapsCardBottom + BELOW_CARD_PX, lowest));
+        }
         float left = (width - across) / 2;
         return new RectF(left, top, left + across, top + shown);
     }

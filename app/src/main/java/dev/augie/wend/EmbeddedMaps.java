@@ -20,6 +20,8 @@ import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.BooleanSupplier;
 
 /** Owns the Android 10 map display and its task transitions, without a root shell. */
@@ -37,6 +39,10 @@ final class EmbeddedMaps extends MapPanel {
     private final NavigationNotifications.Listener turns;
     /** Whether floating Maps' crop leaves room for the next-turn card; chosen as it starts floating. */
     private boolean cropUnderTurnCard;
+    private final ExecutorService cardReader = Executors.newSingleThreadExecutor();
+    private final MapsCardEdge mapsCard;
+    /** The row just below Maps' own card in its display while a window floats under Wend's card, else 0. */
+    private int mapsCardBottom;
     /**
      * Watches app switches exactly while Maps floats above the video app that Wend opened on
      * the main display, rather than above the live video Wend presents itself.
@@ -135,6 +141,8 @@ final class EmbeddedMaps extends MapPanel {
         this.resumesGuidance = resumesGuidance;
         transition = new MapTransition(context, this);
         floating = new LiveSurfaceWindow(context, BuildConfig.APPLICATION_ID + " live map", "WendMap");
+        mapsCard = new MapsCardEdge(cardReader, context.getResources().getDisplayMetrics().density,
+                this::topOfDisplay, this::mapsCardMeasured);
         turns = this::turnCardChanged;
         floating.turnCard(NavigationNotifications.current());
         NavigationNotifications.listen(turns);
@@ -215,6 +223,28 @@ final class EmbeddedMaps extends MapPanel {
         // A tap taking the screen holds the window still and grows it from the crop it has.
         if (under == cropUnderTurnCard || takeover != null || !floating.active()) return;
         cropUnderTurnCard = under;
+        watchMapsCard();
+        floating.floatingSource(floatingCrop());
+    }
+
+    /** Maps' own card is measured while a window floats with Wend's card: the window's map starts below it. */
+    private void watchMapsCard() {
+        if (floating.active() && cropUnderTurnCard) { mapsCard.start(); return; }
+        mapsCard.stop();
+        mapsCardBottom = 0;
+    }
+
+    private MapsCardEdge.Read topOfDisplay(int rows) throws ReflectiveOperationException {
+        if (activityView == null) return null;
+        ActivityViewSurface surface = new ActivityViewSurface(activityView, ActivityViewSurface.PreviewInput.FORWARDED);
+        Rect top = new Rect(0, 0, getWidth(), Math.min(rows, getHeight()));
+        return () -> surface.still(top);
+    }
+
+    private void mapsCardMeasured(int bottom) {
+        // A tap taking the screen holds the window still and grows it from the crop it has.
+        if (bottom == mapsCardBottom || takeover != null || !floating.active()) return;
+        mapsCardBottom = bottom;
         floating.floatingSource(floatingCrop());
     }
 
@@ -385,6 +415,7 @@ final class EmbeddedMaps extends MapPanel {
             displayLifecycle.returnToHost();
             return false;
         }
+        watchMapsCard();
         return true;
     }
 
@@ -487,7 +518,7 @@ final class EmbeddedMaps extends MapPanel {
         if (takeover != started) return;
         stopWaitingForTakeover();
         Point display = started.display;
-        floating.focus(FloatingMapCrop.of(display.x, display.y, getResources().getDisplayMetrics().density, cropUnderTurnCard),
+        floating.focus(FloatingMapCrop.of(display.x, display.y, getResources().getDisplayMetrics().density, cropUnderTurnCard, mapsCardBottom),
                 display, () -> {
                     if (takeover != started) return;
                     // A frozen frame of exactly what Maps shows now covers the task move. Read from
@@ -608,7 +639,7 @@ final class EmbeddedMaps extends MapPanel {
 
     /** The map alone, in portrait, from the panel display Maps keeps while it floats. */
     private RectF floatingCrop() {
-        return FloatingMapCrop.of(getWidth(), getHeight(), getResources().getDisplayMetrics().density, cropUnderTurnCard);
+        return FloatingMapCrop.of(getWidth(), getHeight(), getResources().getDisplayMetrics().density, cropUnderTurnCard, mapsCardBottom);
     }
 
     /** The floating video's visual weight, in the map crop's shape, anywhere on Wend's fullscreen. */
@@ -620,6 +651,7 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     private void floatingEnded() {
+        watchMapsCard();
         stopWatchingApps();
         if (displayLifecycle != null) displayLifecycle.returnToHost();
         if (hostActive) {
@@ -834,6 +866,8 @@ final class EmbeddedMaps extends MapPanel {
     void release() {
         taskRemovals.stop();
         NavigationNotifications.stop(turns);
+        mapsCard.stop();
+        cardReader.shutdownNow();
         cancelPendingFloat();
         cancelTakeover();
         floating.release();

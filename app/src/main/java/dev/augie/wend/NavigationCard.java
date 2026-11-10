@@ -15,7 +15,7 @@ import android.text.TextUtils;
  */
 final class NavigationCard {
     /** Maps' own PiP card takes the bottom 26.5% of its window. */
-    private static final float BAND = .265f;
+    static final float BAND = .265f;
 
     /** The notification's key, to tell when that notification goes. */
     final String key;
