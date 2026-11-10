@@ -185,11 +185,29 @@ corner, default bottom right (the passenger side).
   video for about 100 ms (both seen in recordings).
 - **Removed** without motion, as the fullscreen video is, when another app comes
   to the front (Wend stops) or the video presentation ends.
-- **Maps closed while floating** (its task removed): the panel's "Maps was
-  closed" message and its Open Maps button stay after Home returns Maps' empty
-  display to the panel. The same message appears when Maps is gone as a tapped
-  floating video becomes fullscreen, instead of Maps floating. Wend does
-  not relaunch Maps on its own in either case.
+- **Maps gone while floating.** Android reports every task it destroys
+  (`onTaskRemoved`, heard by `TaskRemovalWatcher`), and Wend then checks whether
+  Maps still has one (`EmbeddedMaps.taskRemoved`). If not, its empty floating
+  window closes at once, however Maps went:
+  - **Its process died** (killed, or out of memory). Android 10 reports only the
+    destroyed task, without the `onTaskRemovalStarted` a closed or crashed app
+    gets (`ActivityStack.removeHistoryRecordsForAppLocked`, android-10.0.0_r47),
+    so nothing noticed: an empty grey window kept floating, and Home left the
+    panel showing Maps' empty display. Maps now reopens in its panel, at once if
+    Wend shows (also beneath the live video), otherwise as Wend next shows. The
+    same holds when it dies in its panel, which stayed empty until Home was
+    pressed. Maps starts over, at its map or route preview, without guidance. If
+    it dies again within 30 s of being reopened, the panel says "Maps keeps
+    closing. Tap Open Maps to try again." instead of reopening it in a loop.
+  - **Closed or crashed** (`onTaskRemovalStarted`): the panel says "Maps was
+    closed. Tap Open Maps to bring it back." and Maps is not reopened by itself.
+    Home asks for Maps in its panel again, as it always does.
+  - A float's return to the panel ends by asking for Maps there if Maps has no
+    task and no message shows (`floatingEnded`), as every other return to the
+    panel does, so a report that never arrives cannot leave the panel empty.
+
+  The "Maps was closed" message also appears when Maps is gone as a tapped
+  floating video becomes fullscreen, instead of Maps floating.
 
 ## Live Maps floats above the video app Wend opens
 
@@ -932,6 +950,44 @@ guidance screenshots of the first pass (`07-*`), not on the real-apps
 emulator; the fixture's map only shows that the crop and shape apply. The
 hairline edge was kept: on the fixture it is barely visible, and it is meant
 for a dark video over a night map, which was not checked here.
+
+### Maps dying, November 9 (sixth pass)
+
+Found by chaos testing on the real Google Maps and YouTube emulator
+(`road-home-google-api29`, release variant with the next-turn card): killing
+Maps' process left its panel black. Evidence is under `build/maps-death/` and
+`build/chaos-fixed/` in the `float-turn-card` worktree.
+
+To reproduce before the fix: with guidance in the panel, open YouTube from the
+dock so Maps floats, run `adb shell am force-stop com.google.android.apps.maps`
+(or `kill -9` its process, as a low-memory kill does), and press Home.
+
+- Before, 8 of 8 runs (force-stop and `kill -9`, above the video app and above
+  the live video, on this build and on `0e3b628`): an empty grey window kept
+  floating; after Home the panel showed only its embedded display's background
+  layer (`Background for -SurfaceView - dev.augie.wend/...MainActivity` was the
+  one visible layer there), with the panel's message view present but hidden
+  and nothing in Wend's log. Killed at Home and left alone, the panel stayed
+  empty for the 31 s watched, until Home reopened Maps. A crash (`am crash`) or
+  a removed task did get the "Maps was closed" message, with the grey window
+  still floating until Home (`before-*.png`).
+- After: killed at Home (force-stop and `kill -9`), Maps was back in its panel
+  within 2 s without a touch; killed while floating, the window closed and
+  Home showed Maps in its panel, above the video app and above the live video;
+  crashed or removed while floating, the window closed and the panel showed its
+  message until Home reopened Maps; killed twice 10 s apart, the panel showed
+  "Maps keeps closing" and Open Maps reopened it (`after-*.png`).
+- Chaos runs on the fixed build, each followed by Home and checks for crashes,
+  ANRs, leftover floating windows, and Maps alive on its panel's display with
+  the panel neither empty nor a message (`build/chaos-fixed/chaos.sh`): Maps
+  killed floating above the video app (force-stop, `kill -9`), above the live
+  video (`kill -9`, crash), in its panel, fullscreen, 200 ms into floating, and
+  200 ms into Home's return, all passed; so did the earlier scenarios (rapid
+  dock, card and Home presses, taps mid-entry, menu mashing, random taps, Home
+  racing each float, notification access revoked, YouTube killed while its video
+  floats, Wend killed), with guidance still running after each.
+- Not covered: the PX6, a real low-memory kill, and Maps dying while Wend is
+  behind another app for long. A reopened Maps does not resume guidance.
 
 ### Known issue: Back is dropped in fullscreen Maps on the emulators
 

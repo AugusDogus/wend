@@ -12,6 +12,7 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Build;
 import android.os.Process;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.Display;
@@ -40,6 +41,15 @@ final class EmbeddedMaps extends MapPanel {
      * the main display, rather than above the live video Wend presents itself.
      */
     private TaskFrontWatcher overVideoApp;
+    /** Maps' process dying is reported only as its task destroyed; see {@link #taskRemoved}. */
+    private final TaskRemovalWatcher taskRemovals = new TaskRemovalWatcher("WendMap", this::taskRemoved);
+    /**
+     * Maps that dies again this soon after Wend reopened it cannot stay up, as when memory is short:
+     * reopening it each time would loop, so the panel offers Open Maps instead.
+     */
+    private static final long REOPEN_AGAIN_MS = 30_000;
+    /** When Wend last reopened Maps because its process had died, in uptime ms, or null if never. */
+    private Long reopenedAt;
     private final Point screen = new Point();
     /** Maps leaves display 0 beneath the fullscreen video once Wend has drawn behind it. */
     private boolean returningBeneath;
@@ -151,6 +161,7 @@ final class EmbeddedMaps extends MapPanel {
                     try {
                         displayLifecycle.retainTasksOnRemoval();
                         state = State.READY;
+                        watchTaskRemovals();
                         if (hostActive) launch();
                     } catch (ReflectiveOperationException | RuntimeException error) {
                         Log.e("Wend", "Could not initialize the persistent map display", error);
@@ -181,6 +192,56 @@ final class EmbeddedMaps extends MapPanel {
         } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
             Log.e("Wend", "ActivityView creation failed", error);
             showError("The map panel could not start. Open Maps from Apps while the display issue is checked.");
+        }
+    }
+
+    private void watchTaskRemovals() {
+        try { taskRemovals.start(); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("WendMap", "Could not watch for Maps' task being destroyed. If Maps' process dies, its"
+                    + " panel stays empty until Home is pressed, which reopens Maps", error);
+        }
+    }
+
+    /**
+     * Android destroyed a task. If Maps now has none, its display, in its panel or floating, is
+     * empty: black, or whatever color Maps last reported. Its empty floating window closes.
+     *
+     * <p>If no message says Maps closed, its process died (killed, or out of memory): Android 10
+     * reports that no other way. Maps then reopens in its panel: now if Wend shows, otherwise when
+     * it next does ({@link #resume}).
+     */
+    private void taskRemoved(int taskId) {
+        // A launch has no task yet.
+        if (state != State.READY || launching || !mapsGone("after task " + taskId + " was destroyed")) return;
+        cancelTakeover();
+        cancelPendingFloat();
+        // A message already says Maps closed and offers Open Maps: nothing reopens under it.
+        boolean reopen = status.getVisibility() != View.VISIBLE;
+        if (reopen) {
+            long now = SystemClock.uptimeMillis();
+            boolean again = reopenedAt != null && now - reopenedAt < REOPEN_AGAIN_MS;
+            Log.w("WendMap", "Maps has no task left after task " + taskId + " was destroyed, so its process died. "
+                    + (again ? "Wend reopened it " + (now - reopenedAt) + " ms ago, so the panel offers Open Maps"
+                            + " instead of reopening it again"
+                            : hostActive ? "Reopening it in its panel" : "It reopens in its panel when Wend next shows"));
+            if (again) {
+                showError("Maps keeps closing. Tap Open Maps to try again.");
+                reopen = false;
+            } else reopenedAt = now;
+        }
+        // The end of the float asks for Maps in its panel, unless a message stays (floatingEnded).
+        if (floating.active()) floating.dismiss("Maps is gone");
+        else if (reopen) launch();
+    }
+
+    /** @return whether Maps has no task, so only opening it again shows it; false if that cannot be checked */
+    private boolean mapsGone(String when) {
+        try { return tasks.find() == null; }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("WendMap", "Could not check for Maps' task " + when + "; if Maps is gone, its panel stays"
+                    + " empty until Home is pressed, which reopens Maps", error);
+            return false;
         }
     }
 
@@ -546,6 +607,9 @@ final class EmbeddedMaps extends MapPanel {
                 Log.e("WendMap", "Could not return floating Maps to its panel input and geometry", error);
                 showError("Maps could not return to this panel. Tap Open Maps; your route is kept.");
             }
+            // Maps' process can die while it floats (see taskRemoved). Every other return to the
+            // panel asks for Maps there; this one did not, and the panel stayed black after Home.
+            if (status.getVisibility() != View.VISIBLE && mapsGone("as its floating window returned")) launch();
         }
     }
 
@@ -739,6 +803,7 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     void release() {
+        taskRemovals.stop();
         NavigationNotifications.stop(turns);
         cancelPendingFloat();
         cancelTakeover();

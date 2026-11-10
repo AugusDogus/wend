@@ -39,6 +39,7 @@ import org.robolectric.shadows.ShadowViewRootImpl;
 import org.robolectric.shadows.ShadowWindowManagerImpl;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.robolectric.Shadows.shadowOf;
@@ -52,13 +53,7 @@ public class EmbeddedMapsTest {
     private final List<String> events = new ArrayList<>();
 
     @Test public void reusingAnExistingTaskDoesNotWaitForTaskCreated() throws Exception {
-        ResolveInfo resolved = new ResolveInfo();
-        resolved.activityInfo = new ActivityInfo();
-        resolved.activityInfo.packageName = EmbeddedMaps.PACKAGE;
-        resolved.activityInfo.name = "com.google.android.maps.MapsActivity";
-        Intent launcher = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-                .setPackage(EmbeddedMaps.PACKAGE);
-        shadowOf(host.getPackageManager()).addResolveInfoForIntent(launcher, resolved);
+        installMaps();
         EmbeddedMaps maps = new EmbeddedMaps(host);
         ReusingActivityView view = new ReusingActivityView(host);
         Field activityView = EmbeddedMaps.class.getDeclaredField("activityView");
@@ -158,6 +153,192 @@ public class EmbeddedMapsTest {
         shadowOf(Looper.getMainLooper()).idle();
         assertEquals(List.of("video returns"), events);
         assertEquals("Maps was closed. Tap Open Maps to bring it back.", panelMessage(maps));
+        maps.release();
+    }
+
+    /**
+     * Maps' process dies (killed, or out of memory) in its panel. Android 10 then destroys its task
+     * and reports only that, with no onTaskRemovalStarted: the panel's display stayed empty and
+     * black until Home was pressed.
+     */
+    @Test public void mapsKilledInItsPanelReopensThere() throws Exception {
+        installMaps();
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        tasks.maps = null;
+        taskRemovals(maps).onTaskRemoved(7);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertReopened("Wend reopens Maps in its panel");
+        assertNull(panelMessage(maps));
+        maps.release();
+    }
+
+    @Test public void anotherTaskRemovedLeavesMapsAlone() throws Exception {
+        installMaps();
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        taskRemovals(maps).onTaskRemoved(40);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertNull(shadowOf(host).getNextStartedActivity());
+        assertNull(panelMessage(maps));
+        maps.release();
+    }
+
+    /** A message already tells the driver Maps is gone and offers Open Maps: nothing reopens under it. */
+    @Test public void aTaskRemovedWhileThePanelOffersOpenMapsReopensNothing() throws Exception {
+        installMaps();
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        tasks.maps = null;
+        callback(maps).onTaskRemovalStarted(7);
+        shadowOf(Looper.getMainLooper()).idle();
+        taskRemovals(maps).onTaskRemoved(7);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertNull(shadowOf(host).getNextStartedActivity());
+        assertEquals("Maps was closed. Tap Open Maps to bring it back.", panelMessage(maps));
+        maps.release();
+    }
+
+    /** Closed or crashed while floating, Maps got its message but left an empty window floating until Home. */
+    @Test public void mapsClosedWhileFloatingClosesItsEmptyWindowAndKeepsItsMessageUntilHome() throws Exception {
+        installMaps();
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        assertTrue(maps.floatAboveVideo(FloatingPlacement.Corner.BOTTOM_RIGHT, listener(),
+                LiveSurfaceWindow.Entry.HELD_AT_CARD));
+        maps.leavePanel();
+        tasks.maps = null;
+        // A close or a crash is reported as it starts, and again once the task is destroyed.
+        callback(maps).onTaskRemovalStarted(7);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertTrue(floating(maps).active());
+        taskRemovals(maps).onTaskRemoved(7);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertFalse("The empty window closes", floating(maps).active());
+        assertNull("Maps that was closed is not reopened by itself", shadowOf(host).getNextStartedActivity());
+        assertEquals("Maps was closed. Tap Open Maps to bring it back.", panelMessage(maps));
+        // Home asks for Maps in its panel, as it does whenever Maps is not floating.
+        maps.home(() -> events.add("video returns"));
+        assertEquals(List.of("video returns"), events);
+        assertReopened("Home reopens Maps in its panel");
+        assertNull(panelMessage(maps));
+        maps.release();
+    }
+
+    /** Killed while floating above the video app, Maps left an empty window floating there. */
+    @Test public void mapsKilledWhileFloatingAboveTheVideoAppClosesItsWindowAndReopensOnHome() throws Exception {
+        installMaps();
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        maps.suspend();
+        assertTrue(maps.floatAboveVideoApp(FloatingPlacement.Corner.BOTTOM_RIGHT, listener()));
+        maps.suspend();
+        assertTrue(floating(maps).active());
+        tasks.maps = null;
+        taskRemovals(maps).onTaskRemoved(7);
+        // No time passes: only the report of the destroyed task can have closed it.
+        shadowOf(Looper.getMainLooper()).idle();
+        assertFalse("The empty window closes", floating(maps).active());
+        assertNull("Wend is hidden: Maps reopens once its panel shows", shadowOf(host).getNextStartedActivity());
+        // Home.
+        maps.resume();
+        assertReopened("Home reopens Maps in its panel");
+        assertNull(panelMessage(maps));
+        maps.release();
+    }
+
+    /** Above the live video Wend still shows, so Maps reopens in its panel beneath the video at once. */
+    @Test public void mapsKilledWhileFloatingAboveTheLiveVideoClosesItsWindowAndReopensInItsPanel() throws Exception {
+        installMaps();
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        assertTrue(maps.floatAboveVideo(FloatingPlacement.Corner.BOTTOM_RIGHT, listener(),
+                LiveSurfaceWindow.Entry.HELD_AT_CARD));
+        maps.leavePanel();
+        assertTrue(floating(maps).active());
+        tasks.maps = null;
+        taskRemovals(maps).onTaskRemoved(7);
+        // No time passes: only the report of the destroyed task can have closed it.
+        shadowOf(Looper.getMainLooper()).idle();
+        assertFalse("The empty window closes", floating(maps).active());
+        assertReopened("Maps reopens in its panel beneath the video");
+        assertNull(panelMessage(maps));
+        maps.release();
+    }
+
+    /**
+     * Even if Android's report of the dead task never arrives, Home from a float checks for Maps as
+     * every other return to the panel does. It did not: the panel stayed black after Home.
+     */
+    @Test public void mapsGoneUnnoticedWhileFloatingReopensWhenItsWindowReturnsToThePanel() throws Exception {
+        installMaps();
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        maps.suspend();
+        assertTrue(maps.floatAboveVideoApp(FloatingPlacement.Corner.BOTTOM_RIGHT, listener()));
+        maps.suspend();
+        tasks.maps = null;
+        // Home: Wend starts, then its window gets a surface and the float returns to the panel.
+        maps.resume();
+        hostSurfaceCreated(maps);
+        assertFalse(floating(maps).active());
+        assertReopened("Maps reopens in its panel");
+        assertNull(panelMessage(maps));
+        maps.release();
+    }
+
+    /** Maps that dies again right after Wend reopened it would otherwise be reopened in a loop. */
+    @Test public void mapsDyingAgainRightAfterReopeningOffersOpenMapsInstead() throws Exception {
+        installMaps();
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        tasks.maps = null;
+        taskRemovals(maps).onTaskRemoved(7);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertReopened("Wend reopens Maps once");
+        tasks.maps = new MapsTask.Task(8, panelDisplay(maps), 1);
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(5));
+        tasks.maps = null;
+        taskRemovals(maps).onTaskRemoved(8);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertNull("Not reopened a second time", shadowOf(host).getNextStartedActivity());
+        assertEquals("Maps keeps closing. Tap Open Maps to try again.", panelMessage(maps));
+        maps.release();
+    }
+
+    @Test public void mapsDyingLongAfterReopeningReopensAgain() throws Exception {
+        installMaps();
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        tasks.maps = null;
+        taskRemovals(maps).onTaskRemoved(7);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertReopened("Wend reopens Maps");
+        tasks.maps = new MapsTask.Task(8, panelDisplay(maps), 1);
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(2));
+        tasks.maps = null;
+        taskRemovals(maps).onTaskRemoved(8);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertReopened("Wend reopens Maps again");
+        assertNull(panelMessage(maps));
         maps.release();
     }
 
@@ -623,6 +804,38 @@ public class EmbeddedMapsTest {
         Field field = EmbeddedMaps.class.getDeclaredField("floating");
         field.setAccessible(true);
         return (LiveSurfaceWindow) field.get(maps);
+    }
+
+    /** Google Maps is installed, so Wend can ask Android to open it. */
+    private void installMaps() {
+        ResolveInfo resolved = new ResolveInfo();
+        resolved.activityInfo = new ActivityInfo();
+        resolved.activityInfo.packageName = EmbeddedMaps.PACKAGE;
+        resolved.activityInfo.name = "com.google.android.maps.MapsActivity";
+        Intent launcher = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                .setPackage(EmbeddedMaps.PACKAGE);
+        shadowOf(host.getPackageManager()).addResolveInfoForIntent(launcher, resolved);
+    }
+
+    /** Wend asked Android to open Maps, once. */
+    private void assertReopened(String message) {
+        Intent started = shadowOf(host).getNextStartedActivity();
+        assertNotNull(message, started);
+        assertEquals(EmbeddedMaps.PACKAGE, started.getComponent().getPackageName());
+        assertNull("Only once", shadowOf(host).getNextStartedActivity());
+    }
+
+    /** The callback Android calls for each task it destroys, however that came about. */
+    private static TaskStackListener taskRemovals(EmbeddedMaps maps) throws ReflectiveOperationException {
+        Field watcher = EmbeddedMaps.class.getDeclaredField("taskRemovals");
+        watcher.setAccessible(true);
+        Object value = watcher.get(maps);
+        assertTrue("Maps watches for its task being destroyed", value instanceof TaskRemovalWatcher);
+        Field registration = TaskRemovalWatcher.class.getDeclaredField("registration");
+        registration.setAccessible(true);
+        Object listener = registration.get(value);
+        assertTrue(listener instanceof TaskStackListener);
+        return (TaskStackListener) listener;
     }
 
     /** The app-switch callback Android calls while Maps floats above the video app. */

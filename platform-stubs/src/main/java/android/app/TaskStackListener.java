@@ -7,4 +7,5 @@ package android.app;
 public abstract class TaskStackListener extends android.os.Binder {
     public void onTaskCreated(int taskId, android.content.ComponentName componentName) throws android.os.RemoteException { }
     public void onTaskMovedToFront(ActivityManager.RunningTaskInfo taskInfo) throws android.os.RemoteException { }
+    public void onTaskRemoved(int taskId) throws android.os.RemoteException { }
 }
