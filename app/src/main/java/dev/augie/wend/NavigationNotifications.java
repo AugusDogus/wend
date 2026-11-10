@@ -86,7 +86,7 @@ public final class NavigationNotifications extends NotificationListenerService {
 
     private static NavigationCard cardOf(StatusBarNotification notification) {
         return NavigationCard.from(notification.getPackageName(), notification.getKey(),
-                notification.getNotification(), EmbeddedMaps.PACKAGE);
+                notification.getNotification(), EmbeddedMaps.PACKAGE, current);
     }
 
     private static void publish(NavigationCard card) {

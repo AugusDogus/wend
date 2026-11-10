@@ -208,8 +208,13 @@ final class FloatingChrome extends View {
         canvas.clipPath(cardClip);
         band.setColor(next.color);
         band.setAlpha(Math.round(Color.alpha(next.color) * alpha));
-        canvas.drawRect(at, band);
+        canvas.drawRect(next.arrived ? cardWindow : at, band);
         int side = at.height();
+        if (next.arrived) {
+            drawArrived(canvas, side, alpha);
+            canvas.restore();
+            return;
+        }
         band.setColor(ARROW_SHADE);
         band.setAlpha(Math.round(Color.alpha(ARROW_SHADE) * alpha));
         canvas.drawRect(at.left, at.top, at.left + side, at.bottom, band);
@@ -239,6 +244,28 @@ final class FloatingChrome extends View {
             }
         }
         canvas.restore();
+    }
+
+    /**
+     * As Maps' own PiP at the destination: the destination's pin above "Arrived", in the middle of
+     * the window, which is filled with Maps' guidance color.
+     *
+     * @param side the height of the turn card this replaces, which sizes the pin and the text alike
+     */
+    private void drawArrived(Canvas canvas, int side, float alpha) {
+        String arrived = getContext().getString(R.string.maps_arrived);
+        int size = Math.round(side * .6f);
+        primary.setTextSize(side * .3f);
+        primary.setAlpha(Math.round(255 * alpha));
+        float gap = side * .1f, top = cardWindow.exactCenterY() - (size + gap + primary.getTextSize()) / 2;
+        int left = cardWindow.centerX() - size / 2;
+        if (arrow != null) {
+            arrow.setBounds(left, Math.round(top), left + size, Math.round(top) + size);
+            arrow.setAlpha(Math.round(255 * alpha));
+            arrow.draw(canvas);
+        }
+        canvas.drawText(arrived, cardWindow.exactCenterX() - primary.measureText(arrived) / 2,
+                top + size + gap + primary.getTextSize() * .85f, primary);
     }
 
     private Ui.Icon iconFor(FloatingMenu.Control control) {

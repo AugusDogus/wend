@@ -28,11 +28,14 @@ public class NavigationNotificationsTest {
 
     @After public void disconnect() { notifications.onListenerDisconnected(); }
 
-    private StatusBarNotification guidance() {
+    private StatusBarNotification guidance() { return guidance("0 ft", "CA-20 W", "9 min · 8.4 mi · 6:02 AM PST ETA"); }
+
+    private StatusBarNotification guidance(String distance, String road, String trip) {
         Notification notification = new Notification.Builder(context, "1_foreground_1")
                 .setSmallIcon(Icon.createWithBitmap(Bitmap.createBitmap(36, 36, Bitmap.Config.ARGB_8888)))
+                .setLargeIcon(Icon.createWithBitmap(Bitmap.createBitmap(54, 54, Bitmap.Config.ARGB_8888)))
                 .setCategory(Notification.CATEGORY_NAVIGATION).setOngoing(true)
-                .setContentTitle("0 ft").setContentText("CA-20 W").build();
+                .setContentTitle(distance).setContentText(road).setSubText(trip).build();
         return new StatusBarNotification(EmbeddedMaps.PACKAGE, EmbeddedMaps.PACKAGE, 1, null, 10111, 0, 0,
                 notification, Process.myUserHandle(), 0);
     }
@@ -49,5 +52,12 @@ public class NavigationNotificationsTest {
         assertTrue("Still within the window", NavigationNotifications.guidedWithin(5000));
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
         assertFalse("Guidance that ended a while ago", NavigationNotifications.guidedWithin(5000));
+    }
+
+    @Test public void mapsArrivesWhenItsLastTurnLosesItsDistance() {
+        notifications.onNotificationPosted(guidance("150 ft", "1340 N State St", "0 min · 150 ft · 5:57 AM PST ETA"));
+        assertFalse(NavigationNotifications.current().arrived);
+        notifications.onNotificationPosted(guidance("", "1340 N State St", "0 min · 100 ft · 5:57 AM PST ETA"));
+        assertTrue(NavigationNotifications.current().arrived);
     }
 }

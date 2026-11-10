@@ -170,6 +170,14 @@ corner, default bottom right (the passenger side).
   window shrinks to no less than two thirds of its size before it is cut
   (`NavigationCard.fittedTextSize`). The card
   fades in as the window reaches its corner and moves with it when dragged.
+  At the destination Maps covers its map with an "Arriving at" sheet, so the
+  card fills the window, as Maps' own PiP does: the destination's pin above
+  "Arrived". Maps posts no arrival, only the place without a distance, as it
+  also posts a road for a second or two mid-route and "Rerouting..." (that one
+  without an arrow). Wend takes it for arriving when it follows the last turn,
+  whose distance is all that is left of the trip ("350 ft", of "0 min · 350 ft
+  · 5:53 AM PST ETA"). A Wend that first hears the notification at the
+  destination cannot tell and shows the place's name in the usual card.
   Without guidance, or without the listener, Maps floats as before, without one.
 - **Enter.** Maps lifts out of its panel into its own overlay without moving,
   the video expands from its card beneath it, then Maps shrinks into its corner
@@ -1055,8 +1063,15 @@ for these checks unless noted.
   cut hard ("Exit 551 N..."); they now shrink first ("Exit 551 N State...",
   `card-follows-and-long-name.png`).
 - **At arrival** Maps keeps its notification (no distance, the destination's
-  name) and draws a place sheet instead of its map, so the card shows the
-  destination and the window above it a cropped part of that sheet.
+  name) and draws a place sheet instead of its map, so the card showed the
+  destination and the window above it a cropped part of that sheet. The window
+  now shows "Arrived" there (`build/arrival/`): driven to the motel with Maps
+  floating, the card filled the window from the first screenshot after Maps'
+  notification lost its distance (`shots/288.png`) and not before, the menu
+  drew over it, Home returned Maps to its panel, and the next trip showed its
+  turn card again. Maps' notification was logged through a reroute and a trip
+  to a plain address (`reroute.log`, `address.log`), which is where the rule
+  for telling arrival comes from.
 - **With lane guidance** Maps' own turn card is taller than the 100 dp the crop
   leaves out, so a strip of its lane arrows shows at the window's top.
 - **The crop follows the card**: with Maps floating, revoking Wend's notification

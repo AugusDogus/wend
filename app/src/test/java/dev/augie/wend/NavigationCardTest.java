@@ -11,8 +11,10 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 29)
@@ -35,7 +37,7 @@ public class NavigationCardTest {
     }
 
     @Test public void readsTheNextTurnFromMapsGuidanceNotification() {
-        NavigationCard card = NavigationCard.from(MAPS, KEY, guidance().build(), MAPS);
+        NavigationCard card = NavigationCard.from(MAPS, KEY, guidance().build(), MAPS, null);
         assertNotNull(card);
         assertEquals(KEY, card.key);
         assertEquals("0 ft", card.distance.toString());
@@ -46,20 +48,66 @@ public class NavigationCardTest {
     }
 
     @Test public void ignoresOtherAppsAndMapsOtherNotifications() {
-        assertNull(NavigationCard.from("com.example.nav", KEY, guidance().build(), MAPS));
-        assertNull(NavigationCard.from(MAPS, KEY, guidance().setCategory(Notification.CATEGORY_STATUS).build(), MAPS));
+        assertNull(NavigationCard.from("com.example.nav", KEY, guidance().build(), MAPS, null));
+        assertNull(NavigationCard.from(MAPS, KEY, guidance().setCategory(Notification.CATEGORY_STATUS).build(), MAPS, null));
     }
 
     @Test public void ignoresGuidanceWithNothingToShow() {
-        assertNull(NavigationCard.from(MAPS, KEY, guidance().setContentTitle("").setContentText(null).build(), MAPS));
+        assertNull(NavigationCard.from(MAPS, KEY, guidance().setContentTitle("").setContentText(null).build(), MAPS, null));
     }
 
     @Test public void keepsATurnWithoutAnArrowOrRoad() {
         NavigationCard card = NavigationCard.from(MAPS, KEY,
-                guidance().setLargeIcon((Icon) null).setContentText(null).build(), MAPS);
+                guidance().setLargeIcon((Icon) null).setContentText(null).build(), MAPS, null);
         assertNotNull(card);
         assertNull(card.arrow);
         assertEquals("", card.road.toString());
+    }
+
+    private NavigationCard card(Notification.Builder guidance, NavigationCard previous) {
+        return NavigationCard.from(MAPS, KEY, guidance.build(), MAPS, previous);
+    }
+
+    /** The last turn, to the destination: its distance is the whole trip's. */
+    private Notification.Builder lastTurn() {
+        return guidance().setContentTitle("350 ft").setContentText("Motel 6 Ukiah, CA - North  / 1340 N State St")
+                .setSubText("0 min · 350 ft · 5:53 AM PST ETA");
+    }
+
+    /** What Maps posted at the destination on a simulated drive: the place, and no distance. */
+    private Notification.Builder atDestination() {
+        return guidance().setContentTitle("").setContentText("Motel 6 Ukiah, CA - North")
+                .setSubText("0 min · 100 ft · 5:53 AM PST ETA");
+    }
+
+    /**
+     * Maps posts no arrival. Its notification only loses its distance, which is arriving when it
+     * follows the last turn. Until then a floating Maps window showed a piece of the "Arriving at"
+     * sheet that covers Maps' map there.
+     */
+    @Test public void losingTheDistanceAfterTheLastTurnIsArriving() {
+        NavigationCard lastTurn = card(lastTurn(), null);
+        assertFalse(lastTurn.arrived);
+        NavigationCard arrived = card(atDestination(), lastTurn);
+        assertTrue(arrived.arrived);
+        assertTrue("Maps posts it again and again", card(atDestination(), arrived).arrived);
+        assertFalse("The next trip's first turn", card(guidance(), arrived).arrived);
+    }
+
+    @Test public void losingTheDistanceAnywhereElseIsNotArriving() {
+        // Maps posted "CA-20 W" without its "0 ft" for a second as guidance began.
+        assertFalse(card(guidance().setContentTitle(""), card(guidance(), null)).arrived);
+        // "0.1 mi" to the turn is not the "10.1 mi" left of the trip.
+        NavigationCard near = card(guidance().setContentTitle("0.1 mi").setSubText("9 min · 10.1 mi · 5:23 PM PST ETA"), null);
+        assertFalse(card(guidance().setContentTitle(""), near).arrived);
+        // "Rerouting..." comes without an arrow or the trip.
+        assertFalse(card(guidance().setContentTitle("").setContentText("Rerouting...").setSubText(null)
+                .setLargeIcon((Icon) null), card(lastTurn(), null)).arrived);
+        // Another notification's last turn.
+        NavigationCard other = NavigationCard.from(MAPS, "other", lastTurn().build(), MAPS, null);
+        assertFalse(card(atDestination(), other).arrived);
+        // First heard at the destination, Wend cannot tell.
+        assertFalse(card(atDestination(), null).arrived);
     }
 
     /**
