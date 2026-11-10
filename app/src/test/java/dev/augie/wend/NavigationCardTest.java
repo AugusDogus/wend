@@ -62,6 +62,17 @@ public class NavigationCardTest {
         assertEquals("", card.road.toString());
     }
 
+    /**
+     * On a simulated drive the 290 px window cut "Exit 551 N State St / Ukiah" to "Exit 551 N...".
+     * A name too long for its room shrinks first, to no less than two thirds, and is only then cut.
+     */
+    @Test public void aLongRoadNameShrinksBeforeItIsCut() {
+        assertEquals("A name that fits keeps its size", 29f, NavigationCard.fittedTextSize(29, 120, 190), .01f);
+        assertEquals("One a little too long shrinks to fit", 29f * 190 / 240, NavigationCard.fittedTextSize(29, 240, 190), .01f);
+        assertEquals("A much longer one stops at two thirds", 29f * 2 / 3, NavigationCard.fittedTextSize(29, 600, 190), .01f);
+        assertEquals("No room leaves it alone", 29f, NavigationCard.fittedTextSize(29, 240, 0), .01f);
+    }
+
     @Test public void theBandSpansTheWindowsBottomAsMapsOwnPipCardDoes() {
         // Floating Maps at rest in the bottom right corner: 193 x 241 dp at the head unit's 1.5 density.
         Rect window = new Rect(966, 334, 1256, 696);

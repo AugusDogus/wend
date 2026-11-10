@@ -54,6 +54,20 @@ final class NavigationCard {
         return TextUtils.isEmpty(value) ? "" : value;
     }
 
+    /** A name too long for the card shrinks to no less than this share of its size before it is cut. */
+    private static final float SMALLEST_TEXT = 2 / 3f;
+
+    /**
+     * @param size the text size a name is drawn at when it fits
+     * @param width how wide the name is at that size
+     * @param room how wide it may be
+     * @return the size to draw it at: smaller if it is too wide, down to two thirds; the rest is cut
+     */
+    static float fittedTextSize(float size, float width, float room) {
+        if (room <= 0 || width <= room) return size;
+        return size * Math.max(SMALLEST_TEXT, room / width);
+    }
+
     /** Where the card sits in a floating window at {@code window}: across its bottom, scaled with it. */
     static Rect band(Rect window) {
         int top = window.bottom - Math.round(window.height() * BAND);

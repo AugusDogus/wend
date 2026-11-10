@@ -224,6 +224,8 @@ final class FloatingChrome extends View {
         CharSequence second = road ? next.distance : next.eta;
         float padding = side * .18f, textLeft = at.left + side + padding, room = at.right - padding - textLeft;
         primary.setTextSize(side * .3f);
+        // "Exit 551 N State St / Ukiah" does not fit the narrow window at full size.
+        primary.setTextSize(NavigationCard.fittedTextSize(side * .3f, primary.measureText(first, 0, first.length()), room));
         secondary.setTextSize(side * .2f);
         primary.setAlpha(Math.round(255 * alpha));
         secondary.setAlpha(Math.round(222 * alpha));

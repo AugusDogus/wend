@@ -166,7 +166,9 @@ corner, default bottom right (the passenger side).
   (`FloatingMapCrop`), so the car, which Maps draws 468 of 720 px down in
   guidance, stays above the card and the trip sheet's top goes under it. The crop
   follows the card: if guidance begins or ends while Maps floats, the map moves
-  at once (`LiveSurfaceWindow.floatingSource`). The card
+  at once (`LiveSurfaceWindow.floatingSource`). A road name too long for the
+  window shrinks to no less than two thirds of its size before it is cut
+  (`NavigationCard.fittedTextSize`). The card
   fades in as the window reaches its corner and moves with it when dragged.
   Without guidance, or without the listener, Maps floats as before, without one.
 - **Enter.** Maps lifts out of its panel into its own overlay without moving,
@@ -1034,6 +1036,43 @@ dock so Maps floats, run `adb shell am force-stop com.google.android.apps.maps`
   was guiding within 12 s of Home. With the setting off, Maps stayed at its
   route preview. The service was off again after each run
   (`enabled_accessibility_services` empty).
+
+### The next-turn card on a drive, the rebase, and frame timing, November 9 and 10 (seventh pass)
+
+`float-turn-card` was rebased onto `integrate` (the music-app setting); one
+conflict, in `MediaPanelTest`, kept the music tests and the removal of the
+ended-playback test. The pip-hook LSPosed module was disabled on the emulator
+for these checks unless noted.
+
+- **A simulated drive** of the 13.9 km route (CA-20, US-101 S, Exit 551, N State
+  St, the motel), one position a second through `agent-device settings location
+  set`, with Maps floating above YouTube (`build/turn-card/drive/`). Maps'
+  notification went through every step (3.6 mi to US-101 S down to 150 ft, "Stay
+  on US-101 S", "Exit 551 N State St / Ukiah", "N State St", the destination) and
+  the card showed the same distance and road at each of the 16 samples compared
+  (`card-sheet.png`), with the arrow of each maneuver (merge, straight, exit
+  ramp, right turn, destination pin) drawn cleanly in white. Long names were
+  cut hard ("Exit 551 N..."); they now shrink first ("Exit 551 N State...",
+  `card-follows-and-long-name.png`).
+- **At arrival** Maps keeps its notification (no distance, the destination's
+  name) and draws a place sheet instead of its map, so the card shows the
+  destination and the window above it a cropped part of that sheet.
+- **With lane guidance** Maps' own turn card is taller than the 100 dp the crop
+  leaves out, so a strip of its lane arrows shows at the window's top.
+- **The crop follows the card**: with Maps floating, revoking Wend's notification
+  access removed the card and moved the map up, with none of the trip sheet
+  showing; restoring it brought both back (`card-follows-and-long-name.png`).
+- **Frame timing** (`build/timing-rebased/`, SurfaceFlinger layer traces, three
+  runs a path after a warm-up, the video live in its card). Home from the
+  fullscreen video with Maps floating, which dropped 3 to 5 frames in the pass
+  before the rebase, dropped none in 12 of 13 runs and one frame in the other
+  (worst gap 17 to 19 ms, once 32 ms): none in 7 runs with the module disabled,
+  and none in 5 of 6 with it enabled. Why it did before is not known, and
+  nothing was changed for it. Maps
+  from the dock and Home from there each dropped exactly one frame in all 9
+  runs. Opening the video from the dock dropped none in 14 of 17 runs and one
+  frame once; twice, both in the first measured run after setup, Maps' shrink
+  into its corner stalled (gaps of 84 and 134 ms), cause unknown.
 
 ### Known issue: Back is dropped in fullscreen Maps on the emulators
 
