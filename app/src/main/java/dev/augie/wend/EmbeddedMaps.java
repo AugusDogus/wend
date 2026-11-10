@@ -5,12 +5,14 @@ import android.app.Activity;
 import android.app.ActivityOptions;
 import android.app.PendingIntent;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Build;
+import android.os.DropBoxManager;
 import android.os.Process;
 import android.os.SystemClock;
 import android.util.Log;
@@ -39,6 +41,9 @@ final class EmbeddedMaps extends MapPanel {
     private final NavigationNotifications.Listener turns;
     /** Whether floating Maps' crop leaves room for the next-turn card; chosen as it starts floating. */
     private boolean cropUnderTurnCard;
+    private static final String CLOSED = "Maps was closed. Tap Open Maps to bring it back.";
+    /** Android files a crash as the app dies, up to this long before or after its task is reported closing. */
+    private static final int CRASHED_BEFORE_MS = 5_000, CRASH_FILED_MS = 1_000;
     private final ExecutorService cardReader = Executors.newSingleThreadExecutor();
     private final MapsCardEdge mapsCard;
     /** The row just below Maps' own card in its display while a window floats under Wend's card, else 0. */
@@ -194,10 +199,11 @@ final class EmbeddedMaps extends MapPanel {
                 }
                 @Override public void onTaskRemovalStarted(int taskId) {
                     launching = false;
+                    long at = System.currentTimeMillis();
                     post(() -> {
                         if (state != State.READY) return;
                         try {
-                            if (tasks.find() == null) showError("Maps was closed. Tap Open Maps to bring it back.");
+                            if (tasks.find() == null) mapsClosed(at);
                         } catch (ReflectiveOperationException | RuntimeException error) {
                             Log.e("Wend", "Could not check Maps after task removal", error);
                             showError("Maps task status could not be checked. Tap Open Maps to retry.");
@@ -248,6 +254,37 @@ final class EmbeddedMaps extends MapPanel {
         floating.floatingSource(floatingCrop());
     }
 
+    /**
+     * Android said Maps' last task is closing: the driver closed Maps, or Maps crashed. A crashed
+     * Maps reopens like one whose process was killed ({@link #taskRemoved}); a closed one stays
+     * closed behind its message.
+     *
+     * @param at when Android said so, in wall-clock ms
+     */
+    private void mapsClosed(long at) {
+        if (mapsCrashed(at)) return;
+        showError(CLOSED);
+        // Android files a crash on another thread, which can finish after the task is gone.
+        postDelayed(() -> {
+            if (state != State.READY || status.getVisibility() != View.VISIBLE
+                    || !CLOSED.contentEquals(message.getText()) || !mapsCrashed(at)
+                    || !mapsGone("after its crash was filed")) return;
+            status.setVisibility(View.GONE);
+            if (reopensDead("after it crashed")) launch();
+        }, CRASH_FILED_MS);
+    }
+
+    private boolean mapsCrashed(long closedAt) {
+        try {
+            DropBoxManager dropBox = (DropBoxManager) getContext().getSystemService(Context.DROPBOX_SERVICE);
+            return dropBox != null && AppCrashes.since(dropBox, PACKAGE, closedAt - CRASHED_BEFORE_MS);
+        } catch (RuntimeException error) {
+            Log.w("WendMap", "Could not read Android's crash log to tell whether Maps crashed or was closed."
+                    + " Treating it as closed: its panel offers Open Maps, which also restores its route", error);
+            return false;
+        }
+    }
+
     private void watchTaskRemovals() {
         try { taskRemovals.start(); }
         catch (ReflectiveOperationException | RuntimeException error) {
@@ -270,24 +307,33 @@ final class EmbeddedMaps extends MapPanel {
         cancelTakeover();
         cancelPendingFloat();
         // A message already says Maps closed and offers Open Maps: nothing reopens under it.
-        boolean reopen = status.getVisibility() != View.VISIBLE;
-        if (reopen) {
-            long now = SystemClock.uptimeMillis();
-            boolean again = reopenedAt != null && now - reopenedAt < REOPEN_AGAIN_MS;
-            Log.w("WendMap", "Maps has no task left after task " + taskId + " was destroyed, so its process died. "
-                    + (again ? "Wend reopened it " + (now - reopenedAt) + " ms ago, so the panel offers Open Maps"
-                            + " instead of reopening it again"
-                            : hostActive ? "Reopening it in its panel" : "It reopens in its panel when Wend next shows"));
-            if (again) {
-                showError("Maps keeps closing. Tap Open Maps to try again.");
-                reopen = false;
-            } else reopenedAt = now;
-            // Asked as Maps next opens (launchNew), which is on Home if Wend is hidden now.
-            resumeGuidance = resumesGuidance.getAsBoolean() && NavigationNotifications.guidedWithin(GUIDING_MS);
-        }
+        boolean reopen = status.getVisibility() != View.VISIBLE
+                && reopensDead("after task " + taskId + " was destroyed, so its process died");
         // The end of the float asks for Maps in its panel, unless a message stays (floatingEnded).
         if (floating.active()) floating.dismiss("Maps is gone");
         else if (reopen) launch();
+    }
+
+    /**
+     * Maps is gone without the driver closing it. Unless it also went less than
+     * {@link #REOPEN_AGAIN_MS} after Wend last reopened it, it is to reopen, and to resume its
+     * guidance if it guided and the setting allows.
+     *
+     * @param how what happened, for the log
+     * @return whether to reopen it; if not, a message offers Open Maps
+     */
+    private boolean reopensDead(String how) {
+        long now = SystemClock.uptimeMillis();
+        boolean again = reopenedAt != null && now - reopenedAt < REOPEN_AGAIN_MS;
+        Log.w("WendMap", "Maps has no task left " + how + ". "
+                + (again ? "Wend reopened it " + (now - reopenedAt) + " ms ago, so the panel offers Open Maps"
+                        + " instead of reopening it again"
+                        : hostActive ? "Reopening it in its panel" : "It reopens in its panel when Wend next shows"));
+        if (again) showError("Maps keeps closing. Tap Open Maps to try again.");
+        else reopenedAt = now;
+        // Asked as Maps next opens (launchNew), which is on Home if Wend is hidden now.
+        resumeGuidance = resumesGuidance.getAsBoolean() && NavigationNotifications.guidedWithin(GUIDING_MS);
+        return !again;
     }
 
     /** @return whether Maps has no task, so only opening it again shows it; false if that cannot be checked */
@@ -472,7 +518,7 @@ final class EmbeddedMaps extends MapPanel {
             if (existing == null) {
                 Log.w("WendMap", "No Maps task to return beneath the video; Maps does not float,"
                         + " and the panel says Maps was closed and offers Open Maps");
-                showError("Maps was closed. Tap Open Maps to bring it back.");
+                showError(CLOSED);
                 cancelPendingFloat();
                 return;
             }

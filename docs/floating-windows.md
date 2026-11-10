@@ -240,9 +240,13 @@ press it:
 - **When.** Only for a Maps whose process died while it guided, or within 5 s
   of its guidance notification going (`NavigationNotifications.guidedWithin`),
   and only as Wend opens it again (`EmbeddedMaps.launchNew`): at once in its
-  panel or beneath the live video, or on Home if Wend was hidden. A Maps the
-  driver closed, or one that crashed and shows "Maps was closed", is not
-  resumed.
+  panel or beneath the live video, or on Home if Wend was hidden. A Maps that
+  crashed counts as died: Android reports its task like one the driver closed
+  (`onTaskRemovalStarted`), so Wend looks for the crash in Android's drop box
+  (`AppCrashes`: `data_app_crash`, `system_app_crash` and their `native`
+  kinds, first line `Process: com.google.android.apps.maps`, filed up to 5 s
+  before the task closed or 1 s after). A Maps the driver closed has none, and
+  stays closed behind "Maps was closed".
 - **How.** Maps' guidance notification names no destination (its content intent
   only opens `MapsActivity`), so Wend cannot hand the trip back to Maps with a
   navigation link. `GuidanceResume` is an accessibility service, the way Android
@@ -256,9 +260,14 @@ press it:
   `maps_start_button` ("Start") stands in only if Maps has none of them. Wend turns it on only for that wait, by adding it
   to `enabled_accessibility_services` as the system user, and it hears only
   Maps' package.
-- **Limits.** It presses whatever route Maps restored. If Maps restores none
-  (seen once, after two deaths 10 s apart), nothing is pressed and Maps stays
-  open at its map. The emulator's Maps has only English strings, so the label
+- **Limits.** It presses whatever route Maps restored. If Maps restores none,
+  nothing is pressed and Maps stays open at its map. Maps restores none for a
+  trip that is nearly over: killed 934 m from the motel it came back to its
+  home screen (3 of 3), killed 1114 m from it or further (1.4 km, 7.7 km, the
+  start) it restored the route every time (`build/guidance-resume/`). Wend
+  cannot start that trip itself: the destination is in none of Maps'
+  guidance notification, its content intent, its task's intents, its
+  navigation service's dump or its accessibility tree while it guides. The emulator's Maps has only English strings, so the label
   from Maps' strings was checked there in English only (it pressed "Start"
   labelled `[Start]`). A running
   UI test session (`UiAutomation`, as the device tool's snapshot helper holds)

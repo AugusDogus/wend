@@ -33,6 +33,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.Test;
+import android.os.DropBoxManager;
+import java.nio.charset.StandardCharsets;
+import android.content.Context;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
@@ -264,6 +267,83 @@ public class EmbeddedMapsTest {
         shadowOf(Looper.getMainLooper()).idle();
         assertNull(shadowOf(host).getNextStartedActivity());
         assertEquals("Maps was closed. Tap Open Maps to bring it back.", panelMessage(maps));
+        maps.release();
+    }
+
+    /** Files a crash of Maps in Android's drop box, as Android 10 does when an app crashes. */
+    private void fileMapsCrash() {
+        DropBoxManager dropBox = (DropBoxManager) host.getSystemService(Context.DROPBOX_SERVICE);
+        shadowOf(dropBox).addData("system_app_crash", System.currentTimeMillis(),
+                ("Process: " + EmbeddedMaps.PACKAGE + "\nPID: 26629\n").getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Android reports a crashed Maps as it does one the driver closed, so its panel said "Maps was
+     * closed" and waited for a tap while guidance was lost, though the Maps that tap opens restores
+     * its route. Android files each crash; a Maps it filed reopens like one whose process was killed.
+     */
+    @Test public void mapsThatCrashedWhileGuidingReopensAndIsAskedToResume() throws Exception {
+        installMaps();
+        resumesGuidance = true;
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        NavigationNotifications notifications = new NavigationNotifications();
+        StatusBarNotification guidance = guidance();
+        try {
+            notifications.onNotificationPosted(guidance);
+            fileMapsCrash();
+            notifications.onNotificationRemoved(guidance);
+            tasks.maps = null;
+            callback(maps).onTaskRemovalStarted(7);
+            shadowOf(Looper.getMainLooper()).idle();
+            taskRemovals(maps).onTaskRemoved(7);
+            shadowOf(Looper.getMainLooper()).idle();
+            assertNull("No message asks for a tap", panelMessage(maps));
+            assertReopened("Wend reopens Maps in its panel");
+            assertTrue("And asks for Maps' Start to be pressed", guidanceResumeRequested());
+        } finally {
+            notifications.onListenerDisconnected();
+            maps.release();
+        }
+    }
+
+    /** Android files a crash on another thread, which can finish just after Maps' task is gone. */
+    @Test public void aCrashFiledJustAfterMapsClosedStillReopensIt() throws Exception {
+        installMaps();
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        tasks.maps = null;
+        callback(maps).onTaskRemovalStarted(7);
+        shadowOf(Looper.getMainLooper()).idle();
+        taskRemovals(maps).onTaskRemoved(7);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertEquals("Maps was closed. Tap Open Maps to bring it back.", panelMessage(maps));
+        assertNull(shadowOf(host).getNextStartedActivity());
+        fileMapsCrash();
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1));
+        assertNull(panelMessage(maps));
+        assertReopened("Wend reopens Maps in its panel");
+        maps.release();
+    }
+
+    /** A Maps the driver closed stays closed: no crash was filed. */
+    @Test public void mapsTheDriverClosedStaysClosed() throws Exception {
+        installMaps();
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        tasks.maps = null;
+        callback(maps).onTaskRemovalStarted(7);
+        shadowOf(Looper.getMainLooper()).idle();
+        taskRemovals(maps).onTaskRemoved(7);
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(5));
+        assertEquals("Maps was closed. Tap Open Maps to bring it back.", panelMessage(maps));
+        assertNull(shadowOf(host).getNextStartedActivity());
         maps.release();
     }
 
