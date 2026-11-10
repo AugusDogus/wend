@@ -6,6 +6,7 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 29)
@@ -23,18 +24,31 @@ public class FloatingMapCropTest {
      * left and the compass and search buttons start 718 px from it, and the car is centered.
      */
     @Test public void aPortraitMapBetweenMapsOwnControls() {
-        RectF crop = FloatingMapCrop.of(833, 720, 1.5f);
+        RectF crop = FloatingMapCrop.of(833, 720, 1.5f, false);
         assertRect(new RectF(236.5f, 150, 596.5f, 600), crop);
         assertEquals(.8f, crop.width() / crop.height(), .001f);
     }
 
+    /**
+     * With the next-turn card across the window's bottom 26.5%, the same portrait moves 47 dp down:
+     * the car, which Maps draws 468 px down in guidance, sits just above the middle of the map left
+     * visible, and the top of the trip sheet goes under the card.
+     */
+    @Test public void underTheTurnCardTheCarStaysInView() {
+        RectF crop = FloatingMapCrop.of(833, 720, 1.5f, true);
+        assertRect(new RectF(236.5f, 220.5f, 596.5f, 670.5f), crop);
+        float visibleBottom = crop.bottom - crop.height() * .265f;
+        assertTrue(468 < visibleBottom - 60);
+        assertTrue(607 > visibleBottom);
+    }
+
     @Test public void theNarrowerPanelKeepsTheSameMapCentered() {
-        RectF crop = FloatingMapCrop.of(713, 720, 1.5f);
+        RectF crop = FloatingMapCrop.of(713, 720, 1.5f, false);
         assertRect(new RectF(176.5f, 150, 536.5f, 600), crop);
     }
 
     @Test public void aDisplayTooSmallForThePortraitShowsWhole() {
-        assertRect(new RectF(0, 0, 300, 200), FloatingMapCrop.of(300, 200, 1.5f));
-        assertRect(new RectF(0, 0, 250, 720), FloatingMapCrop.of(250, 720, 1.5f));
+        assertRect(new RectF(0, 0, 300, 200), FloatingMapCrop.of(300, 200, 1.5f, false));
+        assertRect(new RectF(0, 0, 250, 720), FloatingMapCrop.of(250, 720, 1.5f, false));
     }
 }

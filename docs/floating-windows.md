@@ -155,6 +155,18 @@ corner, default bottom right (the passenger side).
   keeps its panel layout, so outside guidance (search, route preview) the crop
   shows whatever Maps draws there, sheets included. Its card, the panel, still
   shows the whole display, and the window moves between the two.
+- **Next turn.** Since the crop leaves out Maps' next-turn card, Wend draws its
+  own across the window's bottom 26.5%, as Maps' own PiP card sits under its map:
+  the turn arrow in a darker square, the road above the distance to the turn, in
+  Maps' guidance color (`NavigationCard`, drawn by `FloatingChrome`). They come
+  from Maps' ongoing guidance notification (category `navigation`: large icon,
+  title, text, subtext, color), which `NavigationNotifications`, a notification
+  listener, hears; Wend allows itself to bind it as the system user
+  (`setNotificationListenerAccessGranted`). With a card the crop moves 47 dp down
+  (`FloatingMapCrop`), so the car, which Maps draws 468 of 720 px down in
+  guidance, stays above the card and the trip sheet's top goes under it. The card
+  fades in as the window reaches its corner and moves with it when dragged.
+  Without guidance, or without the listener, Maps floats as before, without one.
 - **Enter.** Maps lifts out of its panel into its own overlay without moving,
   the video expands from its card beneath it, then Maps shrinks into its corner
   (280 ms each). Moving both at once uncovers parts of the empty panel.
@@ -264,7 +276,9 @@ What still differs from Android 10's PiP:
 - These are Wend's windows, not system PiP: the apps are not told they are in
   PiP, so YouTube draws its full watch page (cropped to the video) and Maps its
   panel layout (cropped to the map) rather than their own PiP layouts. Maps'
-  next-turn instruction is therefore not in the floating window.
+  next-turn instruction comes from its guidance notification and is drawn by
+  Wend, so it shows what that notification holds (arrow, road, distance), not
+  Maps' lane guidance.
 - The windows exist only while Wend presents them: they float above fullscreen
   Maps, the fullscreen video, or the video app Wend opened, and close when any
   other app comes to the front. System PiP floats above every app.

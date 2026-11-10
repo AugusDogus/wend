@@ -70,6 +70,8 @@ final class LiveSurfaceWindow {
     private final String title;
     private final String tag;
     private final WindowManager windows;
+    /** The next turn drawn across the bottom of a floating Maps window, or null. */
+    private NavigationCard turnCard;
     private final Point screen = new Point();
     private final BroadcastReceiver home = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -172,10 +174,17 @@ final class LiveSurfaceWindow {
         start(next, null);
     }
 
+    /** Draws {@code card}, the next turn, across the bottom of the window while it floats; null removes it. */
+    void turnCard(NavigationCard card) {
+        turnCard = card;
+        if (running != null) running.overlay.turnCard(card);
+    }
+
     private void start(Running next, Runnable reached) {
         if (active()) return;
         if (windows == null || !next.card.isLaidOut()) { next.fallback.run(); return; }
         running = next;
+        next.overlay.turnCard(turnCard);
         next.reached = reached;
         try {
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(screen.x, screen.y,
@@ -460,6 +469,8 @@ final class LiveSurfaceWindow {
                 if (outline != null) outline.place(transaction, placed.visible(), cornerRadius, outlineOpacity * alpha);
                 transaction.apply();
             } catch (ReflectiveOperationException | RuntimeException error) { fail(error); return; }
+            // The turn card belongs to the floating window: it shows as the window reaches its corner.
+            overlay.frame(drawn(), cornerRadius, outlineOpacity * alpha);
             if (snapping) touches.only(drawn());
         }
 

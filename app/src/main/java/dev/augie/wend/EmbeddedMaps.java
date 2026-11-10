@@ -32,6 +32,9 @@ final class EmbeddedMaps extends MapPanel {
     private final MapTransition transition;
     /** Live Maps floating above the fullscreen video. Its display keeps the panel's size. */
     private final LiveSurfaceWindow floating;
+    private final NavigationNotifications.Listener turns;
+    /** Whether floating Maps' crop leaves room for the next-turn card; chosen as it starts floating. */
+    private boolean cropUnderTurnCard;
     /**
      * Watches app switches exactly while Maps floats above the video app that Wend opened on
      * the main display, rather than above the live video Wend presents itself.
@@ -112,6 +115,9 @@ final class EmbeddedMaps extends MapPanel {
         this.tasks = tasks;
         transition = new MapTransition(context, this);
         floating = new LiveSurfaceWindow(context, BuildConfig.APPLICATION_ID + " live map", "WendMap");
+        turns = floating::turnCard;
+        floating.turnCard(NavigationNotifications.current());
+        NavigationNotifications.listen(turns);
         context.getWindowManager().getDefaultDisplay().getRealSize(screen);
         setBackground(Ui.surface(context, Ui.PANEL, 10));
         status = new LinearLayout(context);
@@ -281,6 +287,7 @@ final class EmbeddedMaps extends MapPanel {
                     ActivityViewSurface.PreviewInput.FORWARDED);
             // Before anything can hide Wend: its surface changes must not move this root.
             displayLifecycle.presentElsewhere();
+            cropUnderTurnCard = NavigationNotifications.current() != null;
             floating.openFloating(this, surface, new RectF(0, 0, getWidth(), getHeight()), floatingCrop(),
                     new Point(getWidth(), getHeight()), floatingPlacement(), corner, entry, listener,
                     this::floatingEnded);
@@ -394,7 +401,7 @@ final class EmbeddedMaps extends MapPanel {
         if (takeover != started) return;
         stopWaitingForTakeover();
         Point display = started.display;
-        floating.focus(FloatingMapCrop.of(display.x, display.y, getResources().getDisplayMetrics().density),
+        floating.focus(FloatingMapCrop.of(display.x, display.y, getResources().getDisplayMetrics().density, cropUnderTurnCard),
                 display, () -> {
                     if (takeover != started) return;
                     // A frozen frame of exactly what Maps shows now covers the task move. Read from
@@ -515,7 +522,7 @@ final class EmbeddedMaps extends MapPanel {
 
     /** The map alone, in portrait, from the panel display Maps keeps while it floats. */
     private RectF floatingCrop() {
-        return FloatingMapCrop.of(getWidth(), getHeight(), getResources().getDisplayMetrics().density);
+        return FloatingMapCrop.of(getWidth(), getHeight(), getResources().getDisplayMetrics().density, cropUnderTurnCard);
     }
 
     /** The floating video's visual weight, in the map crop's shape, anywhere on Wend's fullscreen. */
@@ -732,6 +739,7 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     void release() {
+        NavigationNotifications.stop(turns);
         cancelPendingFloat();
         cancelTakeover();
         floating.release();

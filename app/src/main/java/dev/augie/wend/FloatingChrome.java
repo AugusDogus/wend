@@ -9,15 +9,21 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
+import android.text.TextPaint;
+import android.text.TextUtils;
 import android.view.View;
 import java.util.EnumMap;
 import java.util.Map;
 
 /**
- * Draws what a floating window's overlay shows above the live display: Android 10's PiP menu (a dim
- * scrim with its controls) and, while the window is dragged, the dismiss target at the bottom. The
+ * Draws what a floating window's overlay shows above the live display: floating Maps' next-turn card
+ * ({@link NavigationCard}), Android 10's PiP menu (a dim scrim with its controls) and, while the
+ * window is dragged, the dismiss target at the bottom. The
  * display's surface sits below this view's window buffer, so these draw over it.
  */
 final class FloatingChrome extends View {
@@ -49,6 +55,16 @@ final class FloatingChrome extends View {
     /** A frozen frame of the display held over the window, or null. */
     private Bitmap still;
     private float stillAlpha;
+    /** Darkens the arrow's square, as Maps' own PiP card does. */
+    private static final int ARROW_SHADE = 0x33000000;
+    private final Paint band = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final TextPaint primary = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    private final TextPaint secondary = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    private final Path cardClip = new Path();
+    private final Rect cardWindow = new Rect();
+    private NavigationCard card;
+    private Drawable arrow;
+    private float cardRadius, cardAlpha;
 
     FloatingChrome(Context context) {
         super(context);
@@ -60,6 +76,9 @@ final class FloatingChrome extends View {
         menuFade.addUpdateListener(value -> { menuAlpha = (float) value.getAnimatedValue(); invalidate(); });
         targetFade.setDuration(FADE_MS);
         targetFade.addUpdateListener(value -> { targetAlpha = (float) value.getAnimatedValue(); invalidate(); });
+        primary.setTypeface(Ui.medium());
+        primary.setColor(Color.WHITE);
+        secondary.setColor(Color.WHITE);
         stillFade.setDuration(STILL_FADE_MS);
         stillFade.addUpdateListener(value -> { stillAlpha = (float) value.getAnimatedValue(); invalidate(); });
         stillFade.addListener(new AnimatorListenerAdapter() {
@@ -69,6 +88,23 @@ final class FloatingChrome extends View {
     }
 
     boolean menuShown() { return menuShown; }
+
+    /** The next turn to draw across the window's bottom, or null for none. */
+    void turnCard(NavigationCard next) {
+        card = next;
+        arrow = next == null || next.arrow == null ? null : next.arrow.loadDrawable(getContext());
+        // Maps draws its arrows in one color; the card shows them white on its own color.
+        if (arrow != null) arrow.setColorFilter(new PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN));
+        invalidate();
+    }
+
+    /** Where the window is drawn now, and how much of its turn card shows, from 0 to 1. */
+    void frame(Rect bounds, float cornerRadius, float turnCardOpacity) {
+        cardWindow.set(bounds);
+        cardRadius = cornerRadius;
+        cardAlpha = turnCardOpacity;
+        if (card != null) invalidate();
+    }
 
     /** Fades the menu in over the window at {@code bounds}, or out; at once if not {@code animate}. */
     void menu(boolean shown, Rect bounds, float cornerRadius, boolean animate) {
@@ -138,6 +174,7 @@ final class FloatingChrome extends View {
             canvas.drawBitmap(still, stillSource, stillAt, stillPaint);
             canvas.restore();
         }
+        if (card != null && cardAlpha > 0 && !cardWindow.isEmpty()) drawTurnCard(canvas, card, cardAlpha);
         float menu = menuAlpha;
         if (menu > 0 && !window.isEmpty()) {
             rounded.set(window);
@@ -157,6 +194,49 @@ final class FloatingChrome extends View {
             canvas.drawCircle(x, y, size / 2, target);
             draw(canvas, Ui.Icon.CLOSE, Math.round(x), Math.round(y), Math.round(24 * density), dismiss);
         }
+    }
+
+    /**
+     * As Maps' own PiP card: the arrow in a darker square on the left, the road above the distance
+     * (or, without a road, the distance above the trip's time) beside it, in Maps' guidance color.
+     */
+    private void drawTurnCard(Canvas canvas, NavigationCard next, float alpha) {
+        Rect at = NavigationCard.band(cardWindow);
+        canvas.save();
+        cardClip.reset();
+        cardClip.addRoundRect(new RectF(cardWindow), cardRadius, cardRadius, Path.Direction.CW);
+        canvas.clipPath(cardClip);
+        band.setColor(next.color);
+        band.setAlpha(Math.round(Color.alpha(next.color) * alpha));
+        canvas.drawRect(at, band);
+        int side = at.height();
+        band.setColor(ARROW_SHADE);
+        band.setAlpha(Math.round(Color.alpha(ARROW_SHADE) * alpha));
+        canvas.drawRect(at.left, at.top, at.left + side, at.bottom, band);
+        if (arrow != null) {
+            int size = Math.round(side * .6f), left = at.left + (side - size) / 2, top = at.top + (side - size) / 2;
+            arrow.setBounds(left, top, left + size, top + size);
+            arrow.setAlpha(Math.round(255 * alpha));
+            arrow.draw(canvas);
+        }
+        boolean road = next.road.length() > 0;
+        CharSequence first = road ? next.road : next.distance;
+        CharSequence second = road ? next.distance : next.eta;
+        float padding = side * .18f, textLeft = at.left + side + padding, room = at.right - padding - textLeft;
+        primary.setTextSize(side * .3f);
+        secondary.setTextSize(side * .2f);
+        primary.setAlpha(Math.round(255 * alpha));
+        secondary.setAlpha(Math.round(222 * alpha));
+        float firstLine = at.top + side * .46f, secondLine = at.top + side * .78f;
+        if (room > 0) {
+            canvas.drawText(TextUtils.ellipsize(first, primary, room, TextUtils.TruncateAt.END).toString(), textLeft,
+                    second.length() > 0 ? firstLine : at.centerY() + primary.getTextSize() * .35f, primary);
+            if (second.length() > 0) {
+                canvas.drawText(TextUtils.ellipsize(second, secondary, room, TextUtils.TruncateAt.END).toString(),
+                        textLeft, secondLine, secondary);
+            }
+        }
+        canvas.restore();
     }
 
     private Ui.Icon iconFor(FloatingMenu.Control control) {
