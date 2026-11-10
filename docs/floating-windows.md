@@ -188,12 +188,19 @@ corner, default bottom right (the passenger side).
   also posts a road for a second or two mid-route and "Rerouting..." (that one
   without an arrow). Wend takes it for arriving when it follows the last turn,
   whose distance is all that is left of the trip ("350 ft", of "0 min · 350 ft
-  · 5:53 AM PST ETA"). A Wend that first hears the notification at the
-  destination cannot tell and shows the place's name in the usual card.
+  · 5:53 AM PST ETA"). A listener that Android reconnects at the destination
+  hears no turn before it and goes by what it heard before it was cut off.
   Without guidance, or without the listener, Maps floats as before, without one.
-- **Enter.** Maps lifts out of its panel into its own overlay without moving,
-  the video expands from its card beneath it, then Maps shrinks into its corner
-  (280 ms each). Moving both at once uncovers parts of the empty panel.
+- **Enter.** Maps shrinks from its panel into its corner while the video expands
+  from its card beneath it, both in the same 280 ms. For part of that neither
+  covers the panel, so a picture of Maps' display, taken as Maps lifts out, is
+  left in the panel under both (`EmbeddedMaps.leavePicture`); the panel showed
+  empty there, which is why Maps used to wait for the video and move second.
+  Home is the same in reverse: the video shrinks into its card as Maps lands
+  over its panel, over a picture of Maps taken as Home begins. The video card's
+  cover shows for one frame as the video lands in it, so it is given the
+  video's current frame as the video starts back (`EmbeddedVideo.freshenStill`);
+  it used to flash the still kept from before the video left.
 - **Drag, snap, outline, corners, catch mid-snap, tap grace after entering, PiP
   controls:** as for the floating video, without a playback control. Closed, Maps
   returns to its panel (beneath the fullscreen video) and keeps navigating.
@@ -308,6 +315,23 @@ README). With it:
   in `dumpsys notification`): the next-turn card showed on floating Maps, the
   window turned to "Arrived" at the motel, Maps killed 934 m from it guided
   again within 6 s, and leaving navigation took the card away.
+- **Stops.** The destination comes with the stops still ahead: Maps saves a
+  stop it has gone on from as the trip's origin, so the waypoints after the
+  first are what is left. Maps' navigation link takes no stops (given a
+  Chevron on the way, it went straight to the motel), so with stops ahead Wend
+  reopens Maps with its directions link through them, which opens the route
+  with Start, and `GuidanceResume` presses it. Killed with the Chevron still
+  ahead, Maps guided again within 8 s, to the Chevron first.
+- **Wend survives, and so does Maps.** The module reaches Wend's provider
+  through an unstable connection. Through a stable one, Android killed Maps
+  whenever Wend's process died ("depends on provider ... in dying proc").
+- **Arrival and a restart.** When Wend asks again, as it does when it starts,
+  the module sends the last turn that had a distance before what Maps shows
+  now, so Wend can still tell arrival. A Wend whose whole process restarts at
+  the destination finds no guidance at all, though: moving Maps back into the
+  new panel's display ends Maps' guidance there (its notification was gone
+  within 3 s, twice of twice), while Maps keeps showing its arrival sheet.
+  Left alone at the destination, Maps kept its guidance for the 4 min watched.
 
 ## Live Maps floats above the video app Wend opens
 
@@ -1180,6 +1204,18 @@ Scripts, traces and method profiles are in `build/stall/`; `layer_gaps.py` and
   off and on, and killing the video app and Wend. The device tool's snapshot
   helper ran, so no death there resumed guidance; `build/resume-gaps/crash.sh`
   and `build/guidance-resume/resume.sh` cover that without it.
+- **Together, later the same day** (`together`, `together2`, `prof`, `prof2`).
+  With Maps and the video moving at once: Home dropped no frame in 16 of 16
+  traced runs. Opening dropped none in 14 of 16 and stalled twice (133 and
+  167 ms: one frame of motion, then none for that long); with Wend's main
+  thread sampled, 1 of 38 opens stalled (176 ms) and two had 50 and 83 ms. In
+  the sampled stall everything Wend asked of the compositor took about ten
+  times as long as in a clean run (the capture for the panel's picture 366 ms,
+  five view traversals 508 ms): the pipeline was slow, not one of Wend's steps.
+  That is the rare stall of the seventh pass, now with a profile; on the
+  emulator it cannot be told from the host. The recorder is no measure either:
+  of three opens recorded and traced together, one had an 82 ms gap in the
+  recording and none in the compositor's trace.
 - **A stall that is real, on another path.** Opening the video app from the
   dock (not the live video) while YouTube has a video to resume stalls Maps'
   move to its corner every time: 8 to 18 frames, gaps of 82 to 200 ms, in 5 of 5

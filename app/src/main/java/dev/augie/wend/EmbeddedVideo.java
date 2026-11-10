@@ -154,9 +154,27 @@ final class EmbeddedVideo extends FrameLayout {
     }
 
     private void returnToCard() {
+        freshenStill();
         // Once Wend's window can show the card again.
         if (playerLifecycle != null) playerLifecycle.whenHostReady(window::collapse);
         else window.collapse();
+    }
+
+    /**
+     * The card's cover shows for one frame as the video lands in it, before Wend's window draws
+     * without it. Recorded at Home, that frame was the still kept from before the video left its
+     * card: another scene, flashed. It now is what the video shows as it starts back.
+     */
+    private void freshenStill() {
+        if (!window.active() || playerSurface == null || previousBounds == null) return;
+        RectF video = source(previousBounds);
+        try {
+            cover.keep(playerSurface.still(new Rect(Math.round(video.left), Math.round(video.top),
+                    Math.round(video.right), Math.round(video.bottom))));
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("WendVideo", "Could not take a still of the video as it returns to its card; the card may"
+                    + " show its older still for a frame", error);
+        }
     }
 
     boolean presenting() { return window.active(); }
