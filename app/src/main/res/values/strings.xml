@@ -40,7 +40,7 @@
     <string name="settings_resume_guidance">Resume after Maps restarts</string>
     <string name="settings_resume_guidance_hint">Presses Start in Maps if it closes by itself during a trip</string>
     <string name="guidance_resume_description">Presses Start in Google Maps after Wend reopens Maps that closed by itself during a trip. Wend turns this on only for that moment.</string>
-    <!-- The label of the Start button on Google Maps' route preview, in this language. -->
+    <!-- The label of the Start button on Google Maps' route preview, used only if Maps' own strings cannot be read. -->
     <string name="maps_start_button">Start</string>
     <string name="maps_arrived">Arrived</string>
     <string name="settings_music">Music app</string>

@@ -6,6 +6,8 @@ import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.res.Resources;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -17,7 +19,10 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Presses Maps' own Start button once, after Wend reopened a Maps whose process died while it
@@ -37,7 +42,16 @@ public final class GuidanceResume extends AccessibilityService {
     /** The connected service, or null. Main thread only. */
     private static GuidanceResume connected;
 
+    /**
+     * What Maps 26.43 names the strings that say "Start" on its navigation buttons. Maps shows them
+     * in the device's language, so the label to look for is read from Maps.
+     */
+    private static final String[] MAPS_START_STRINGS = {"ROUTE_START_NAV", "START_NAVIGATION_BUTTON",
+            "PERSISTENT_FOOTER_START_BUTTON"};
+
     private final Runnable look = this::look;
+    /** What Maps' Start button may be labelled, read once connected. */
+    private Set<String> startLabels = Collections.emptySet();
 
     /** Asks for Maps' Start button to be pressed once it shows, within {@link #WAIT_MS}. */
     static void request(Context context) {
@@ -92,21 +106,42 @@ public final class GuidanceResume extends AccessibilityService {
     }
 
     /**
-     * @return the button of {@code mapsPackage} under {@code root} that is named exactly
-     *     {@code label} and can be pressed now, or null. Maps names its Start button by content
+     * @return the button of {@code mapsPackage} under {@code root} that is named exactly one of
+     *     {@code labels} and can be pressed now, or null. Maps names its Start button by content
      *     description and puts the text on a child view.
      */
-    static AccessibilityNodeInfo startButton(AccessibilityNodeInfo root, String mapsPackage, CharSequence label) {
+    static AccessibilityNodeInfo startButton(AccessibilityNodeInfo root, String mapsPackage, Set<String> labels) {
         if (root == null || !TextUtils.equals(mapsPackage, root.getPackageName())) return null;
         if (TextUtils.equals("android.widget.Button", root.getClassName())
-                && (TextUtils.equals(label, root.getContentDescription()) || TextUtils.equals(label, root.getText()))) {
+                && (named(root.getContentDescription(), labels) || named(root.getText(), labels))) {
             return root.isEnabled() && root.isVisibleToUser() ? root : null;
         }
         for (int i = 0; i < root.getChildCount(); i++) {
-            AccessibilityNodeInfo found = startButton(root.getChild(i), mapsPackage, label);
+            AccessibilityNodeInfo found = startButton(root.getChild(i), mapsPackage, labels);
             if (found != null) return found;
         }
         return null;
+    }
+
+    private static boolean named(CharSequence name, Set<String> labels) {
+        return name != null && labels.contains(name.toString());
+    }
+
+    /**
+     * @param maps Maps' own resources in the device's language, or null if they cannot be read
+     * @param names the string resources Maps may label its Start button with
+     * @return those of them Maps has; without any, {@code fallback}, which is right while Maps
+     *     shows English
+     */
+    static Set<String> startLabels(Resources maps, String mapsPackage, String[] names, String fallback) {
+        Set<String> labels = new HashSet<>();
+        if (maps != null) {
+            for (String name : names) {
+                int id = maps.getIdentifier(name, "string", mapsPackage);
+                if (id != 0) labels.add(maps.getString(id));
+            }
+        }
+        return labels.isEmpty() ? Collections.singleton(fallback) : labels;
     }
 
     @Override protected void onServiceConnected() {
@@ -114,7 +149,18 @@ public final class GuidanceResume extends AccessibilityService {
         AccessibilityServiceInfo info = getServiceInfo();
         info.packageNames = new String[]{EmbeddedMaps.PACKAGE};
         setServiceInfo(info);
+        startLabels = startLabels(mapsResources(), EmbeddedMaps.PACKAGE, MAPS_START_STRINGS,
+                getString(R.string.maps_start_button));
         look();
+    }
+
+    private Resources mapsResources() {
+        try { return getPackageManager().getResourcesForApplication(EmbeddedMaps.PACKAGE); }
+        catch (PackageManager.NameNotFoundException | RuntimeException error) {
+            Log.w(TAG, "Could not read Maps' own strings for its Start button's label; looking for \""
+                    + getString(R.string.maps_start_button) + "\", which is right while Maps shows English", error);
+            return null;
+        }
     }
 
     // Maps' events only keep Android's copy of its views current for look(), which polls: a search per
@@ -137,7 +183,7 @@ public final class GuidanceResume extends AccessibilityService {
         AccessibilityNodeInfo start = find();
         if (start != null) {
             until = null;
-            if (start.performAction(AccessibilityNodeInfo.ACTION_CLICK)) Log.i(TAG, "Pressed Start in the reopened Maps to resume its guidance");
+            if (start.performAction(AccessibilityNodeInfo.ACTION_CLICK)) Log.i(TAG, "Pressed Start in the reopened Maps to resume its guidance (labelled one of " + startLabels + ")");
             else Log.w(TAG, "Guidance was not resumed: Maps did not take the press on its Start button. Maps is open at its route; press Start there");
             disableSelf();
         } else if (SystemClock.uptimeMillis() >= deadline) {
@@ -150,11 +196,10 @@ public final class GuidanceResume extends AccessibilityService {
 
     /** Maps' Start button, in its panel or fullscreen, or null while Maps does not show one. */
     private AccessibilityNodeInfo find() {
-        CharSequence label = getString(R.string.maps_start_button);
-        AccessibilityNodeInfo found = startButton(getRootInActiveWindow(), EmbeddedMaps.PACKAGE, label);
+        AccessibilityNodeInfo found = startButton(getRootInActiveWindow(), EmbeddedMaps.PACKAGE, startLabels);
         if (found != null) return found;
         for (AccessibilityWindowInfo window : getWindows()) {
-            found = startButton(window.getRoot(), EmbeddedMaps.PACKAGE, label);
+            found = startButton(window.getRoot(), EmbeddedMaps.PACKAGE, startLabels);
             if (found != null) return found;
         }
         return null;

@@ -1,6 +1,12 @@
 package dev.augie.wend;
 
 import android.view.accessibility.AccessibilityNodeInfo;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Arrays;
+import java.util.Set;
+import android.content.res.Resources;
+import org.robolectric.RuntimeEnvironment;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
@@ -15,6 +21,7 @@ import static org.robolectric.Shadows.shadowOf;
 public class GuidanceResumeTest {
     private static final String MAPS = "com.google.android.apps.maps";
     private static final String SERVICE = "dev.augie.wend/dev.augie.wend.GuidanceResume";
+    private static final Set<String> START = Collections.singleton("Start");
 
     private static AccessibilityNodeInfo node(String type, CharSequence text, AccessibilityNodeInfo... children) {
         AccessibilityNodeInfo node = AccessibilityNodeInfo.obtain();
@@ -42,7 +49,7 @@ public class GuidanceResumeTest {
 
     @Test public void findsTheStartButtonOfMapsRoutePreview() {
         AccessibilityNodeInfo start = node("android.widget.Button", "Start", node("android.view.View", "Start"));
-        AccessibilityNodeInfo found = GuidanceResume.startButton(routePreview(start), MAPS, "Start");
+        AccessibilityNodeInfo found = GuidanceResume.startButton(routePreview(start), MAPS, START);
         assertNotNull(found);
         assertEquals("android.widget.Button", found.getClassName().toString());
         assertEquals("Start", found.getContentDescription().toString());
@@ -50,30 +57,51 @@ public class GuidanceResumeTest {
 
     @Test public void onlyAButtonNamedExactlyStartCounts() {
         assertNull("A start location is not the Start button",
-                GuidanceResume.startButton(routePreview(node("android.widget.Button", "Start location")), MAPS, "Start"));
+                GuidanceResume.startButton(routePreview(node("android.widget.Button", "Start location")), MAPS, START));
         assertNull("Text that is not a button",
-                GuidanceResume.startButton(routePreview(node("android.widget.TextView", "Start")), MAPS, "Start"));
+                GuidanceResume.startButton(routePreview(node("android.widget.TextView", "Start")), MAPS, START));
     }
 
     @Test public void aButtonNamedByItsTextCountsToo() {
         AccessibilityNodeInfo start = node("android.widget.Button", null);
         start.setText("Start");
-        assertNotNull(GuidanceResume.startButton(routePreview(start), MAPS, "Start"));
+        assertNotNull(GuidanceResume.startButton(routePreview(start), MAPS, START));
     }
 
     @Test public void aStartButtonThatCannotBePressedYetIsLeftAlone() {
         AccessibilityNodeInfo disabled = node("android.widget.Button", "Start");
         disabled.setEnabled(false);
-        assertNull(GuidanceResume.startButton(routePreview(disabled), MAPS, "Start"));
+        assertNull(GuidanceResume.startButton(routePreview(disabled), MAPS, START));
         AccessibilityNodeInfo hidden = node("android.widget.Button", "Start");
         hidden.setVisibleToUser(false);
-        assertNull(GuidanceResume.startButton(routePreview(hidden), MAPS, "Start"));
+        assertNull(GuidanceResume.startButton(routePreview(hidden), MAPS, START));
     }
 
     @Test public void anotherAppsStartButtonIsNeverPressed() {
         AccessibilityNodeInfo start = node("android.widget.Button", "Start");
         AccessibilityNodeInfo root = routePreview(start);
-        assertNull(GuidanceResume.startButton(root, "com.example.other", "Start"));
+        assertNull(GuidanceResume.startButton(root, "com.example.other", START));
+    }
+
+    /**
+     * Maps shows its Start button in the device's language, so its label is read from Maps' own
+     * strings, by the names Maps 26.43 gives them. Here Wend's resources stand in for Maps'.
+     */
+    @Test public void theStartButtonsLabelComesFromMapsOwnStrings() {
+        Resources resources = RuntimeEnvironment.getApplication().getResources();
+        String wend = RuntimeEnvironment.getApplication().getPackageName();
+        assertEquals(new HashSet<>(Arrays.asList("Arrived", "Navigation")), GuidanceResume.startLabels(resources, wend,
+                new String[]{"maps_arrived", "NO_SUCH_STRING", "settings_navigation"}, "Start"));
+        assertEquals("Maps renamed them all", START,
+                GuidanceResume.startLabels(resources, wend, new String[]{"NO_SUCH_STRING"}, "Start"));
+        assertEquals("Maps' strings cannot be read", START,
+                GuidanceResume.startLabels(null, wend, new String[]{"maps_arrived"}, "Start"));
+    }
+
+    @Test public void aButtonWithAnyOfMapsLabelsCounts() {
+        AccessibilityNodeInfo start = node("android.widget.Button", "Starten");
+        assertNotNull(GuidanceResume.startButton(routePreview(start), MAPS, new HashSet<>(Arrays.asList("Iniciar", "Starten"))));
+        assertNull(GuidanceResume.startButton(routePreview(start), MAPS, START));
     }
 
     @Test public void theServiceIsAddedToAndroidsEnabledAccessibilityServicesAndRemovedAgain() {

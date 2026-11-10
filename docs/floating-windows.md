@@ -248,14 +248,19 @@ press it:
   navigation link. `GuidanceResume` is an accessibility service, the way Android
   lets one app press another's button. It looks every 500 ms, for up to 30 s,
   for Maps' enabled, visible `android.widget.Button` whose content description
-  (or text) is exactly `maps_start_button` ("Start"), presses it once, and turns
-  itself off (`disableSelf`). Wend turns it on only for that wait, by adding it
+  (or text) is exactly what Maps labels it, presses it once, and turns itself
+  off (`disableSelf`). The label is read from Maps' own strings, so it is in the
+  language Maps shows: `ROUTE_START_NAV`, `START_NAVIGATION_BUTTON` and
+  `PERSISTENT_FOOTER_START_BUTTON`, the names Maps 26.43 gives its "Start"
+  navigation buttons (`GuidanceResume.startLabels`). Wend's own
+  `maps_start_button` ("Start") stands in only if Maps has none of them. Wend turns it on only for that wait, by adding it
   to `enabled_accessibility_services` as the system user, and it hears only
   Maps' package.
 - **Limits.** It presses whatever route Maps restored. If Maps restores none
   (seen once, after two deaths 10 s apart), nothing is pressed and Maps stays
-  open at its map. The label is matched in English, so a Maps in another
-  language is not resumed until `maps_start_button` is translated. A running
+  open at its map. The emulator's Maps has only English strings, so the label
+  from Maps' strings was checked there in English only (it pressed "Start"
+  labelled `[Start]`). A running
   UI test session (`UiAutomation`, as the device tool's snapshot helper holds)
   suspends every accessibility service, this one included: the wait then ends
   with a log line and Maps stays at its route preview.
