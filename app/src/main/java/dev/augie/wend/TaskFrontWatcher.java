@@ -23,8 +23,7 @@ final class TaskFrontWatcher {
     void start() throws ReflectiveOperationException {
         if (registration != null) return;
         Registration next = new Registration();
-        api().getMethod("registerTaskStackListener", Class.forName("android.app.ITaskStackListener"))
-                .invoke(service(), next);
+        TaskStackListeners.register(next);
         registration = next;
     }
 
@@ -33,8 +32,7 @@ final class TaskFrontWatcher {
         registration = null;
         if (current == null) return;
         try {
-            api().getMethod("unregisterTaskStackListener", Class.forName("android.app.ITaskStackListener"))
-                    .invoke(service(), current);
+            TaskStackListeners.unregister(current);
         } catch (ReflectiveOperationException | RuntimeException error) {
             // Its callbacks are ignored from now on, so the stale registration has no effect.
             Log.w(tag, "Could not unregister the app-switch listener; ignoring its later callbacks", error);
@@ -67,13 +65,5 @@ final class TaskFrontWatcher {
                     + "; treating it as a different display", error);
             return Display.INVALID_DISPLAY;
         }
-    }
-
-    private static Class<?> api() throws ClassNotFoundException {
-        return Class.forName("android.app.IActivityTaskManager");
-    }
-
-    private static Object service() throws ReflectiveOperationException {
-        return Class.forName("android.app.ActivityTaskManager").getMethod("getService").invoke(null);
     }
 }
