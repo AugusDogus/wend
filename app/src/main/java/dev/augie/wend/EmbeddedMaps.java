@@ -241,7 +241,9 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     private MapsCardEdge.Read topOfDisplay(int rows) throws ReflectiveOperationException {
-        if (activityView == null) return null;
+        // Only at rest: the window's map changes only there, and a read costs the compositor time
+        // that a window in motion needs.
+        if (activityView == null || !floating.resting()) return null;
         ActivityViewSurface surface = new ActivityViewSurface(activityView, ActivityViewSurface.PreviewInput.FORWARDED);
         Rect top = new Rect(0, 0, getWidth(), Math.min(rows, getHeight()));
         return () -> surface.still(top);

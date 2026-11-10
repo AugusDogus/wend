@@ -21,7 +21,7 @@ final class MapsCardEdge {
     interface Display {
         /**
          * Called on the main thread.
-         * @return a read of the top {@code rows} of Maps' display, or null while Maps has none
+         * @return a read of the top {@code rows} of Maps' display, or null to skip this one
          */
         Read top(int rows) throws ReflectiveOperationException;
     }
@@ -53,8 +53,8 @@ final class MapsCardEdge {
     private final Display display;
     private final Listener listener;
     private final Runnable tick = this::tick;
-    /** Changes with each stop, so a read in flight is dropped. */
-    private int generation;
+    /** Changes with each stop, so a read in flight is dropped, or not made if it has not begun. */
+    private volatile int generation;
     private boolean running;
     private boolean reading;
     /** Logged once until a read succeeds. */
@@ -68,7 +68,7 @@ final class MapsCardEdge {
         this.listener = listener;
     }
 
-    /** Measures now and then every {@link #INTERVAL_MS}, until {@link #stop}. */
+    /** Measures now and then every {@link #INTERVAL_MS}, whenever the display offers a read, until {@link #stop}. */
     void start() {
         // Reading a display's layers needs Android 10's hidden capture and the platform signature.
         if (running || Build.VERSION.SDK_INT != 29 || Process.myUid() != Process.SYSTEM_UID) return;
@@ -93,6 +93,8 @@ final class MapsCardEdge {
             if (read == null) return;
             reading = true;
             worker.execute(() -> {
+                // Stopped while this waited its turn: the window is moving back, and needs no read.
+                if (request != generation) return;
                 int bottom;
                 try { bottom = measure(read.pixels()); }
                 catch (ReflectiveOperationException | RuntimeException | LinkageError error) {

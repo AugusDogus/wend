@@ -106,6 +106,9 @@ final class LiveSurfaceWindow {
 
     boolean active() { return running != null; }
 
+    /** Floating still in its corner: not entering, leaving, dragged, or growing. */
+    boolean resting() { return running != null && running.resting(); }
+
     /**
      * Presenting above another app, so it keeps going while Wend is stopped: floating in its
      * corner, entering or leaving it, or hidden until it emerges there.

@@ -169,8 +169,10 @@ corner, default bottom right (the passenger side).
   at once (`LiveSurfaceWindow.floatingSource`). Maps' own card is not always
   95 dp tall: it ends 143 px down with one road line, 188 px with two and 273 px
   with lane arrows, a darker strip along its bottom. Maps tells no one, so while
-  a window floats with Wend's card, `MapsCardEdge` reads the top of Maps'
-  display once a second (Android 10's layer capture, off the main thread) and
+  a window floats with Wend's card and rests in its corner, `MapsCardEdge`
+  reads the top of Maps' display once a second (Android 10's layer capture, off
+  the main thread; never while the window moves, when its map cannot change and
+  the compositor has none to spare) and
   finds where the card's flat color ends down two columns inside its sides; the
   crop then starts 2 px below it, no lower than keeps Maps' trip sheet under
   Wend's card (`FloatingMapCrop`). A display with no such card on both sides
@@ -1119,6 +1121,50 @@ for these checks unless noted.
   runs. Opening the video from the dock dropped none in 14 of 17 runs and one
   frame once; twice, both in the first measured run after setup, Maps' shrink
   into its corner stalled (gaps of 84 and 134 ms), cause unknown.
+
+### Frame timing after the lane read, and the stalls looked into, November 10 (eighth pass)
+
+Scripts, traces and method profiles are in `build/stall/`; `layer_gaps.py` and
+`layer_changes.py` list which layers moved in each traced frame, and
+`trace_top.py` sums a method trace (`am profile`) by method.
+
+- **The live video from the dock and Home, with Maps floating**, ten cycles
+  with the lane read limited to rest (`live3`): opening dropped no frame in 7
+  and one in 3 (worst gap 34 ms); Home dropped none in 9 and one once (25 ms).
+  No stall like the two of the seventh pass (84 and 134 ms) came back in these
+  ten or the ten before (`live2`).
+- **A dropped-frame count that was not one.** Before the read was limited to
+  rest, one Home of ten counted 6 dropped frames and a 117 ms gap. The compositor
+  had drawn a frame every 16.7 ms throughout. Two of Maps' layers show the read's
+  crop, (0, 0, 833, 330), as their screen bounds in one traced frame and their
+  own again in the next: the trace caught them while the capture drew them under
+  its own parent. `motion_gaps.py` counts a layer that changes again within
+  250 ms as one stuttering motion. The 3 to 5 frames "dropped" on Home in the
+  sixth pass may have been the same, from the captures Wend already made; that
+  was not checked.
+- **Chaos on the final build** (`build/chaos-gaps/`): every scenario of the sixth
+  pass recovered, 18 runs: the nine Maps deaths (the crash now reopens Maps by
+  itself: "Maps has no task left after it crashed"), rapid presses twice, the
+  mid-entry taps, the menu, the Home race, monkey input, notification access
+  off and on, and killing the video app and Wend. The device tool's snapshot
+  helper ran, so no death there resumed guidance; `build/resume-gaps/crash.sh`
+  and `build/guidance-resume/resume.sh` cover that without it.
+- **A stall that is real, on another path.** Opening the video app from the
+  dock (not the live video) while YouTube has a video to resume stalls Maps'
+  move to its corner every time: 8 to 18 frames, gaps of 82 to 200 ms, in 5 of 5
+  runs after each restart of Wend and in 10 of 10 with YouTube's own player
+  running (`cold`, `live1`); with the video paused and YouTube already on the
+  main display it does not (`run1`: none in 7 of 8). A method profile of Wend's
+  main thread shows it waiting on its render thread (150 to 190 ms freeing the
+  hidden launcher window's resources, 50 to 85 ms creating the floating
+  window's renderer; about 10 and 5 ms in a smooth run) while YouTube reloads
+  its player (`MedialibPlayer.loadVideo`). Ruled out by test: time since Wend
+  started (45 s is the same), compiling Wend ahead of time (Android refuses it
+  for the system user), a first touch, a first hide of the launcher, and
+  creating and drawing the floating window once beforehand. Nothing was
+  changed: the remedy would be to hold Maps at its panel until the app has
+  opened and only then move it, which changes how that entry looks, and the
+  emulator shares one host GPU among all apps, so this needs the PX6 first.
 
 ### Known issue: Back is dropped in fullscreen Maps on the emulators
 
