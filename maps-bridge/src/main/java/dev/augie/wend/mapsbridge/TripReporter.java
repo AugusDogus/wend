@@ -2,6 +2,7 @@ package dev.augie.wend.mapsbridge;
 
 import android.app.Application;
 import android.content.BroadcastReceiver;
+import android.content.ContentProviderClient;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -10,6 +11,7 @@ import android.os.Bundle;
 import android.os.FileObserver;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.RemoteException;
 import android.util.Log;
 import java.io.File;
 import java.io.IOException;
@@ -22,7 +24,7 @@ import java.nio.file.Files;
  * <ul>
  * <li>tells Wend each time they change, and once as Maps starts: a call of {@code trip} on Wend's
  *     provider {@code content://dev.augie.wend.mapstrips}, with the destination as its argument
- *     and {@link #LATITUDE}, {@link #LONGITUDE} and {@link #SAVED_AT} as extras;
+ *     and {@link #STOPS}, {@link #LATITUDE}, {@link #LONGITUDE} and {@link #SAVED_AT} as extras;
  * <li>answers the broadcast {@link #ASK} from any sender that may manage activity stacks (Wend, or
  *     {@code adb shell}): it tells Wend again, and an ordered broadcast gets result code 1, the
  *     destination as result data, and the same extras.
@@ -33,6 +35,8 @@ import java.nio.file.Files;
 final class TripReporter {
     static final String ASK = "dev.augie.wend.mapsbridge.TRIP";
     static final String LATITUDE = "latitude", LONGITUDE = "longitude", SAVED_AT = "savedAt";
+    /** The stops still ahead, in order, each named as the destination is. */
+    static final String STOPS = "stops";
     private static final Uri WEND = Uri.parse("content://dev.augie.wend.mapstrips");
     private static final String ASKERS = "android.permission.MANAGE_ACTIVITY_STACKS";
     /** Maps writes both as a trip starts; the second again whenever its route or stops change. */
@@ -104,13 +108,16 @@ final class TripReporter {
         tellWend("trip", saved.trip.destination, saved.extras());
     }
 
-    /** Calls {@code method} on Wend's provider from this reporter's thread, in the order asked. */
+    /** Calls {@code method} on Wend's provider from this reporter's thread, in the order asked. Maps survives Wend. */
     void tellWend(String method, String argument, Bundle extras) {
         worker.post(() -> {
-            try {
-                maps.getContentResolver().call(WEND, method, argument, extras);
+            // An unstable connection: Android kills an app that holds a stable one to a provider
+            // whose process dies, which would take Maps down with every death of Wend.
+            try (ContentProviderClient wend = maps.getContentResolver().acquireUnstableContentProviderClient(WEND)) {
+                if (wend == null) throw new IllegalStateException("No provider " + WEND);
+                wend.call(method, argument, extras);
                 failureLogged = false;
-            } catch (RuntimeException error) {
+            } catch (RemoteException | RuntimeException error) {
                 // Wend is not installed, or is an older Wend without the provider.
                 if (failureLogged) return;
                 failureLogged = true;
@@ -123,7 +130,7 @@ final class TripReporter {
     private void answer(BroadcastReceiver asked) {
         Saved saved = saved();
         if (saved != null) tellWend("trip", saved.trip.destination, saved.extras());
-        if (guidance != null) guidance.report();
+        if (guidance != null) guidance.again();
         if (!asked.isOrderedBroadcast()) return;
         if (saved == null) { asked.setResultCode(0); return; }
         asked.setResult(1, saved.trip.destination, saved.extras());
@@ -142,6 +149,7 @@ final class TripReporter {
                 extras.putDouble(LATITUDE, trip.latitude);
                 extras.putDouble(LONGITUDE, trip.longitude);
             }
+            extras.putStringArray(STOPS, trip.stops.toArray(new String[0]));
             extras.putLong(SAVED_AT, at);
             return extras;
         }

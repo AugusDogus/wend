@@ -1,6 +1,9 @@
 package dev.augie.wend.mapsbridge;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -8,34 +11,38 @@ import java.util.Locale;
  * ({@code saved_directions.data.cs}, {@code directions_as_changed_in_navigation.data.cs}): an
  * 8-byte header, then a protocol buffer. As Maps 26.43 writes it, message 1 holds message 1, which
  * holds one message 1 per waypoint, the origin first; a waypoint has its name and address in
- * string 1 and, in message 3, its latitude and longitude as doubles 3 and 4.
+ * string 1 and, in message 3, its latitude and longitude as doubles 3 and 4. A stop Maps has gone
+ * on from becomes the origin, so the waypoints after the first are what is left of the trip.
  */
 final class TripFile {
     private static final int HEADER = 8;
 
     private TripFile() { }
 
-    /** @return the last waypoint after the origin, or null if {@code file} holds no such trip */
+    /** @return the last waypoint, and those between it and the origin as its stops; null if {@code file} holds no such trip */
     static Trip destination(byte[] file) {
         try {
             Fields directions = Fields.of(file, HEADER, file.length).message(1);
             Fields route = directions == null ? null : directions.message(1);
             if (route == null) return null;
-            Fields last = null;
-            int waypoints = 0;
-            while (route.next()) {
-                if (route.field != 1 || route.wire != 2) continue;
-                last = route.inside();
-                waypoints++;
+            List<Fields> waypoints = new ArrayList<>();
+            while (route.next()) if (route.field == 1 && route.wire == 2) waypoints.add(route.inside());
+            if (waypoints.size() < 2) return null;
+            List<String> stops = new ArrayList<>();
+            for (Fields stop : waypoints.subList(1, waypoints.size() - 1)) {
+                Trip ahead = trip(stop, Collections.emptyList());
+                // A stop that cannot be named again would be skipped without a word.
+                if (ahead == null) return null;
+                stops.add(ahead.destination);
             }
-            return waypoints < 2 ? null : trip(last);
+            return trip(waypoints.get(waypoints.size() - 1), Collections.unmodifiableList(stops));
         } catch (IndexOutOfBoundsException | IllegalArgumentException cut) {
             // Not this format, or read while Maps was still writing it.
             return null;
         }
     }
 
-    private static Trip trip(Fields waypoint) {
+    private static Trip trip(Fields waypoint, List<String> stops) {
         String name = "";
         Double latitude = null, longitude = null;
         while (waypoint.next()) {
@@ -54,7 +61,7 @@ final class TripFile {
             if (!placed) return null;
             name = String.format(Locale.US, "%.6f,%.6f", latitude, longitude);
         }
-        return new Trip(name, placed ? latitude : Double.NaN, placed ? longitude : Double.NaN);
+        return new Trip(name, placed ? latitude : Double.NaN, placed ? longitude : Double.NaN, stops);
     }
 
     /** A cursor over the fields of one protocol buffer message. */

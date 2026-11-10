@@ -21,8 +21,9 @@ import java.util.Arrays;
  * guidance notification names no destination, and Maps restores no route for a trip that is
  * nearly over, so without this Wend cannot resume such a trip after Maps' process dies.
  *
- * <p>The module calls {@code trip} on this provider with the destination as the argument, as a trip
- * starts and whenever Maps saves its directions again, and {@code guidance} with each guidance
+ * <p>The module calls {@code trip} on this provider with the destination as the argument and the
+ * stops still ahead as the extra {@code stops}, as a trip starts and whenever Maps saves its
+ * directions again, and {@code guidance} with each guidance
  * notification Maps builds (extra {@code notification}; none once guidance ended), which reaches
  * Wend even where Android delivers no notifications ({@link NavigationNotifications#reportedByMaps}).
  * Only Maps may call it. Both stay in memory. Without the module nothing is ever reported, and
@@ -39,28 +40,43 @@ public final class MapsTrips extends ContentProvider {
 
     private static final class Trip {
         final String destination;
+        /** The stops still ahead on the way there, in order. */
+        final String[] stops;
         /** When Maps reported it, in uptime ms. */
         final long reportedAt;
 
-        Trip(String destination, long reportedAt) { this.destination = destination; this.reportedAt = reportedAt; }
+        Trip(String destination, String[] stops, long reportedAt) {
+            this.destination = destination;
+            this.stops = stops;
+            this.reportedAt = reportedAt;
+        }
     }
 
     /**
      * @param guidanceBegan when the guidance to resume began, in uptime ms, or null if none did
-     * @return the link that makes {@code mapsPackage} navigate to that guidance's destination, or
-     *     null if Maps did not report one for it
+     * @return the link that takes {@code mapsPackage} to that guidance's destination, or null if
+     *     Maps did not report one for it. Without stops ahead it is Maps' navigation link, and a
+     *     Maps opened by it guides at once. That link takes no stops, so with stops ahead it is
+     *     Maps' directions link through them, which opens the route with Start ({@link GuidanceResume}).
      */
     static Intent navigation(Long guidanceBegan, String mapsPackage) {
         Trip trip = last;
         if (trip == null || guidanceBegan == null || trip.reportedAt < guidanceBegan - BEFORE_GUIDANCE_MS) return null;
-        return new Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=" + Uri.encode(trip.destination)))
-                .setPackage(mapsPackage).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Uri link = trip.stops.length == 0 ? Uri.parse("google.navigation:q=" + Uri.encode(trip.destination))
+                : Uri.parse("https://www.google.com/maps/dir/").buildUpon().appendQueryParameter("api", "1")
+                        .appendQueryParameter("destination", trip.destination)
+                        .appendQueryParameter("waypoints", TextUtils.join("|", trip.stops))
+                        .appendQueryParameter("travelmode", "driving").build();
+        return new Intent(Intent.ACTION_VIEW, link).setPackage(mapsPackage).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
     }
 
-    /** Maps reported where it is going; nothing usable forgets nothing. */
-    static void reported(String destination) {
+    /** Maps reported where it is going, with no stops ahead. */
+    static void reported(String destination) { reported(destination, new String[0]); }
+
+    /** Maps reported where it is going and by which stops; nothing usable forgets nothing. */
+    static void reported(String destination, String[] stops) {
         if (!TextUtils.isEmpty(destination) && !destination.trim().isEmpty()) {
-            last = new Trip(destination, SystemClock.uptimeMillis());
+            last = new Trip(destination, stops, SystemClock.uptimeMillis());
         }
     }
 
@@ -84,7 +100,10 @@ public final class MapsTrips extends ContentProvider {
             throw new SecurityException("Only " + EmbeddedMaps.PACKAGE + " may report its trip and guidance to Wend; uid " + caller
                     + " is " + Arrays.toString(callers));
         }
-        if (trip) reported(arg);
+        if (trip) {
+            String[] stops = extras == null ? null : extras.getStringArray("stops");
+            reported(arg, stops == null ? new String[0] : stops);
+        }
         else {
             // Maps' own guidance notification, or none once its guidance ended.
             Notification notification = extras == null ? null : extras.getParcelable("notification");

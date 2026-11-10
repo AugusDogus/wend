@@ -5,6 +5,7 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.os.Bundle;
 import android.os.UserHandle;
+import android.text.TextUtils;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
@@ -26,6 +27,8 @@ final class GuidanceReporter {
     private final TripReporter reporter;
     /** The guidance notification Maps shows now, and its id and tag; null while it shows none. */
     private Notification shown;
+    /** The last one of this guidance that gave a distance to its turn, or null. */
+    private Notification turn;
     private int id;
     private String tag;
     /** The service that holds it as its foreground notification, if one does. */
@@ -76,6 +79,7 @@ final class GuidanceReporter {
         }
         // Maps may change the one it handed over.
         shown = notification.clone();
+        if (distanced(shown)) turn = shown;
         this.id = id;
         this.tag = tag;
         if (service != null) holder = service;
@@ -93,15 +97,31 @@ final class GuidanceReporter {
     private synchronized void ended() {
         if (shown == null) return;
         shown = null;
+        turn = null;
         holder = null;
         report();
     }
 
-    /** Tells Wend what Maps shows now; again when Wend asks, as after Wend restarts. */
-    synchronized void report() {
+    private void report() { tell(shown); }
+
+    /**
+     * Wend asked, as it does when it starts: what Maps shows now, after the turn it last gave a
+     * distance to. At the destination Maps shows the place without a distance, which Wend can
+     * only tell from other moments without a distance by the turn before it.
+     */
+    synchronized void again() {
+        if (shown != null && turn != null && !distanced(shown)) tell(turn);
+        tell(shown);
+    }
+
+    private void tell(Notification guidance) {
         Bundle extras = new Bundle();
-        if (shown != null) extras.putParcelable(NOTIFICATION, shown);
+        if (guidance != null) extras.putParcelable(NOTIFICATION, guidance);
         reporter.tellWend("guidance", null, extras);
+    }
+
+    private static boolean distanced(Notification guidance) {
+        return !TextUtils.isEmpty(guidance.extras.getCharSequence(Notification.EXTRA_TITLE));
     }
 
     private static boolean equal(String a, String b) { return a == null ? b == null : a.equals(b); }

@@ -10,8 +10,9 @@ limits below.
   in its own files (`files/saved_directions.data.cs`,
   `files/directions_as_changed_in_navigation.data.cs`), within 3 s of a trip starting and again
   when its route or stops change. The module reads the destination out of them (the last waypoint:
-  its name and address, or its coordinates) and calls `trip` on Wend's provider
-  `content://dev.augie.wend.mapstrips`. Without it, Wend cannot resume a trip that Maps does not
+  its name and address, or its coordinates) and the stops still ahead (the waypoints between it and
+  the first, which is the origin or the stop Maps last went on from), and calls `trip` on Wend's
+  provider `content://dev.augie.wend.mapstrips`. Without it, Wend cannot resume a trip that Maps does not
   restore: Maps restores none for a trip within about 1 km of its end.
 - **Its guidance** (`GuidanceReporter`). Each guidance notification Maps builds (the turn's arrow,
   the distance to it, the road, the trip's time), handed to Wend as Maps posts it, by calling
@@ -20,7 +21,8 @@ limits below.
   off, where Android would deliver a notification listener nothing, so floating Maps keeps its
   next-turn card, its "Arrived" card, and resuming after Maps dies.
 
-Wend takes these calls from Maps' own uid only (`MapsTrips`).
+Wend takes these calls from Maps' own uid only (`MapsTrips`). The module holds no stable connection
+to Wend, so Wend's process dying does not take Maps with it.
 
 ## Asking it from adb
 
@@ -31,8 +33,9 @@ adb shell am broadcast -a dev.augie.wend.mapsbridge.TRIP -p com.google.android.a
 # Broadcast completed: result=1, data="Motel 6 Ukiah, CA - North, 1340 N State St, Ukiah, CA 95482", extras: ...
 ```
 
-Result 0 means Maps has no saved trip. The extras are `latitude`, `longitude` (when Maps saved
-them) and `savedAt` (ms). Maps must be running. Sending Maps somewhere needs no module:
+Result 0 means Maps has no saved trip. The extras are `stops` (those still ahead, in order),
+`latitude`, `longitude` (when Maps saved them) and `savedAt` (ms). Asking also makes the module
+report to Wend again. Maps must be running. Sending Maps somewhere needs no module:
 
 ```
 adb shell am start -a android.intent.action.VIEW -d "google.navigation:q=1340+N+State+St,+Ukiah,+CA"

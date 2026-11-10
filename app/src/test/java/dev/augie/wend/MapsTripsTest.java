@@ -51,6 +51,24 @@ public class MapsTripsTest {
         assertEquals("q=" + MOTEL, Uri.decode(link.getData().getEncodedSchemeSpecificPart()));
     }
 
+    /**
+     * Maps' "navigate" link takes no stops (it went straight to the motel past a Chevron it was
+     * given). Its directions link does, and opens the route with Start, which Wend presses.
+     */
+    @Test public void aTripWithStopsAheadReopensAsDirectionsThroughThem() {
+        ShadowBinder.setCallingUid(MAPS_UID);
+        Bundle extras = new Bundle();
+        extras.putStringArray("stops", new String[]{"Chevron, 50 W Lake Mendocino Dr, Ukiah, CA 95482", "39.200000,-123.200000"});
+        trips.call("trip", MOTEL, extras);
+        Uri link = MapsTrips.navigation(SystemClock.uptimeMillis(), MAPS).getData();
+        assertEquals("https://www.google.com/maps/dir/", link.buildUpon().clearQuery().build().toString());
+        assertEquals("1", link.getQueryParameter("api"));
+        assertEquals(MOTEL, link.getQueryParameter("destination"));
+        assertEquals("Chevron, 50 W Lake Mendocino Dr, Ukiah, CA 95482|39.200000,-123.200000", link.getQueryParameter("waypoints"));
+        assertEquals("driving", link.getQueryParameter("travelmode"));
+        assertNull("\"navigate\" would drop the stops", link.getQueryParameter("dir_action"));
+    }
+
     @Test public void onlyMapsMayReportATrip() {
         ShadowBinder.setCallingUid(OTHER_UID);
         assertThrows(SecurityException.class, () -> trips.call("trip", "Somewhere else", null));

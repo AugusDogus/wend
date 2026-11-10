@@ -2,6 +2,7 @@ package dev.augie.wend.mapsbridge;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -56,11 +57,28 @@ public class TripFileTest {
         assertEquals("Motel 6 Ukiah, CA - North, 1340 N State St, Ukiah, CA 95482", trip.destination);
         assertEquals(39.168705, trip.latitude, 1e-9);
         assertEquals(-123.212274, trip.longitude, 1e-9);
-        // With a stop on the way, still the last.
-        byte[] stop = join(text(1, "Chevron, Ukiah"), place(39.2, -123.2));
-        assertEquals("Motel 6 Ukiah, CA - North, 1340 N State St, Ukiah, CA 95482", TripFile.destination(file(HERE, stop, MOTEL)).destination);
+        assertEquals(Collections.emptyList(), trip.stops);
         // "directions_as_changed_in_navigation" leaves the origin's place out.
         assertEquals(39.168705, TripFile.destination(file(join(number(5, 0), number(6, 4)), MOTEL)).latitude, 1e-9);
+    }
+
+    /**
+     * A stop added on the way is a waypoint between the origin and the destination. Once Maps
+     * goes on from a stop it saves that stop as the origin, so the waypoints after the first are
+     * always what is left of the trip.
+     */
+    @Test public void theWaypointsBetweenAreTheStopsStillAhead() {
+        byte[] chevron = join(text(1, "Chevron, 50 W Lake Mendocino Dr, Ukiah, CA 95482"),
+                text(2, "0x80817b25dc6ccf55:0x38140700890c4e40"), place(39.191483, -123.208007));
+        Trip ahead = TripFile.destination(file(HERE, chevron, MOTEL));
+        assertEquals("Motel 6 Ukiah, CA - North, 1340 N State St, Ukiah, CA 95482", ahead.destination);
+        assertEquals(Collections.singletonList("Chevron, 50 W Lake Mendocino Dr, Ukiah, CA 95482"), ahead.stops);
+        Trip passed = TripFile.destination(file(chevron, MOTEL));
+        assertEquals("Motel 6 Ukiah, CA - North, 1340 N State St, Ukiah, CA 95482", passed.destination);
+        assertEquals("After \"Next stop\" the Chevron is where the trip starts", Collections.emptyList(), passed.stops);
+        // A stop without a name is its coordinates, like a destination; one with neither spoils the trip.
+        assertEquals(Collections.singletonList("39.200000,-123.200000"), TripFile.destination(file(HERE, place(39.2, -123.2), MOTEL)).stops);
+        assertNull(TripFile.destination(file(HERE, number(5, 0), MOTEL)));
     }
 
     /** A dropped pin has no name: Maps can still be sent to its coordinates. */
