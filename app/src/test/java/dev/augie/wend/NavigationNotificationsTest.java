@@ -11,6 +11,7 @@ import java.time.Duration;
 import org.junit.After;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
@@ -25,7 +26,7 @@ import static org.robolectric.Shadows.shadowOf;
 @Config(sdk = 29)
 public class NavigationNotificationsTest {
     private final Context context = RuntimeEnvironment.getApplication();
-    private final NavigationNotifications notifications = new NavigationNotifications();
+    private final NavigationNotifications notifications = Robolectric.setupService(NavigationNotifications.class);
 
     @After public void disconnect() { notifications.onListenerDisconnected(); NavigationNotifications.forget(); }
 
@@ -92,6 +93,32 @@ public class NavigationNotificationsTest {
         notifications.onNotificationPosted(guidance());
         NavigationNotifications.mapsGone();
         assertNotNull(NavigationNotifications.current());
+    }
+
+    /**
+     * Android can disconnect and reconnect the listener (notification access turned off and on).
+     * Heard again at the destination, "the place, no distance" alone does not tell arrival; what
+     * was heard before the cut does.
+     */
+    @Test public void aListenerReconnectedAtTheDestinationStillKnowsItArrived() {
+        StatusBarNotification arrival = guidance("", "1340 N State St", "0 min · 100 ft · 5:57 AM PST ETA");
+        notifications.onNotificationPosted(guidance("150 ft", "1340 N State St", "0 min · 150 ft · 5:57 AM PST ETA"));
+        notifications.onNotificationPosted(arrival);
+        notifications.onListenerDisconnected();
+        assertNull(NavigationNotifications.current());
+        shadowOf(notifications).addActiveNotification(arrival);
+        notifications.onListenerConnected();
+        assertTrue(NavigationNotifications.current().arrived);
+    }
+
+    /** Only that arrival: not another trip's first seconds, when Maps also posts a road without a distance. */
+    @Test public void whatWasHeardBeforeTheCutCountsOnlyForTheSamePlace() {
+        notifications.onNotificationPosted(guidance("150 ft", "1340 N State St", "0 min · 150 ft · 5:57 AM PST ETA"));
+        notifications.onNotificationPosted(guidance("", "1340 N State St", "0 min · 100 ft · 5:57 AM PST ETA"));
+        notifications.onListenerDisconnected();
+        shadowOf(notifications).addActiveNotification(guidance("", "CA-20 W", "9 min · 8.4 mi · 6:02 AM PST ETA"));
+        notifications.onListenerConnected();
+        assertFalse(NavigationNotifications.current().arrived);
     }
 
     @Test public void mapsArrivesWhenItsLastTurnLosesItsDistance() {

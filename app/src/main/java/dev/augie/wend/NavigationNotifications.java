@@ -7,6 +7,7 @@ import android.content.Context;
 import android.os.SystemClock;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
+import android.text.TextUtils;
 import android.util.Log;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +34,8 @@ public final class NavigationNotifications extends NotificationListenerService {
     private static final String FROM_MAPS = "maps-bridge";
     /** Whether Maps reports its guidance itself. Android's copy of it, if it delivers one, is then left alone. */
     private static boolean reportedByMaps;
+    /** What Android's listener last heard before Android disconnected it, until it connects again. */
+    private static NavigationCard cutOff;
 
     /** @return the next turn, or null */
     static NavigationCard current() { return current; }
@@ -70,6 +73,7 @@ public final class NavigationNotifications extends NotificationListenerService {
     /** As in a new process: no guidance, and no word from Maps yet. */
     static void forget() {
         reportedByMaps = false;
+        cutOff = null;
         current = null;
         endedAt = null;
         beganAt = null;
@@ -102,18 +106,29 @@ public final class NavigationNotifications extends NotificationListenerService {
         StatusBarNotification[] active = getActiveNotifications();
         if (active != null) {
             for (StatusBarNotification notification : active) {
-                NavigationCard card = cardOf(notification);
+                NavigationCard card = cardOf(notification, current);
+                // Heard again at the destination, the place without a distance says no more than
+                // it does mid-route: what was heard last, before Android cut this off, tells.
+                if (card != null && !card.arrived && cutOff != null && cutOff.arrived && cutOff.key.equals(card.key)
+                        && TextUtils.equals(cutOff.road.toString(), card.road.toString())) {
+                    card = cardOf(notification, cutOff);
+                }
                 if (card != null) found = card;
             }
         }
+        cutOff = null;
         publish(found);
     }
 
-    @Override public void onListenerDisconnected() { if (!reportedByMaps) publish(null); }
+    @Override public void onListenerDisconnected() {
+        if (reportedByMaps) return;
+        cutOff = current;
+        publish(null);
+    }
 
     @Override public void onNotificationPosted(StatusBarNotification posted) {
         if (reportedByMaps) return;
-        NavigationCard card = cardOf(posted);
+        NavigationCard card = cardOf(posted, current);
         if (card != null) publish(card);
         // The same notification, no longer guidance.
         else if (current != null && current.key.equals(posted.getKey())) publish(null);
@@ -123,9 +138,9 @@ public final class NavigationNotifications extends NotificationListenerService {
         if (!reportedByMaps && current != null && current.key.equals(removed.getKey())) publish(null);
     }
 
-    private static NavigationCard cardOf(StatusBarNotification notification) {
+    private static NavigationCard cardOf(StatusBarNotification notification, NavigationCard previous) {
         return NavigationCard.from(notification.getPackageName(), notification.getKey(),
-                notification.getNotification(), EmbeddedMaps.PACKAGE, current);
+                notification.getNotification(), EmbeddedMaps.PACKAGE, previous);
     }
 
     private static void publish(NavigationCard card) {

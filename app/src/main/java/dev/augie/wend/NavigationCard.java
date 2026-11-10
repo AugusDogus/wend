@@ -28,7 +28,7 @@ final class NavigationCard {
     /**
      * Whether Maps has reached the destination. Maps posts no arrival, only the place without a
      * distance, as it also posts a road for a second or two mid-route; it is arriving when it
-     * follows the last turn. Not known when the notification is first heard at the destination.
+     * follows the last turn. A notification first heard at the destination does not say.
      */
     final boolean arrived;
 
