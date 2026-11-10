@@ -971,6 +971,10 @@ dock so Maps floats, run `adb shell am force-stop com.google.android.apps.maps`
   empty for the 31 s watched, until Home reopened Maps. A crash (`am crash`) or
   a removed task did get the "Maps was closed" message, with the grey window
   still floating until Home (`before-*.png`).
+- That background layer has the color Maps last reported, which Android's
+  `ActivityView` keeps (`onTaskDescriptionChanged`): black after night
+  guidance, white after a fresh start, where the panel's light message could not
+  be read. The message now has Wend's panel color behind it.
 - After: killed at Home (force-stop and `kill -9`), Maps was back in its panel
   within 2 s without a touch; killed while floating, the window closed and
   Home showed Maps in its panel, above the video app and above the live video;

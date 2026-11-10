@@ -10,6 +10,7 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
+import android.graphics.drawable.ColorDrawable;
 import android.hardware.display.DisplayManager;
 import android.os.Looper;
 import android.view.SurfaceControl;
@@ -185,6 +186,33 @@ public class EmbeddedMapsTest {
         shadowOf(Looper.getMainLooper()).idle();
         assertNull(shadowOf(host).getNextStartedActivity());
         assertNull(panelMessage(maps));
+        maps.release();
+    }
+
+    /**
+     * Without Maps, its display shows only the background color Maps last reported, which Android's
+     * ActivityView keeps: black after night guidance, white after a fresh start, where the panel's
+     * light message could not be read.
+     */
+    @Test public void thePanelsMessageCoversWhateverTheEmptyDisplayShows() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        tasks.maps = null;
+        callback(maps).onTaskRemovalStarted(7);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertEquals("Maps was closed. Tap Open Maps to bring it back.", panelMessage(maps));
+        View message = null;
+        for (int i = 0; i < maps.getChildCount(); i++) {
+            View child = maps.getChildAt(i);
+            if (child instanceof LinearLayout && child.getVisibility() == View.VISIBLE) message = child;
+        }
+        assertNotNull(message);
+        assertEquals("It fills the panel", maps.getWidth(), message.getWidth());
+        assertEquals(maps.getHeight(), message.getHeight());
+        assertTrue(message.getBackground() instanceof ColorDrawable);
+        assertEquals("Opaque, in Wend's panel color", Ui.PANEL, ((ColorDrawable) message.getBackground()).getColor());
         maps.release();
     }
 

@@ -135,6 +135,9 @@ final class EmbeddedMaps extends MapPanel {
         status.setGravity(Gravity.CENTER);
         int padding = Ui.dp(context, 24);
         status.setPadding(padding, padding, padding, padding);
+        // Opaque: without Maps, its display below shows only the background color Maps last reported,
+        // which ActivityView keeps (white after a fresh start), and the message could not be read on it.
+        status.setBackgroundColor(Ui.PANEL);
         message = Ui.text(context, "Opening Google Maps…", 20, Ui.TEXT);
         message.setGravity(Gravity.CENTER);
         status.addView(message);
