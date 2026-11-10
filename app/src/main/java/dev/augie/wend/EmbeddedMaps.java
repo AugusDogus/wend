@@ -20,6 +20,7 @@ import android.view.Gravity;
 import android.view.Display;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.util.concurrent.ExecutorService;
@@ -41,6 +42,12 @@ final class EmbeddedMaps extends MapPanel {
     private final NavigationNotifications.Listener turns;
     /** Whether floating Maps' crop leaves room for the next-turn card; chosen as it starts floating. */
     private boolean cropUnderTurnCard;
+    /**
+     * A picture of Maps left in its panel while live Maps floats above the live video. Maps and
+     * the video move at the same time, in and out, and for part of that neither covers the panel:
+     * without the picture it showed empty there.
+     */
+    private final ImageView leftBehind;
     private static final String CLOSED = "Maps was closed. Tap Open Maps to bring it back.";
     /** Android files a crash as the app dies, up to this long before or after its task is reported closing. */
     private static final int CRASHED_BEFORE_MS = 5_000, CRASH_FILED_MS = 1_000;
@@ -146,6 +153,9 @@ final class EmbeddedMaps extends MapPanel {
         this.resumesGuidance = resumesGuidance;
         transition = new MapTransition(context, this);
         floating = new LiveSurfaceWindow(context, BuildConfig.APPLICATION_ID + " live map", "WendMap");
+        leftBehind = new ImageView(context);
+        leftBehind.setScaleType(ImageView.ScaleType.FIT_XY);
+        leftBehind.setVisibility(View.GONE);
         mapsCard = new MapsCardEdge(cardReader, context.getResources().getDisplayMetrics().density,
                 this::topOfDisplay, this::mapsCardMeasured);
         turns = this::turnCardChanged;
@@ -178,6 +188,7 @@ final class EmbeddedMaps extends MapPanel {
             displayLifecycle = new EmbeddedDisplayLifecycle(activityView,
                     EmbeddedDisplayLifecycle.WhenHidden.STAY_AWAKE);
             addView(activityView, 0, new LayoutParams(-1, -1));
+            addView(leftBehind, 1, new LayoutParams(-1, -1));
             try { motion = new EmbeddedMapMotion(context, this, activityView); }
             catch (ReflectiveOperationException | RuntimeException error) {
                 Log.w("Wend", "Live map transitions unavailable; using the covered task handoff", error);
@@ -406,13 +417,35 @@ final class EmbeddedMaps extends MapPanel {
         }
         if (!floating.active()) { resume(); then.run(); return; }
         hostActive = true;
-        // Lands over its panel, still above the fullscreen video, which then shrinks away below it.
+        // Lands over its panel while the fullscreen video shrinks away below it (MainActivity),
+        // over a picture of Maps as it is now where neither covers the panel yet.
+        leavePicture();
         floating.returnOverCard(then);
+    }
+
+    /** Shows Maps' display as it is now in its panel, under whatever floats or covers it. */
+    private void leavePicture() {
+        if (activityView == null || getWidth() == 0 || getHeight() == 0) return;
+        try {
+            leftBehind.setImageBitmap(new ActivityViewSurface(activityView, ActivityViewSurface.PreviewInput.FORWARDED)
+                    .still(new Rect(0, 0, getWidth(), getHeight())));
+            leftBehind.setVisibility(View.VISIBLE);
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w("WendMap", "Could not leave a picture of Maps in its panel; the panel shows empty for a moment"
+                    + " while Maps and the video move", error);
+        }
+    }
+
+    private void takePictureAway() {
+        leftBehind.setVisibility(View.GONE);
+        leftBehind.setImageBitmap(null);
     }
 
     @Override boolean floatAboveVideo(FloatingPlacement.Corner corner, LiveSurfaceWindow.Listener listener,
             LiveSurfaceWindow.Entry entry) {
-        if (!hostActive || !canFloat() || !openFloating(corner, listener, entry)) return false;
+        if (!hostActive || !canFloat()) return false;
+        leavePicture();
+        if (!openFloating(corner, listener, entry)) { takePictureAway(); return false; }
         Log.i("WendMap", "Floating live Maps above the video in the " + corner + " corner");
         return true;
     }
@@ -700,6 +733,7 @@ final class EmbeddedMaps extends MapPanel {
     }
 
     private void floatingEnded() {
+        takePictureAway();
         watchMapsCard();
         stopWatchingApps();
         if (displayLifecycle != null) displayLifecycle.returnToHost();

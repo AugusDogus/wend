@@ -151,8 +151,8 @@ public final class MainActivity extends Activity {
 
     /** Live video expands from its card; Maps then leaves its panel for a corner above it. */
     boolean openVideoFullscreen(Runnable open) {
-        if (!media.openVideoFullscreen(open, () -> maps.leavePanel())) return false;
-        if (media.videoPresenting()) floatMaps(LiveSurfaceWindow.Entry.HELD_AT_CARD);
+        if (!media.openVideoFullscreen(open, () -> { })) return false;
+        if (media.videoPresenting()) floatMaps(LiveSurfaceWindow.Entry.FROM_CARD);
         return true;
     }
 
@@ -236,6 +236,8 @@ public final class MainActivity extends Activity {
         // must restore Maps even when Android does not deliver another onStart.
         // Floating Maps lands over its panel first; the fullscreen video then shrinks into its
         // card below it, and the end of that presentation hands Maps back to its panel.
+        // Together: the video starts shrinking now, not once Maps has landed.
+        if (media.videoPresenting()) media.homeVideo();
         maps.home(() -> {
             media.homeVideo();
             if (!media.videoPresenting()) maps.returnFromFloating();

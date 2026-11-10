@@ -673,7 +673,14 @@ final class LiveSurfaceWindow {
 
         void collapse() {
             // A dismissal already in progress wins: its session ended or another app took over.
-            if (phase == Phase.CLOSED || target == Target.GONE || target == Target.CARD && phase == Phase.MOVING) return;
+            if (phase == Phase.CLOSED || target == Target.GONE) return;
+            if (target == Target.CARD && phase == Phase.MOVING) {
+                // Still landing over its card (returnOverCard): handed back as it arrives. A
+                // collapse already under way is left alone.
+                Runnable arrived = overCard;
+                if (arrived != null) overCard = () -> { arrived.run(); finish(false); };
+                return;
+            }
             // Not yet drawn elsewhere, still at its card, or hidden: the card shows it directly.
             if (phase == Phase.WAITING || target == Target.CARD || target == Target.HIDDEN) { finish(false); return; }
             surface.input(new Rect());
