@@ -329,6 +329,8 @@ final class LiveSurfaceWindow {
         FloatingDrag drag;
         OverlayTouchRegion touches;
         FloatingOutline outline;
+        /** The overlay's frames, which the surface's moves wait for while it draws the turn card; or null. */
+        OverlayFrames frames;
         Phase phase = Phase.WAITING;
         Target target;
         Target origin;
@@ -391,6 +393,7 @@ final class LiveSurfaceWindow {
                 currentOutline = 0;
                 currentAlpha = emerging ? 0 : 1;
                 surface.attach(overlay, current, currentRadius, currentAlpha);
+                frames = OverlayFrames.of(overlay);
                 target = emerging ? Target.HIDDEN : Target.CARD;
                 phase = Phase.RESTING;
                 if (placement == null) whole(reached, true);
@@ -475,13 +478,25 @@ final class LiveSurfaceWindow {
             currentRadius = cornerRadius;
             currentOutline = outlineOpacity;
             currentAlpha = alpha;
-            try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+            SurfaceControl.Transaction transaction = new SurfaceControl.Transaction();
+            try {
                 surface.place(transaction, placed, cornerRadius, alpha);
                 if (outline != null) outline.place(transaction, placed.visible(), cornerRadius, outlineOpacity * alpha);
-                transaction.apply();
-            } catch (ReflectiveOperationException | RuntimeException error) { fail(error); return; }
+            } catch (ReflectiveOperationException | RuntimeException error) { transaction.close(); fail(error); return; }
             // The turn card belongs to the floating window: it shows as the window reaches its corner.
-            overlay.frame(drawn(), cornerRadius, outlineOpacity * alpha);
+            boolean cardDrawn = overlay.frame(drawn(), cornerRadius, outlineOpacity * alpha);
+            // The overlay draws the card in its next frame; the surface moves in that frame too, or
+            // the card trails a drag. Later moves keep waiting until earlier ones have gone.
+            if (frames != null && (cardDrawn || frames.waiting())) {
+                overlay.invalidate();
+                frames.applyWithNextFrame(transaction, outline == null
+                        ? new SurfaceControl[]{surface.control()}
+                        : new SurfaceControl[]{surface.control(), outline.layer()});
+            } else {
+                try { transaction.apply(); }
+                catch (RuntimeException error) { fail(error); return; }
+                finally { transaction.close(); }
+            }
             if (snapping) touches.only(drawn());
         }
 
@@ -762,6 +777,8 @@ final class LiveSurfaceWindow {
                 try { touches.release(); }
                 catch (RuntimeException error) { Log.e(tag, "Could not release the floating window touch area", error); }
             }
+            // Moves still waiting for a frame go first, so none lands after the surface is restored.
+            if (frames != null) frames.applyNow();
             if (attached) restoreSurface(hidden);
             if (outline != null) outline.release();
             if (overlay.isAttachedToWindow()) windows.removeViewImmediate(overlay);

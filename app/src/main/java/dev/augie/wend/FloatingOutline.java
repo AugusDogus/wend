@@ -55,6 +55,8 @@ final class FloatingOutline {
         transaction.setAlpha(layer, EDGE_ALPHA * opacity);
     }
 
+    SurfaceControl layer() { return layer; }
+
     void release() {
         try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
             if (layer.isValid()) transaction.reparent(layer, null);

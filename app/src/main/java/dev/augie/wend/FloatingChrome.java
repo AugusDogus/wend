@@ -100,12 +100,17 @@ final class FloatingChrome extends View {
         invalidate();
     }
 
-    /** Where the window is drawn now, and how much of its turn card shows, from 0 to 1. */
-    void frame(Rect bounds, float cornerRadius, float turnCardOpacity) {
+    /**
+     * Where the window is drawn now, and how much of its turn card shows, from 0 to 1.
+     * @return whether the next frame draws the turn card there
+     */
+    boolean frame(Rect bounds, float cornerRadius, float turnCardOpacity) {
         cardWindow.set(bounds);
         cardRadius = cornerRadius;
         cardAlpha = turnCardOpacity;
-        if (card != null) invalidate();
+        if (card == null) return false;
+        invalidate();
+        return cardAlpha > 0 && !cardWindow.isEmpty();
     }
 
     /** Fades the menu in over the window at {@code bounds}, or out; at once if not {@code animate}. */

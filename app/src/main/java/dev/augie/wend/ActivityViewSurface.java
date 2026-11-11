@@ -188,6 +188,9 @@ class ActivityViewSurface {
     }
 
     /** Queues a placement in a caller's transaction so other layers can move in the same frame. */
+    /** The compositor layer this moves. */
+    SurfaceControl control() { return surface; }
+
     void place(SurfaceControl.Transaction transaction, SurfacePlacement placement, float radius, float alpha)
             throws ReflectiveOperationException {
         placement.crop(cropped);

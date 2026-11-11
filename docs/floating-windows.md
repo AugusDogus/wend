@@ -180,6 +180,14 @@ corner, default bottom right (the passenger side).
   window shrinks to no less than two thirds of its size before it is cut
   (`NavigationCard.fittedTextSize`). The card
   fades in as the window reaches its corner and moves with it when dragged.
+  The overlay draws the card a frame or more after a transaction moves the
+  map's surface, so while the card shows, each move of the surface waits for
+  the overlay frame that draws the card there (`OverlayFrames`:
+  `deferTransactionUntilSurface` on the frame number `registerRtFrameCallback`
+  reports, as SurfaceView does). Recorded drags on the emulator
+  (`build/card-sync`, `offset.py`) put the map 8 to 26 px off the card in most
+  moving frames before, and within 1 px of it after; traced, the same drags
+  dropped 0 of 149 frames before and 1 of 147 after (host load 9 to 10).
   At the destination Maps covers its map with an "Arriving at" sheet, so the
   card fills the window, as Maps' own PiP does: green (`#1e8e3e`, where its
   turn card keeps Maps' guidance color) with a map pin above "Arrived", in the
