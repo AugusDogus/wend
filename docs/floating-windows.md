@@ -190,7 +190,8 @@ corner, default bottom right (the passenger side).
   whose distance is all that is left of the trip ("350 ft", of "0 min · 350 ft
   · 5:53 AM PST ETA"). A listener that Android reconnects at the destination
   hears no turn before it and goes by what it heard before it was cut off.
-  Without guidance, or without the listener, Maps floats as before, without one.
+  Without guidance Maps does not float, as Maps' own PiP: it stays in its panel
+  under the video. Guidance that ends while it floats leaves it floating, without a card.
 - **Enter.** Maps shrinks from its panel into its corner while the video expands
   from its card beneath it, both in the same 280 ms. For part of that neither
   covers the panel, which then shows empty in its own color: a color layer

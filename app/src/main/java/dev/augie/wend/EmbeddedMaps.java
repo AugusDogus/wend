@@ -447,8 +447,9 @@ final class EmbeddedMaps extends MapPanel {
         return true;
     }
 
+    /** Only guidance floats, as Maps' own PiP: without it Maps stays in its panel under the video. */
     private boolean canFloat() {
-        return activityView != null && displayLifecycle != null && state == State.READY && !launching
+        return NavigationNotifications.current() != null && activityView != null && displayLifecycle != null && state == State.READY && !launching
                 && !floating.active() && status.getVisibility() != View.VISIBLE && isLaidOut()
                 && !(motion != null && motion.pending()) && !transition.pending();
     }

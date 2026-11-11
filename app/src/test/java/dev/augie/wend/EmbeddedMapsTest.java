@@ -32,6 +32,8 @@ import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import android.os.DropBoxManager;
 import java.nio.charset.StandardCharsets;
@@ -63,6 +65,12 @@ public class EmbeddedMapsTest {
     private final List<String> events = new ArrayList<>();
     /** The "resume guidance" setting each test's Maps panel reads. */
     private boolean resumesGuidance;
+    /** Maps guides in each test unless it says otherwise: only guidance floats. */
+    private final NavigationNotifications guiding = new NavigationNotifications();
+
+    @Before public void guide() { guiding.onNotificationPosted(guidance()); }
+
+    @After public void stopGuiding() { guiding.onListenerDisconnected(); NavigationNotifications.forget(); }
 
     @Test public void reusingAnExistingTaskDoesNotWaitForTaskCreated() throws Exception {
         installMaps();
@@ -172,6 +180,18 @@ public class EmbeddedMapsTest {
      * The crop for floating Maps was chosen once, as it started floating. Guidance that began or
      * ended while it floated left the card over the car, or the trip sheet's top showing.
      */
+    @Test public void mapsWithoutGuidanceStaysInItsPanelUnderTheVideo() throws Exception {
+        FakeTasks tasks = new FakeTasks(host);
+        EmbeddedMaps maps = readyMaps(tasks);
+        tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
+        maps.resume();
+        guiding.onNotificationRemoved(guidance());
+        assertFalse(maps.floatAboveVideo(FloatingPlacement.Corner.BOTTOM_RIGHT, listener(),
+                LiveSurfaceWindow.Entry.FROM_CARD));
+        assertFalse(maps.floatAboveVideoApp(FloatingPlacement.Corner.BOTTOM_RIGHT, listener()));
+        maps.release();
+    }
+
     @Test public void theMapMovesUnderATurnCardThatComesOrGoesWhileMapsFloats() throws Exception {
         FakeTasks tasks = new FakeTasks(host);
         EmbeddedMaps maps = readyMaps(tasks);
@@ -183,11 +203,11 @@ public class EmbeddedMapsTest {
             assertTrue(maps.floatAboveVideo(FloatingPlacement.Corner.BOTTOM_RIGHT, listener(),
                     LiveSurfaceWindow.Entry.HELD_AT_CARD));
             float density = host.getResources().getDisplayMetrics().density;
-            assertEquals(FloatingMapCrop.of(833, 720, density, false, 0), floatingSource(maps));
-            notifications.onNotificationPosted(guidance);
             assertEquals("Under the card", FloatingMapCrop.of(833, 720, density, true, 0), floatingSource(maps));
             notifications.onNotificationRemoved(guidance);
             assertEquals("Without it", FloatingMapCrop.of(833, 720, density, false, 0), floatingSource(maps));
+            notifications.onNotificationPosted(guidance);
+            assertEquals("Under it again", FloatingMapCrop.of(833, 720, density, true, 0), floatingSource(maps));
         } finally {
             notifications.onListenerDisconnected();
             maps.release();
