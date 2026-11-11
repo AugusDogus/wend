@@ -4,7 +4,7 @@
 
 <p align="center">A launcher for Android 10 car head units, built for the PX6.</p>
 
-<video src="https://github.com/user-attachments/assets/84672340-c046-469a-9ba0-8de7a6d4f517" width="800" controls muted></video>
+https://github.com/user-attachments/assets/1cf1a694-c676-4b99-805c-ce1088c85269
 
 ## Features
 
