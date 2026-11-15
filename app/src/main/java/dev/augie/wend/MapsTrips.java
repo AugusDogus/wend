@@ -25,7 +25,9 @@ import java.util.Arrays;
  * stops still ahead as the extra {@code stops}, as a trip starts and whenever Maps saves its
  * directions again, and {@code guidance} with each guidance
  * notification Maps builds (extra {@code notification}; none once guidance ended), which reaches
- * Wend even where Android delivers no notifications ({@link NavigationNotifications#reportedByMaps}).
+ * Wend even where Android delivers no notifications ({@link NavigationNotifications#reportedByMaps}),
+ * and {@code shields} with the route shields Maps' own card draws in the next turn's road
+ * ({@link RoadShields}; none once it shows none).
  * Only Maps may call it. Both stay in memory. Without the module nothing is ever reported, and
  * Wend resumes as before ({@link GuidanceResume}) and hears guidance from Android alone.
  */
@@ -91,8 +93,8 @@ public final class MapsTrips extends ContentProvider {
     }
 
     @Override public Bundle call(String method, String arg, Bundle extras) {
-        boolean trip = "trip".equals(method), guidance = "guidance".equals(method);
-        if (!trip && !guidance) return null;
+        boolean trip = "trip".equals(method), guidance = "guidance".equals(method), shields = "shields".equals(method);
+        if (!trip && !guidance && !shields) return null;
         Context context = getContext();
         int caller = Binder.getCallingUid();
         String[] callers = context == null ? null : context.getPackageManager().getPackagesForUid(caller);
@@ -103,6 +105,10 @@ public final class MapsTrips extends ContentProvider {
         if (trip) {
             String[] stops = extras == null ? null : extras.getStringArray("stops");
             reported(arg, stops == null ? new String[0] : stops);
+        }
+        else if (shields) {
+            RoadShields reported = RoadShields.from(extras);
+            main.post(() -> NavigationNotifications.shieldsReportedByMaps(reported));
         }
         else {
             // Maps' own guidance notification, or none once its guidance ended.

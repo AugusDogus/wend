@@ -71,6 +71,30 @@ public class NavigationNotificationsTest {
         assertNull("Maps said its guidance ended", NavigationNotifications.current());
     }
 
+    /**
+     * The module also reports the shields Maps draws in its own card, which its notification lacks.
+     * They join the turn whose road their line names, whichever of the two arrives first.
+     */
+    @Test public void mapsShieldsJoinTheTurnWhoseRoadTheyName() {
+        RoadShields twenty = RoadShields.from(RoadShieldsTest.reported("CA-20 W WEST", new int[]{0}, new int[]{7}, RoadShieldsTest.shield()));
+        NavigationNotifications.reportedByMaps(guidance().getNotification());
+        assertNull(NavigationNotifications.current().shields);
+        NavigationNotifications.shieldsReportedByMaps(twenty);
+        assertEquals(twenty, NavigationNotifications.current().shields);
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "8 min · 8.2 mi · 6:02 AM PST ETA").getNotification());
+        assertEquals("The same road at the next update", twenty, NavigationNotifications.current().shields);
+        NavigationNotifications.reportedByMaps(guidance("400 ft", "N State St", "2 min · 0.9 mi · 6:02 AM PST ETA").getNotification());
+        assertNull("A turn onto another road", NavigationNotifications.current().shields);
+        NavigationNotifications.shieldsReportedByMaps(null);
+        NavigationNotifications.reportedByMaps(null);
+        NavigationNotifications.shieldsReportedByMaps(twenty);
+        NavigationNotifications.reportedByMaps(guidance().getNotification());
+        assertEquals("Shields that came first wait for their turn", twenty, NavigationNotifications.current().shields);
+        NavigationNotifications.reportedByMaps(null);
+        NavigationNotifications.reportedByMaps(guidance().getNotification());
+        assertNull("Ended guidance forgets them", NavigationNotifications.current().shields);
+    }
+
     /** Where Android delivers the notification too, each step would otherwise arrive twice. */
     @Test public void androidsCopyIsLeftAloneOnceMapsReportsItself() {
         NavigationNotifications.reportedByMaps(guidance("0.4 mi", "US-101 S", "8 min · 7.3 mi · 6:03 AM PST ETA").getNotification());

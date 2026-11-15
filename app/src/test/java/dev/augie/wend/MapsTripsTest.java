@@ -108,6 +108,26 @@ public class MapsTripsTest {
         NavigationNotifications.forget();
     }
 
+    @Test public void shieldsMapsReportsReachTheTurnCard() {
+        Notification guidance = new Notification.Builder(RuntimeEnvironment.getApplication(), "1_foreground_1")
+                .setSmallIcon(Icon.createWithBitmap(Bitmap.createBitmap(36, 36, Bitmap.Config.ARGB_8888)))
+                .setCategory(Notification.CATEGORY_NAVIGATION).setContentTitle("0 ft").setContentText("CA-20 W").build();
+        Bundle notification = new Bundle();
+        notification.putParcelable("notification", guidance);
+        Bundle shields = RoadShieldsTest.reported("CA-20 W WEST", new int[]{0}, new int[]{7}, RoadShieldsTest.shield());
+        ShadowBinder.setCallingUid(OTHER_UID);
+        assertThrows(SecurityException.class, () -> trips.call("shields", null, shields));
+        ShadowBinder.setCallingUid(MAPS_UID);
+        trips.call("guidance", null, notification);
+        trips.call("shields", null, shields);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertEquals("CA-20 W WEST", NavigationNotifications.current().shields.text);
+        trips.call("shields", null, new Bundle());
+        shadowOf(Looper.getMainLooper()).idle();
+        assertNull("Maps' card shows no shield any more", NavigationNotifications.current().shields);
+        NavigationNotifications.forget();
+    }
+
     @Test public void nothingReportedIsNoTrip() {
         assertNull(MapsTrips.navigation(SystemClock.uptimeMillis(), MAPS));
         ShadowBinder.setCallingUid(MAPS_UID);

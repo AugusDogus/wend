@@ -162,7 +162,10 @@ corner, default bottom right (the passenger side).
   from Maps' ongoing guidance notification (category `navigation`: large icon,
   title, text, subtext, color), which `NavigationNotifications`, a notification
   listener, hears; Wend allows itself to bind it as the system user
-  (`setNotificationListenerAccessGranted`). With a card the crop moves 47 dp down
+  (`setNotificationListenerAccessGranted`). The notification has the road as text
+  only ("CA-20 W"); with the Maps bridge module, the card shows the road as Maps'
+  own card does, with Maps' route shields rendered inside Maps ("20" in a shield,
+  then "WEST"; `RoadShields`). With a card the crop moves 47 dp down
   (`FloatingMapCrop`), so the car, which Maps draws 468 of 720 px down in
   guidance, stays above the card and the trip sheet's top goes under it. The crop
   follows the card: if guidance begins or ends while Maps floats, the map moves

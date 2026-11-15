@@ -36,6 +36,8 @@ public final class NavigationNotifications extends NotificationListenerService {
     private static boolean reportedByMaps;
     /** What Android's listener last heard before Android disconnected it, until it connects again. */
     private static NavigationCard cutOff;
+    /** The shields Maps' own card last showed, for the turn whose road they name; null for none. */
+    private static RoadShields shields;
 
     /** @return the next turn, or null */
     static NavigationCard current() { return current; }
@@ -65,6 +67,16 @@ public final class NavigationNotifications extends NotificationListenerService {
         if (card != null || reported) publish(card);
     }
 
+    /**
+     * The Maps bridge module rendered the shields Maps' own card draws in the next turn's road
+     * ({@link RoadShields}), or null once that card shows none. Maps' notification has only the
+     * text. They join the turn whose road they name, now or when it arrives. Main thread.
+     */
+    static void shieldsReportedByMaps(RoadShields reported) {
+        shields = reported;
+        if (current != null && current.withShields(shields) != current) publish(current);
+    }
+
     /** Maps' process is gone. Guidance it reported itself ended with it, as Android removes a dead app's notification. */
     static void mapsGone() {
         if (current != null && FROM_MAPS.equals(current.key)) publish(null);
@@ -74,6 +86,7 @@ public final class NavigationNotifications extends NotificationListenerService {
     static void forget() {
         reportedByMaps = false;
         cutOff = null;
+        shields = null;
         current = null;
         endedAt = null;
         beganAt = null;
@@ -144,6 +157,9 @@ public final class NavigationNotifications extends NotificationListenerService {
     }
 
     private static void publish(NavigationCard card) {
+        // Shields of guidance that ended are no turn's of the next.
+        if (card == null && current != null) shields = null;
+        if (card != null) card = card.withShields(shields);
         if (current != null && card == null) endedAt = SystemClock.uptimeMillis();
         if (current == null && card != null) beganAt = SystemClock.uptimeMillis();
         current = card;

@@ -31,9 +31,11 @@ final class NavigationCard {
      * follows the last turn. A notification first heard at the destination does not say.
      */
     final boolean arrived;
+    /** The shields Maps' own card draws in {@link #road}, or null if none were reported for it. */
+    final RoadShields shields;
 
     private NavigationCard(String key, Icon arrow, CharSequence distance, CharSequence road, CharSequence eta, int color,
-            boolean arrived) {
+            boolean arrived, RoadShields shields) {
         this.key = key;
         this.arrow = arrow;
         this.distance = distance;
@@ -41,6 +43,14 @@ final class NavigationCard {
         this.eta = eta;
         this.color = color;
         this.arrived = arrived;
+        this.shields = shields;
+    }
+
+    /** @return this turn with {@code reported} if they are its road's shields, or without any */
+    NavigationCard withShields(RoadShields reported) {
+        RoadShields own = reported != null && reported.names(road) ? reported : null;
+        if (own == shields) return this;
+        return new NavigationCard(key, arrow, distance, road, eta, color, arrived, own);
     }
 
     /**
@@ -61,7 +71,7 @@ final class NavigationCard {
         boolean arrived = distance.length() == 0 && arrow != null && previous != null && previous.key.equals(key)
                 && (previous.arrived || previous.lastTurn());
         return new NavigationCard(key, arrow, distance, road, text(extras, Notification.EXTRA_SUB_TEXT),
-                notification.color, arrived);
+                notification.color, arrived, null);
     }
 
     /**

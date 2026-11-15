@@ -238,13 +238,65 @@ final class FloatingChrome extends View {
         secondary.setAlpha(Math.round(222 * alpha));
         float firstLine = at.top + side * .46f, secondLine = at.top + side * .78f;
         if (room > 0) {
-            canvas.drawText(TextUtils.ellipsize(first, primary, room, TextUtils.TruncateAt.END).toString(), textLeft,
-                    second.length() > 0 ? firstLine : at.centerY() + primary.getTextSize() * .35f, primary);
+            float baseline = second.length() > 0 ? firstLine : at.centerY() + primary.getTextSize() * .35f;
+            if (road && next.shields != null) drawShielded(canvas, next.shields, textLeft, baseline, room, side * .3f, alpha);
+            else canvas.drawText(TextUtils.ellipsize(first, primary, room, TextUtils.TruncateAt.END).toString(), textLeft,
+                    baseline, primary);
             if (second.length() > 0) {
                 canvas.drawText(TextUtils.ellipsize(second, secondary, room, TextUtils.TruncateAt.END).toString(),
                         textLeft, secondLine, secondary);
             }
         }
+    }
+
+    /** Maps draws its shields this tall for its card's text size (47 px for 39 px text). */
+    private static final float SHIELD_HEIGHT = 1.2f;
+    private final Paint shieldPaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
+    private final RectF shieldAt = new RectF();
+
+    /**
+     * Draws the road as Maps' own card does, its route shields among the words ({@link RoadShields}),
+     * at {@code size} or smaller to fit {@code room}; what still does not fit is cut at the end.
+     */
+    private void drawShielded(Canvas canvas, RoadShields shields, float left, float baseline, float room, float size, float alpha) {
+        java.util.List<Object> parts = shields.parts();
+        primary.setTextSize(size);
+        float width = 0, gap = size * .25f;
+        for (Object part : parts) width += (width > 0 ? gap : 0) + partWidth(part, size);
+        float fitted = NavigationCard.fittedTextSize(size, width, room);
+        primary.setTextSize(fitted);
+        gap = fitted * .25f;
+        float x = left, right = left + room, middle = baseline - fitted * .71f / 2;
+        shieldPaint.setAlpha(Math.round(255 * alpha));
+        for (Object part : parts) {
+            if (x >= right) break;
+            if (part instanceof Bitmap) {
+                Bitmap image = (Bitmap) part;
+                float height = fitted * SHIELD_HEIGHT, imageWidth = partWidth(part, fitted);
+                // A shield that does not fit whole is left out, as a cut word would be.
+                if (x + imageWidth > right) break;
+                shieldAt.set(x, middle - height / 2, x + imageWidth, middle + height / 2);
+                canvas.drawBitmap(image, null, shieldAt, shieldPaint);
+                x += imageWidth + gap;
+            } else {
+                String words = TextUtils.ellipsize((String) part, primary, right - x, TextUtils.TruncateAt.END).toString();
+                canvas.drawText(words, x, baseline, primary);
+                x += primary.measureText(words) + gap;
+            }
+        }
+    }
+
+    /** How wide a part of a shielded road is drawn at text {@code size}. */
+    private float partWidth(Object part, float size) {
+        if (part instanceof Bitmap) {
+            Bitmap image = (Bitmap) part;
+            return image.getHeight() == 0 ? 0 : size * SHIELD_HEIGHT * image.getWidth() / image.getHeight();
+        }
+        float before = primary.getTextSize();
+        primary.setTextSize(size);
+        float width = primary.measureText((String) part);
+        primary.setTextSize(before);
+        return width;
     }
 
     /**
