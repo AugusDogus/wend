@@ -84,6 +84,7 @@ final class GuidanceReporter {
         this.tag = tag;
         if (service != null) holder = service;
         report();
+        reporter.guidanceUpdated();
     }
 
     private synchronized void cancelled(String tag, int id) {

@@ -20,6 +20,11 @@ limits below.
   Maps, before Android's notification service: it reaches Wend with Maps' notifications turned
   off, where Android would deliver a notification listener nothing, so floating Maps keeps its
   next-turn card, its "Arrived" card, and resuming after Maps dies.
+- **Its road shields** (`ShieldReporter`). The route shields Maps' own turn card draws in the next
+  turn's road ("CA-20 W WEST" with a "20" shield over "CA-20 W"), which its notification lacks:
+  the card's line, where each shield lies in it, and each shield rendered as Maps draws it, by
+  calling `shields` on the same provider whenever the line changes, or without extras when it has
+  no shield. Without it, floating Maps' card shows such a road as the notification's text.
 
 Wend takes these calls from Maps' own uid only (`MapsTrips`). The module holds no stable connection
 to Wend, so Wend's process dying does not take Maps with it.
@@ -51,5 +56,8 @@ module in LSPosed for Google Maps, and restart Maps. Its log tag is `wend-maps-b
 - A Maps that saves its directions in another file or shape: `TripFile` then finds no destination,
   and Wend resumes trips as without the module (it presses Start where Maps restores a route).
   Checked against Maps 26.43.
+- A Maps whose turn card is no longer a `TurnCardStepCueTextView` named `top_cue_text`, or draws
+  its shields otherwise than as a `ReplacementSpan`: Wend then shows roads as text. Checked against
+  Maps 26.43.
 - A Maps that stops posting a guidance notification. It is Maps' foreground-service notification,
   which Android requires of it while it navigates in the background.

@@ -30,7 +30,7 @@ import java.nio.file.Files;
  *     destination as result data, and the same extras.
  * </ul>
  *
- * It also carries {@link GuidanceReporter}'s reports to Wend, off Maps' own threads.
+ * It also carries {@link GuidanceReporter}'s and {@link ShieldReporter}'s reports to Wend, off Maps' own threads.
  */
 final class TripReporter {
     static final String ASK = "dev.augie.wend.mapsbridge.TRIP";
@@ -54,6 +54,7 @@ final class TripReporter {
     private boolean failureLogged;
     private final Runnable report = this::report;
     private GuidanceReporter guidance;
+    private ShieldReporter shields;
 
     private TripReporter(Context maps) {
         this.maps = maps;
@@ -80,6 +81,7 @@ final class TripReporter {
         }, new IntentFilter(ASK), ASKERS, reporter.worker);
         reporter.observer.startWatching();
         reporter.guidance = GuidanceReporter.install(reporter);
+        reporter.shields = ShieldReporter.install(reporter);
         reporter.worker.post(reporter.report);
         started = reporter;
         Log.i(MapsBridge.TAG, "Reporting Maps' destination to Wend from " + reporter.directory);
@@ -127,10 +129,16 @@ final class TripReporter {
         });
     }
 
+    /** Maps updated its guidance: its card's shields may have changed, or finished loading. */
+    void guidanceUpdated() {
+        if (shields != null) shields.soon();
+    }
+
     private void answer(BroadcastReceiver asked) {
         Saved saved = saved();
         if (saved != null) tellWend("trip", saved.trip.destination, saved.extras());
         if (guidance != null) guidance.again();
+        if (shields != null) shields.again();
         if (!asked.isOrderedBroadcast()) return;
         if (saved == null) { asked.setResultCode(0); return; }
         asked.setResult(1, saved.trip.destination, saved.extras());
