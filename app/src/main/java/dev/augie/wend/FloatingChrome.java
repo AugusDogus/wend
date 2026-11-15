@@ -62,7 +62,7 @@ final class FloatingChrome extends View {
     private final Paint band = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint primary = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint secondary = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-    private final Path cardClip = new Path();
+    private final RectF cardShape = new RectF();
     private final Rect cardWindow = new Rect();
     private NavigationCard card;
     private Drawable arrow;
@@ -209,22 +209,17 @@ final class FloatingChrome extends View {
      */
     private void drawTurnCard(Canvas canvas, NavigationCard next, float alpha) {
         Rect at = NavigationCard.band(cardWindow);
-        canvas.save();
-        cardClip.reset();
-        cardClip.addRoundRect(new RectF(cardWindow), cardRadius, cardRadius, Path.Direction.CW);
-        canvas.clipPath(cardClip);
         int side = at.height();
         if (next.arrived) {
             drawArrived(canvas, side, alpha);
-            canvas.restore();
             return;
         }
         band.setColor(next.color);
         band.setAlpha(Math.round(Color.alpha(next.color) * alpha));
-        canvas.drawRect(at, band);
+        fillWindow(canvas, at.left, at.top, at.right, at.bottom, band);
         band.setColor(ARROW_SHADE);
         band.setAlpha(Math.round(Color.alpha(ARROW_SHADE) * alpha));
-        canvas.drawRect(at.left, at.top, at.left + side, at.bottom, band);
+        fillWindow(canvas, at.left, at.top, at.left + side, at.bottom, band);
         if (arrow != null) {
             int size = Math.round(side * .6f), left = at.left + (side - size) / 2, top = at.top + (side - size) / 2;
             arrow.setBounds(left, top, left + size, top + size);
@@ -250,6 +245,19 @@ final class FloatingChrome extends View {
                         textLeft, secondLine, secondary);
             }
         }
+    }
+
+    /**
+     * Fills the part of the window's rounded shape inside the given bounds, its corners grown by a
+     * pixel and smoothed. The floating surface below smooths its own corners, so a card cut to the
+     * same curve leaves that surface's edge pixels showing: Maps' white trip sheet, under the card.
+     */
+    private void fillWindow(Canvas canvas, int left, int top, int right, int bottom, Paint paint) {
+        canvas.save();
+        canvas.clipRect(left, top, right, bottom);
+        cardShape.set(cardWindow);
+        cardShape.inset(-1, -1);
+        canvas.drawRoundRect(cardShape, cardRadius + 1, cardRadius + 1, paint);
         canvas.restore();
     }
 
@@ -262,7 +270,7 @@ final class FloatingChrome extends View {
     private void drawArrived(Canvas canvas, int side, float alpha) {
         band.setColor(ARRIVED);
         band.setAlpha(Math.round(Color.alpha(ARRIVED) * alpha));
-        canvas.drawRect(cardWindow, band);
+        fillWindow(canvas, cardWindow.left, cardWindow.top, cardWindow.right, cardWindow.bottom, band);
         String arrived = getContext().getString(R.string.maps_arrived);
         int pin = Math.round(side * .46f);
         primary.setTextSize(side * .38f);
