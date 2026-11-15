@@ -47,6 +47,21 @@ public class NavigationCardTest {
         assertNotNull(card.arrow);
     }
 
+    /** Maps' own PiP shows the arrival time under the road, without its zone; so does the card. */
+    @Test public void theArrivalIsTheTripLinesLastPartWithoutZoneOrEta() {
+        NavigationCard card = NavigationCard.from(MAPS, KEY, guidance().build(), MAPS, null);
+        assertEquals("5:23 PM", card.arrival());
+        assertEquals("17:23", NavigationCard.from(MAPS, KEY, guidance().setSubText("10 min · 8.4 mi · 17:23 ETA").build(),
+                MAPS, null).arrival());
+        assertEquals("5:23 PM", NavigationCard.from(MAPS, KEY, guidance().setSubText("1 hr 5 min · 64 mi · 5:23 PM").build(),
+                MAPS, null).arrival());
+    }
+
+    @Test public void aTripLineWithoutTimeDistanceAndArrivalHasNoArrival() {
+        assertEquals("", NavigationCard.from(MAPS, KEY, guidance().setSubText(null).build(), MAPS, null).arrival());
+        assertEquals("", NavigationCard.from(MAPS, KEY, guidance().setSubText("Rerouting").build(), MAPS, null).arrival());
+    }
+
     @Test public void ignoresOtherAppsAndMapsOtherNotifications() {
         assertNull(NavigationCard.from("com.example.nav", KEY, guidance().build(), MAPS, null));
         assertNull(NavigationCard.from(MAPS, KEY, guidance().setCategory(Notification.CATEGORY_STATUS).build(), MAPS, null));

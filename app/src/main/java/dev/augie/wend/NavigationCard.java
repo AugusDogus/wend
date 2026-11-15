@@ -84,6 +84,24 @@ final class NavigationCard {
         return false;
     }
 
+    /**
+     * @return when the trip arrives, as Maps' own PiP shows it under the road: the trip line's
+     *     last part without its zone and "ETA" ("5:23 PM" of "10 min · 8.4 mi · 5:23 PM PST ETA");
+     *     empty unless the line has its time, distance and arrival
+     */
+    String arrival() {
+        String[] parts = eta.toString().split("·");
+        if (parts.length < 3) return "";
+        StringBuilder kept = new StringBuilder();
+        for (String word : parts[parts.length - 1].trim().split("\\s+")) {
+            boolean zone = word.matches("[A-Z]{2,5}") && !word.equals("AM") && !word.equals("PM");
+            if (zone || word.equals("ETA")) continue;
+            if (kept.length() > 0) kept.append(' ');
+            kept.append(word);
+        }
+        return kept.toString();
+    }
+
     private static CharSequence text(Bundle extras, String name) {
         CharSequence value = extras.getCharSequence(name);
         return TextUtils.isEmpty(value) ? "" : value;

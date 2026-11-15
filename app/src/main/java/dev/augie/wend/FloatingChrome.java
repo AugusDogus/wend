@@ -203,9 +203,15 @@ final class FloatingChrome extends View {
         }
     }
 
+    /** Maps' own PiP card gives its arrow a column this share of the window wide, and draws it this share of the card's height. */
+    private static final float ARROW_COLUMN = .188f, ARROW_SIZE = .42f;
+    private final TextPaint arrival = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+
     /**
-     * As Maps' own PiP card: the arrow in a darker square on the left, the road above the distance
-     * (or, without a road, the distance above the trip's time) beside it, in Maps' guidance color.
+     * As Maps' own PiP card, in Maps' guidance color: the arrow in a narrow darker column on the
+     * left, and beside it the road (with Maps' shields, if reported) above the distance to the
+     * turn and, on the right, when the trip arrives. Without a road, the distance above the trip's
+     * time.
      */
     private void drawTurnCard(Canvas canvas, NavigationCard next, float alpha) {
         Rect at = NavigationCard.band(cardWindow);
@@ -214,14 +220,15 @@ final class FloatingChrome extends View {
             drawArrived(canvas, side, alpha);
             return;
         }
+        int column = Math.round(cardWindow.width() * ARROW_COLUMN);
         band.setColor(next.color);
         band.setAlpha(Math.round(Color.alpha(next.color) * alpha));
         fillWindow(canvas, at.left, at.top, at.right, at.bottom, band);
         band.setColor(ARROW_SHADE);
         band.setAlpha(Math.round(Color.alpha(ARROW_SHADE) * alpha));
-        fillWindow(canvas, at.left, at.top, at.left + side, at.bottom, band);
+        fillWindow(canvas, at.left, at.top, at.left + column, at.bottom, band);
         if (arrow != null) {
-            int size = Math.round(side * .6f), left = at.left + (side - size) / 2, top = at.top + (side - size) / 2;
+            int size = Math.round(side * ARROW_SIZE), left = at.left + (column - size) / 2, top = at.top + (side - size) / 2;
             arrow.setBounds(left, top, left + size, top + size);
             arrow.setAlpha(Math.round(255 * alpha));
             arrow.draw(canvas);
@@ -229,23 +236,37 @@ final class FloatingChrome extends View {
         boolean road = next.road.length() > 0;
         CharSequence first = road ? next.road : next.distance;
         CharSequence second = road ? next.distance : next.eta;
-        float padding = side * .18f, textLeft = at.left + side + padding, room = at.right - padding - textLeft;
-        primary.setTextSize(side * .3f);
+        String arrives = road ? next.arrival() : "";
+        float padding = side * .12f, textLeft = at.left + column + padding, right = at.right - padding;
+        float room = right - textLeft, secondRoom = room;
+        float roadSize = side * .3f;
+        primary.setTextSize(roadSize);
         // "Exit 551 N State St / Ukiah" does not fit the narrow window at full size.
-        primary.setTextSize(NavigationCard.fittedTextSize(side * .3f, primary.measureText(first, 0, first.length()), room));
+        primary.setTextSize(NavigationCard.fittedTextSize(roadSize, primary.measureText(first, 0, first.length()), room));
         secondary.setTextSize(side * .2f);
         primary.setAlpha(Math.round(255 * alpha));
         secondary.setAlpha(Math.round(222 * alpha));
         float firstLine = at.top + side * .46f, secondLine = at.top + side * .78f;
-        if (room > 0) {
-            float baseline = second.length() > 0 ? firstLine : at.centerY() + primary.getTextSize() * .35f;
-            if (road && next.shields != null) drawShielded(canvas, next.shields, textLeft, baseline, room, side * .3f, alpha);
-            else canvas.drawText(TextUtils.ellipsize(first, primary, room, TextUtils.TruncateAt.END).toString(), textLeft,
-                    baseline, primary);
-            if (second.length() > 0) {
-                canvas.drawText(TextUtils.ellipsize(second, secondary, room, TextUtils.TruncateAt.END).toString(),
-                        textLeft, secondLine, secondary);
+        if (room <= 0) return;
+        if (!arrives.isEmpty()) {
+            arrival.setTypeface(Ui.medium());
+            arrival.setColor(Color.WHITE);
+            arrival.setTextSize(side * .22f);
+            arrival.setAlpha(Math.round(255 * alpha));
+            float width = arrival.measureText(arrives);
+            // The distance keeps at least its own room: an arrival that leaves it none is left out.
+            if (width + padding < room - secondary.measureText(second, 0, second.length())) {
+                canvas.drawText(arrives, right - width, secondLine, arrival);
+                secondRoom = room - width - padding;
             }
+        }
+        float baseline = second.length() > 0 ? firstLine : at.centerY() + primary.getTextSize() * .35f;
+        if (road && next.shields != null) drawShielded(canvas, next.shields, textLeft, baseline, room, roadSize, alpha);
+        else canvas.drawText(TextUtils.ellipsize(first, primary, room, TextUtils.TruncateAt.END).toString(), textLeft,
+                baseline, primary);
+        if (second.length() > 0) {
+            canvas.drawText(TextUtils.ellipsize(second, secondary, secondRoom, TextUtils.TruncateAt.END).toString(),
+                    textLeft, secondLine, secondary);
         }
     }
 

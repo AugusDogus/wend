@@ -157,8 +157,10 @@ corner, default bottom right (the passenger side).
   shows the whole display, and the window moves between the two.
 - **Next turn.** Since the crop leaves out Maps' next-turn card, Wend draws its
   own across the window's bottom 26.5%, as Maps' own PiP card sits under its map:
-  the turn arrow in a darker square, the road above the distance to the turn, in
-  Maps' guidance color (`NavigationCard`, drawn by `FloatingChrome`). They come
+  the turn arrow in a darker column 18.8% of the window wide (Maps' own PiP
+  proportions), the road above the distance to the turn and, on the right, the
+  arrival time without its zone, as Maps' PiP shows it, in Maps' guidance color
+  (`NavigationCard`, drawn by `FloatingChrome`). They come
   from Maps' ongoing guidance notification (category `navigation`: large icon,
   title, text, subtext, color), which `NavigationNotifications`, a notification
   listener, hears; Wend allows itself to bind it as the system user
