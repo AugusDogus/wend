@@ -88,7 +88,7 @@ final class AgentTools {
                             + " Use it for a detour on the way, like a gas station; use navigate_to to go somewhere else"
                             + " instead. Given only place, Maps searches its text and adds only what it matches to one"
                             + " address; a business name alone often fails. With latitude and longitude, Maps adds the"
-                            + " stop at that point, and stops_ahead lists it as place with the point: pass both when you"
+                            + " stop at that point, and stops_ahead lists it as place: pass both when you"
                             + " know where the place is.",
                             new JSONObject().put("type", "object")
                                     .put("properties", new JSONObject()
@@ -343,12 +343,12 @@ final class AgentTools {
      */
     private static final Map<String, String> pointNames = new ConcurrentHashMap<>();
 
-    /** @return {@code stops}, each at a point an agent named shown as "name (point)" */
+    /** @return {@code stops}, each at a point an agent named shown by that name */
     private static String[] named(String[] stops) {
         String[] named = stops.clone();
         for (int i = 0; i < named.length; i++) {
             String name = pointNames.get(named[i]);
-            if (name != null) named[i] = name + " (" + named[i] + ")";
+            if (name != null) named[i] = name;
         }
         return named;
     }

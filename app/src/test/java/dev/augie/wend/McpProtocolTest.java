@@ -187,9 +187,9 @@ public class McpProtocolTest {
         MapsTrips.reported(MOTEL, new String[]{"30.601200,-87.140500"});
         JSONObject result = answered(call);
         assertFalse(result.getBoolean("isError"));
-        assertTrue(text(result), text(result).endsWith("Stops ahead now, from 1: [\"Wawa (30.601200,-87.140500)\"]."));
+        assertTrue(text(result), text(result).endsWith("Stops ahead now, from 1: [\"Wawa\"]."));
         JSONObject status = new JSONObject(text(callTool("trip_status", new JSONObject())));
-        assertEquals("Wawa (30.601200,-87.140500)", status.getJSONArray("stops_ahead").getString(0));
+        assertEquals("Wawa", status.getJSONArray("stops_ahead").getString(0));
     }
 
     @Test public void addStopTakesLatitudeLongitudeTextAsThatPoint() throws Exception {
