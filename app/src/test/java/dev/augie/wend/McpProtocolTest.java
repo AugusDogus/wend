@@ -173,12 +173,34 @@ public class McpProtocolTest {
 
     @Test public void addStopSaysWhyMapsAddedNothing() throws Exception {
         NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(21)); // guidance long under way
         mapsBridgeListens();
         Future<JSONObject> call = addStopOffMain("Nowhere at all");
         mapsSays(askedOfMaps().getIntExtra(AgentTools.REQUEST, -1), false, "Maps could not add \"Nowhere at all\"");
         JSONObject result = answered(call);
         assertTrue(result.getBoolean("isError"));
         assertEquals("Maps could not add \"Nowhere at all\". The route did not change.", text(result));
+    }
+
+    /** Maps refuses a stop while it sets up a route it just began guiding along; it is asked again once. */
+    @Test public void addStopAsksAgainWhenGuidanceHasJustBegun() throws Exception {
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        mapsBridgeListens();
+        Future<JSONObject> call = addStopOffMain("Chevron, 1099 S State St, Ukiah, CA");
+        mapsSays(askedOfMaps().getIntExtra(AgentTools.REQUEST, -1), false, "Maps did not add \"Chevron\"");
+        Intent again = null;
+        for (int i = 0; i < 600 && again == null; i++) {
+            shadowOf(Looper.getMainLooper()).idle();
+            int asks = 0;
+            for (Intent sent : shadowOf(context).getBroadcastIntents()) {
+                if (AgentTools.ADD_STOP.equals(sent.getAction()) && ++asks == 2) again = sent;
+            }
+            Thread.sleep(10);
+        }
+        if (again == null) throw new AssertionError("Wend did not ask Maps again");
+        mapsSays(again.getIntExtra(AgentTools.REQUEST, -1), true, null);
+        MapsTrips.reported(MOTEL, new String[]{"Chevron, 1099 S State St, Ukiah, CA 95482"});
+        assertFalse(answered(call).getBoolean("isError"));
     }
 
     /** No module in Maps answers the ordered broadcast, which comes back with its first result. */

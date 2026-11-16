@@ -164,8 +164,17 @@ final class AgentTools {
             return Result.failed("Maps guides nowhere now, so there is no trip to add a stop to; nothing changed."
                     + " Use navigate_to to go to \"" + place + "\" instead.");
         }
-        return changeStops(new Intent(ADD_STOP).putExtra(PLACE, place), "add \"" + place + "\"",
+        Result added = changeStops(new Intent(ADD_STOP).putExtra(PLACE, place), "add \"" + place + "\"",
                 "Maps added \"" + place + "\" as a stop on the trip it guides and keeps guiding.", 1);
+        // Maps refuses new waypoints while it still sets up a route it just began guiding along.
+        Long began = onMain(NavigationNotifications::began);
+        if (added.error && began != null && android.os.SystemClock.uptimeMillis() - began < JUST_BEGAN_MS) {
+            try { Thread.sleep(RETRY_AFTER_MS); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); return added; }
+            added = changeStops(new Intent(ADD_STOP).putExtra(PLACE, place), "add \"" + place + "\"",
+                    "Maps added \"" + place + "\" as a stop on the trip it guides and keeps guiding.", 1);
+        }
+        return added;
     }
 
     /**
@@ -278,6 +287,9 @@ final class AgentTools {
             stopAnswers.remove(request);
         }
     }
+
+    /** Guidance this young may still refuse a stop, as Maps sets up its route; the stop is asked again once. */
+    private static final long JUST_BEGAN_MS = 20_000, RETRY_AFTER_MS = 3_000;
 
     /** How long Maps' report of changed stops may take: it saves its directions, then the module reads them. */
     private static final long REPORT_WAIT_MS = 5_000;
