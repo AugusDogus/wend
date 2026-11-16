@@ -17,5 +17,8 @@ android {
 }
 dependencies {
     compileOnly("de.robv.android.xposed:api:82")
+    implementation("org.luckypray:dexkit:2.2.0")
+    // DexKit's API is Kotlin's; its types are needed to compile against it.
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.24")
     testImplementation("junit:junit:4.13.2")
 }

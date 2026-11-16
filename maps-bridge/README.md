@@ -1,8 +1,8 @@
 # maps-bridge
 
 An optional LSPosed module that runs inside Google Maps on the Android 10 head unit and tells Wend
-two things Maps tells no other app. It changes nothing Maps does. Wend works without it, with the
-limits below.
+what Maps tells no other app. It changes nothing Maps does, except add a stop when Wend asks.
+Wend works without it, with the limits below.
 
 ## What it reports
 
@@ -25,6 +25,38 @@ limits below.
   the card's line, where each shield lies in it, and each shield rendered as Maps draws it, by
   calling `shields` on the same provider whenever the line changes, or without extras when it has
   no shield. Without it, floating Maps' card shows such a road as the notification's text.
+
+## Adding a stop
+
+`StopAdder` adds a stop to the trip Maps guides through Maps' own navigation, as Maps' "Add stop"
+does: Maps keeps guiding and keeps its destination, finds the place from its text itself (as for
+a directions link's text), and reroutes through it. Maps decides where among the stops ahead it
+goes; on the emulator a new stop went first. Nothing shows on screen but the new route. Wend's
+`add_stop` agent tool asks with an ordered broadcast:
+
+```
+adb shell am broadcast -a dev.augie.wend.mapsbridge.ADD_STOP -p com.google.android.apps.maps \
+    --es place "'Chevron, 1099 S State St, Ukiah, CA'" --ei request 1
+# Broadcast completed: result=1
+```
+
+Result 1 means the module took the ask. Maps' answer comes as a call of `stop` on Wend's provider
+with `request`, `added`, and `problem` when Maps added nothing (Maps was not guiding, or found no
+such place). Maps answered within about a second on the emulator.
+
+Maps' code is obfuscated with new names each release, so `MapsNavigation` finds what it calls by
+what it does, with [DexKit](https://github.com/LuckyPray/DexKit), once per Maps build (360 ms on
+the emulator), and keeps the names in Maps' `files/wend-maps-bridge-names.properties`:
+
+- the NavigationControllerAdapter's add method, the one method that uses the string
+  `NavigationControllerAdapter.addWaypointToRoute.GuidanceSDK`; its parameter is Maps' waypoint;
+- the waypoint's builder, which the waypoint's one static method without parameters returns, and
+  its method without parameters that returns the waypoint;
+- the builder's text field, the one String field of it that the code using
+  `directionsShortcut_%s` writes (Maps' directions shortcut, which also routes to typed text).
+
+The adapter itself is taken as Maps makes it while guiding, so a stop can be added from the first
+guidance after Maps starts.
 
 Wend takes these calls from Maps' own uid only (`MapsTrips`). The module holds no stable connection
 to Wend, so Wend's process dying does not take Maps with it.
@@ -59,5 +91,8 @@ module in LSPosed for Google Maps, and restart Maps. Its log tag is `wend-maps-b
 - A Maps whose turn card is no longer a `TurnCardStepCueTextView` named `top_cue_text`, or draws
   its shields otherwise than as a `ReplacementSpan`: Wend then shows roads as text. Checked against
   Maps 26.43.
+- A Maps whose code no longer has the three things `MapsNavigation` looks for, or has several of
+  one: the module logs which, and Wend's `add_stop` says Maps' Add stop was not found; all else
+  works. Checked against Maps 26.43.
 - A Maps that stops posting a guidance notification. It is Maps' foreground-service notification,
   which Android requires of it while it navigates in the background.
