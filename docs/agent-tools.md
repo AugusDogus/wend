@@ -49,13 +49,20 @@ agent retried with the address.
 
 ## Who can reach it
 
-The server listens on the loopback interface only, so only the head unit itself can reach it,
-or a computer through `adb forward tcp:7311 tcp:7311`. It rejects any request that carries an
-`Origin` header, so a web page the unit opens cannot drive it. It starts with Wend's process,
-whatever started that process. Each tool call is logged under the `WendAgent` tag.
+The server listens on port 7311 and answers:
 
-Reaching it from a cloud agent such as Grok Bot means exposing it beyond loopback. That needs
-sign-in first, and is not done yet.
+- the head unit itself, or a computer through `adb forward tcp:7311 tcp:7311`;
+- tailnet machines whose Tailscale addresses are listed, comma-separated, in the global setting
+  `wend_agent_peers` (none by default), over the tailnet, at the unit's Tailscale address. Set it
+  with `adb shell settings put global wend_agent_peers 100.x.y.z`. Tailscale's WireGuard ties each
+  tailnet address to one machine, so this is the tailnet's own authentication, with no tokens.
+
+Everything else, other tailnet machines and the car's own network included, gets 403. The intended
+peer is the host of an MCP gateway (a self-hosted Executor) that agents such as Grok Bot already
+reach over the tailnet; the gateway connects to `http://<unit's Tailscale address>:7311/mcp`. It
+also rejects any request that carries an `Origin` header, so a web page cannot drive it. It starts
+with Wend's process, whatever started that process. Each tool call is logged under the
+`WendAgent` tag.
 
 ## Checked on the emulator (2026-11-15, Maps 26.43)
 
