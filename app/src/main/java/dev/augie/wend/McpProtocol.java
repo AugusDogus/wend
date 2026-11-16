@@ -9,7 +9,7 @@ import org.json.JSONObject;
 /**
  * The Model Context Protocol's JSON-RPC messages, as Wend's MCP server ({@link AgentServer})
  * answers them: initialize, ping, tools/list and tools/call, for the tools of {@link AgentTools}.
- * It offers no resources, prompts or server-sent events. Main thread, as the tools are.
+ * It offers no resources, prompts or server-sent events. Any thread, as the tools are.
  */
 final class McpProtocol {
     /** The protocol versions it speaks, newest first; a client asking for another gets the newest. */

@@ -11,6 +11,11 @@ Maps in the car. It speaks MCP's Streamable HTTP transport: each JSON-RPC messag
   the driver "Exit navigation?" and keep its route when nobody answers. So Wend first sends the
   "Exit navigation" action of Maps' own guidance notification, and opens the link once the
   guidance has ended (or after 3 s).
+- `add_stop(place)`: adds a stop to the trip Maps guides, through Maps' own Add stop, as on a road
+  trip when a gas station comes up: Maps keeps guiding and keeps its destination, finds the place
+  from the text, and reroutes through it. It needs the Maps bridge module, which calls Maps'
+  navigation inside Maps (see `maps-bridge/README.md`); Wend asks it and waits up to 25 s for Maps'
+  answer, which says whether the stop is on the route.
 - `trip_status()`: the guidance Maps runs now, as its notification shows it: the next turn, the
   time and distance left, the arrival time. With the Maps bridge module it also gives the
   destination and the stops ahead.
@@ -27,10 +32,15 @@ sign-in first, and is not done yet.
 
 ## Checked on the emulator (2026-11-15, Maps 26.43)
 
-- The official MCP TypeScript client (`@modelcontextprotocol/sdk` 1.20.0) connects, lists both
+- The official MCP TypeScript client (`@modelcontextprotocol/sdk` 1.20.0) connects, lists the
   tools and calls them.
 - With Maps open but not guiding, `navigate_to` started guidance at once, in Wend's panel.
 - While guiding to one place, `navigate_to` another place ended that route and guided to the new
   one, with no dialog. `trip_status` named the new destination.
+- While guiding to the motel, `add_stop("Chevron, 1099 S State St, Ukiah, CA")` added the stop
+  with no change on screen but the route: 10 min / 8.4 mi became 14 min / 11 mi, `trip_status`
+  listed the Chevron as a stop ahead and the motel as the destination. A second stop went before
+  the Chevron. A place Maps cannot find (`qxzv plorkington zzyx 99999`) came back as an error,
+  with the route unchanged.
 - After Wend restarted with Maps fullscreen, the server was back without the home screen being
   created, and `trip_status` still read the trip.

@@ -9,6 +9,11 @@ import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Looper;
 import java.time.Duration;
+import android.os.Bundle;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.After;
@@ -17,6 +22,7 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
+import org.robolectric.shadows.ShadowBinder;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -74,10 +80,12 @@ public class McpProtocolTest {
 
     @Test public void itListsItsToolsWithTheirInputSchemas() throws Exception {
         JSONArray tools = ask("tools/list", new JSONObject()).getJSONObject("result").getJSONArray("tools");
-        assertEquals(2, tools.length());
+        assertEquals(3, tools.length());
         assertEquals("navigate_to", tools.getJSONObject(0).getString("name"));
         assertEquals("destination", tools.getJSONObject(0).getJSONObject("inputSchema").getJSONArray("required").getString(0));
-        assertEquals("trip_status", tools.getJSONObject(1).getString("name"));
+        assertEquals("add_stop", tools.getJSONObject(1).getString("name"));
+        assertEquals("place", tools.getJSONObject(1).getJSONObject("inputSchema").getJSONArray("required").getString(0));
+        assertEquals("trip_status", tools.getJSONObject(2).getString("name"));
     }
 
     @Test public void navigateToOpensMapsNavigationLinkToTheDestination() throws Exception {
@@ -112,6 +120,90 @@ public class McpProtocolTest {
         callTool("navigate_to", new JSONObject().put("destination", MOTEL));
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(AgentTools.EXIT_WAIT_MS));
         assertEquals("google.navigation", shadowOf(context).getNextStartedActivity().getData().getScheme());
+    }
+
+    /** The Maps bridge module takes Wend's ask, as it does inside Maps; it answers later through Wend's provider. */
+    private void mapsBridgeListens() {
+        context.registerReceiver(new android.content.BroadcastReceiver() {
+            @Override public void onReceive(android.content.Context received, Intent intent) { setResultCode(1); }
+        }, new android.content.IntentFilter(AgentTools.ADD_STOP));
+    }
+
+    /** add_stop as Wend's MCP server calls it, off the main thread, while the main thread runs. */
+    private Future<JSONObject> addStopOffMain(String place) {
+        ExecutorService worker = Executors.newSingleThreadExecutor();
+        return worker.submit(() -> callTool("add_stop", new JSONObject().put("place", place)));
+    }
+
+    /** Runs the main thread until the module's ask goes out, as it does for the server's thread. */
+    private Intent askedOfMaps() throws InterruptedException {
+        for (int i = 0; i < 500; i++) {
+            shadowOf(Looper.getMainLooper()).idle();
+            for (Intent sent : shadowOf(context).getBroadcastIntents()) {
+                if (AgentTools.ADD_STOP.equals(sent.getAction())) return sent;
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("Wend never asked Maps to add the stop");
+    }
+
+    private JSONObject answered(Future<JSONObject> call) throws Exception {
+        for (int i = 0; i < 500 && !call.isDone(); i++) {
+            shadowOf(Looper.getMainLooper()).idle();
+            Thread.sleep(10);
+        }
+        return call.get(1, TimeUnit.SECONDS);
+    }
+
+    /** The Maps bridge module, inside Maps, reports Maps' answer as Maps' own uid. */
+    private void mapsSays(int request, boolean added, String problem) {
+        shadowOf(context.getPackageManager()).setPackagesForUid(10111, EmbeddedMaps.PACKAGE);
+        ShadowBinder.setCallingUid(10111);
+        Bundle extras = new Bundle();
+        extras.putInt(AgentTools.REQUEST, request);
+        extras.putBoolean("added", added);
+        if (problem != null) extras.putString("problem", problem);
+        org.robolectric.Robolectric.buildContentProvider(MapsTrips.class).create("dev.augie.wend.mapstrips").get()
+                .call("stop", null, extras);
+        ShadowBinder.reset();
+    }
+
+    /** Maps' own Add stop, through the module: Maps keeps guiding and reroutes through the place. */
+    @Test public void addStopAsksMapsAndSaysWhatMapsAnswered() throws Exception {
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        mapsBridgeListens();
+        Future<JSONObject> call = addStopOffMain("Chevron, 1099 S State St, Ukiah, CA");
+        Intent ask = askedOfMaps();
+        assertEquals(EmbeddedMaps.PACKAGE, ask.getPackage());
+        assertEquals("Chevron, 1099 S State St, Ukiah, CA", ask.getStringExtra(AgentTools.PLACE));
+        mapsSays(ask.getIntExtra(AgentTools.REQUEST, -1), true, null);
+        JSONObject result = answered(call);
+        assertFalse(result.getBoolean("isError"));
+        assertTrue(text(result).startsWith("Maps added \"Chevron, 1099 S State St, Ukiah, CA\""));
+    }
+
+    @Test public void addStopSaysWhyMapsAddedNothing() throws Exception {
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        mapsBridgeListens();
+        Future<JSONObject> call = addStopOffMain("Nowhere at all");
+        mapsSays(askedOfMaps().getIntExtra(AgentTools.REQUEST, -1), false, "Maps could not add \"Nowhere at all\"");
+        JSONObject result = answered(call);
+        assertTrue(result.getBoolean("isError"));
+        assertEquals("Maps could not add \"Nowhere at all\". The route did not change.", text(result));
+    }
+
+    /** No module in Maps answers the ordered broadcast, which comes back with its first result. */
+    @Test public void addStopWithoutTheMapsBridgeSaysSoAtOnce() throws Exception {
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        JSONObject result = answered(addStopOffMain("Chevron, Ukiah, CA"));
+        assertTrue(result.getBoolean("isError"));
+        assertTrue(text(result).startsWith("The Maps bridge module did not answer"));
+    }
+
+    @Test public void addStopWithoutGuidanceAsksNothing() throws Exception {
+        JSONObject result = callTool("add_stop", new JSONObject().put("place", "Chevron, Ukiah, CA"));
+        assertTrue(result.getBoolean("isError"));
+        assertTrue(shadowOf(context).getBroadcastIntents().isEmpty());
     }
 
     @Test public void navigateToWithoutADestinationOpensNothing() throws Exception {

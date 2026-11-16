@@ -5,8 +5,6 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -21,9 +19,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.FutureTask;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import org.json.JSONObject;
 
 /**
@@ -37,10 +32,8 @@ import org.json.JSONObject;
 final class AgentServer {
     static final int PORT = 7311;
     private static final int MAX_HEADERS = 16 * 1024, MAX_BODY = 1024 * 1024, READ_TIMEOUT_MS = 10_000;
-    private static final long ANSWER_TIMEOUT_MS = 5_000;
     private static AgentServer started;
     private final McpProtocol protocol;
-    private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService connections = Executors.newFixedThreadPool(4);
 
     private AgentServer(McpProtocol protocol) { this.protocol = protocol; }
@@ -116,27 +109,14 @@ final class AgentServer {
                     if (n < 0) return;
                     read += n;
                 }
-                JSONObject answer;
-                try {
-                    answer = answerOnMain(new String(body, StandardCharsets.UTF_8));
-                } catch (TimeoutException busy) {
-                    respond(out, 503, "text/plain", "Wend did not answer within " + ANSWER_TIMEOUT_MS + " ms, so the tool may or may"
-                            + " not have run; call trip_status before trying again\n");
-                    return;
-                }
+                // The tools go to the main thread for what they need there.
+                JSONObject answer = protocol.answer(new String(body, StandardCharsets.UTF_8));
                 if (answer == null) respond(out, 202, "text/plain", "");
                 else respond(out, 200, "application/json", answer.toString());
             }
         } catch (Exception error) {
             Log.w(AgentTools.TAG, "Wend's MCP server could not answer a request; the agent may retry it", error);
         }
-    }
-
-    /** The tools read and change what Wend keeps on its main thread, so they run there. */
-    private JSONObject answerOnMain(String body) throws Exception {
-        FutureTask<JSONObject> answer = new FutureTask<>(() -> protocol.answer(body));
-        main.post(answer);
-        return answer.get(ANSWER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
     }
 
     /** @return the request line and headers, without the blank line after them; null if too long or cut off */
@@ -169,8 +149,7 @@ final class AgentServer {
     private static void respond(OutputStream out, int status, String type, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         String reason = status == 200 ? "OK" : status == 202 ? "Accepted" : status == 400 ? "Bad Request"
-                : status == 403 ? "Forbidden" : status == 404 ? "Not Found" : status == 405 ? "Method Not Allowed" : status == 411 ? "Length Required"
-                : "Service Unavailable";
+                : status == 403 ? "Forbidden" : status == 404 ? "Not Found" : status == 405 ? "Method Not Allowed" : "Length Required";
         String head = "HTTP/1.1 " + status + " " + reason + "\r\nContent-Type: " + type + "; charset=utf-8\r\nContent-Length: "
                 + bytes.length + "\r\n" + (status == 405 ? "Allow: POST\r\n" : "") + "Connection: close\r\n\r\n";
         out.write(head.getBytes(StandardCharsets.ISO_8859_1));

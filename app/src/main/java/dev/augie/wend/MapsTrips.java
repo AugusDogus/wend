@@ -27,7 +27,8 @@ import java.util.Arrays;
  * notification Maps builds (extra {@code notification}; none once guidance ended), which reaches
  * Wend even where Android delivers no notifications ({@link NavigationNotifications#reportedByMaps}),
  * and {@code shields} with the route shields Maps' own card draws in the next turn's road
- * ({@link RoadShields}; none once it shows none).
+ * ({@link RoadShields}; none once it shows none), and {@code stop} with whether Maps added the stop
+ * an agent asked for ({@link AgentTools}).
  * Only Maps may call it. Both stay in memory. Without the module nothing is ever reported, and
  * Wend resumes as before ({@link GuidanceResume}) and hears guidance from Android alone.
  */
@@ -103,8 +104,9 @@ public final class MapsTrips extends ContentProvider {
     }
 
     @Override public Bundle call(String method, String arg, Bundle extras) {
-        boolean trip = "trip".equals(method), guidance = "guidance".equals(method), shields = "shields".equals(method);
-        if (!trip && !guidance && !shields) return null;
+        boolean trip = "trip".equals(method), guidance = "guidance".equals(method), shields = "shields".equals(method),
+                stop = "stop".equals(method);
+        if (!trip && !guidance && !shields && !stop) return null;
         Context context = getContext();
         int caller = Binder.getCallingUid();
         String[] callers = context == null ? null : context.getPackageManager().getPackagesForUid(caller);
@@ -116,6 +118,7 @@ public final class MapsTrips extends ContentProvider {
             String[] stops = extras == null ? null : extras.getStringArray("stops");
             reported(arg, stops == null ? new String[0] : stops);
         }
+        else if (stop) AgentTools.stopReported(extras);
         else if (shields) {
             RoadShields reported = RoadShields.from(extras);
             main.post(() -> NavigationNotifications.shieldsReportedByMaps(reported));
