@@ -26,22 +26,28 @@ Wend works without it, with the limits below.
   calling `shields` on the same provider whenever the line changes, or without extras when it has
   no shield. Without it, floating Maps' card shows such a road as the notification's text.
 
-## Adding a stop
+## Adding and removing stops
 
-`StopAdder` adds a stop to the trip Maps guides through Maps' own navigation, as Maps' "Add stop"
-does: Maps keeps guiding and keeps its destination, finds the place from its text itself (as for
-a directions link's text), and reroutes through it. Maps decides where among the stops ahead it
-goes; on the emulator a new stop went first. Nothing shows on screen but the new route. Wend's
-`add_stop` agent tool asks with an ordered broadcast:
+`TripStops` changes the stops of the trip Maps guides through Maps' own navigation, as Maps' own
+buttons do: Maps keeps guiding and keeps its destination, and reroutes. Nothing shows on screen
+but the new route. Wend's `add_stop` and `remove_stop` agent tools ask with ordered broadcasts:
 
 ```
 adb shell am broadcast -a dev.augie.wend.mapsbridge.ADD_STOP -p com.google.android.apps.maps \
     --es place "'Chevron, 1099 S State St, Ukiah, CA'" --ei request 1
+adb shell am broadcast -a dev.augie.wend.mapsbridge.REMOVE_STOP -p com.google.android.apps.maps \
+    --ei position 1 --ei request 2
 # Broadcast completed: result=1
 ```
 
+- Adding: Maps finds the place from its text itself (as for a directions link's text) and decides
+  where among the stops ahead it goes; on the emulator each new stop went first.
+- Removing: `position` counts the stops ahead from 1, the next. Maps counts its route's waypoints
+  from where the car is, so the position after the last stop is the destination, which Maps
+  would remove too; Wend asks only for stops Maps reported ahead.
+
 Result 1 means the module took the ask. Maps' answer comes as a call of `stop` on Wend's provider
-with `request`, `added`, and `problem` when Maps added nothing (Maps was not guiding, or found no
+with `request`, `done`, and `problem` when Maps changed nothing (Maps was not guiding, or found no
 such place). Maps answered within about a second on the emulator.
 
 Maps' code is obfuscated with new names each release, so `MapsNavigation` finds what it calls by
@@ -50,13 +56,16 @@ the emulator), and keeps the names in Maps' `files/wend-maps-bridge-names.proper
 
 - the NavigationControllerAdapter's add method, the one method that uses the string
   `NavigationControllerAdapter.addWaypointToRoute.GuidanceSDK`; its parameter is Maps' waypoint;
+- its remove method, the one that uses `NavigationControllerAdapter.removeWaypointFromRoute.GuidanceSDK`
+  and takes an index (another takes a waypoint);
 - the waypoint's builder, which the waypoint's one static method without parameters returns, and
   its method without parameters that returns the waypoint;
 - the builder's text field, the one String field of it that the code using
   `directionsShortcut_%s` writes (Maps' directions shortcut, which also routes to typed text).
 
-The adapter itself is taken as Maps makes it while guiding, so a stop can be added from the first
-guidance after Maps starts.
+The adapter itself is taken as Maps makes it while guiding, so stops can be changed from the first
+guidance after Maps starts. The adapter has more: `removeNextWaypointFromRoute`, `setRoutes`,
+`start`, `switchRoute` and `switchRouteWithUndo` (each names its trace the same way).
 
 ## Replacing the trip
 
@@ -111,7 +120,7 @@ module in LSPosed for Google Maps, and restart Maps. Its log tag is `wend-maps-b
   Wend's `navigate_to` replaces a trip, and keeps it unless the driver says yes. Checked against
   Maps 26.43.
 - A Maps whose code no longer has the three things `MapsNavigation` looks for, or has several of
-  one: the module logs which, and Wend's `add_stop` says Maps' Add stop was not found; all else
+  one: the module logs which, and Wend's `add_stop` and `remove_stop` say Maps' stops were not found; all else
   works. Checked against Maps 26.43.
 - A Maps that stops posting a guidance notification. It is Maps' foreground-service notification,
   which Android requires of it while it navigates in the background.

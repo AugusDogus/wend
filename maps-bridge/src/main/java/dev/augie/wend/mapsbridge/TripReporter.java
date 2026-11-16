@@ -30,7 +30,7 @@ import java.nio.file.Files;
  *     destination as result data, and the same extras.
  * </ul>
  *
- * It also carries {@link GuidanceReporter}'s, {@link ShieldReporter}'s and {@link StopAdder}'s reports to Wend, off Maps' own threads.
+ * It also carries {@link GuidanceReporter}'s, {@link ShieldReporter}'s and {@link TripStops}'s reports to Wend, off Maps' own threads.
  */
 final class TripReporter {
     static final String ASK = "dev.augie.wend.mapsbridge.TRIP";
@@ -74,7 +74,7 @@ final class TripReporter {
     }
 
     /**
-     * @param navigation Maps' navigation, for {@link StopAdder}, or null if it was not found
+     * @param navigation Maps' navigation, for {@link TripStops}, or null if it was not found
      * @param why what went wrong finding it, when {@code navigation} is null
      */
     static synchronized void start(Application maps, MapsNavigation navigation, String why) {
@@ -86,7 +86,7 @@ final class TripReporter {
         reporter.observer.startWatching();
         reporter.guidance = GuidanceReporter.install(reporter);
         reporter.shields = ShieldReporter.install(reporter);
-        StopAdder.install(maps, reporter, navigation, why);
+        TripStops.install(maps, reporter, navigation, why);
         reporter.worker.post(reporter.report);
         started = reporter;
         Log.i(MapsBridge.TAG, "Reporting Maps' destination to Wend from " + reporter.directory);

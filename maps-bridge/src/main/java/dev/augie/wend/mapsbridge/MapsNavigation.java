@@ -33,6 +33,7 @@ import org.luckypray.dexkit.result.UsingFieldData;
  * <ul>
  * <li>the adapter's add method is the one method that names its trace
  *     {@value #ADD_WAYPOINT_TRACE}; its one parameter is Maps' waypoint;
+ * <li>its remove method is the one that names {@value #REMOVE_WAYPOINT_TRACE} and takes an index;
  * <li>a waypoint is made by a builder, which the waypoint's one static method without parameters
  *     returns, and which has one method without parameters that returns the waypoint;
  * <li>a waypoint to a place Maps finds itself from text, as for a directions shortcut, has that
@@ -43,17 +44,21 @@ import org.luckypray.dexkit.result.UsingFieldData;
  */
 final class MapsNavigation {
     static final String ADD_WAYPOINT_TRACE = "NavigationControllerAdapter.addWaypointToRoute.GuidanceSDK";
+    static final String REMOVE_WAYPOINT_TRACE = "NavigationControllerAdapter.removeWaypointFromRoute.GuidanceSDK";
     static final String SHORTCUT_NAME = "directionsShortcut_%s";
-    private static final String CACHE_VERSION = "2";
+    private static final String CACHE_VERSION = "3";
 
     private final Method add;
+    /** Removes the route's waypoint at an index: 0 is where the car is, 1 the next stop, the last the destination. */
+    private final Method removeAt;
     private final Method newBuilder;
     private final Method build;
     private final Field query;
     private volatile Object adapter;
 
-    private MapsNavigation(Method add, Method newBuilder, Method build, Field query) {
+    private MapsNavigation(Method add, Method removeAt, Method newBuilder, Method build, Field query) {
         this.add = add;
+        this.removeAt = removeAt;
         this.newBuilder = newBuilder;
         this.build = build;
         this.query = query;
@@ -82,13 +87,14 @@ final class MapsNavigation {
         Class<?> adapterClass = maps.loadClass(names.getProperty("adapter"));
         Class<?> waypoint = maps.loadClass(names.getProperty("waypoint"));
         Method add = adapterClass.getDeclaredMethod(names.getProperty("add"), waypoint);
+        Method removeAt = adapterClass.getDeclaredMethod(names.getProperty("removeAt"), int.class);
         Method newBuilder = waypoint.getDeclaredMethod(names.getProperty("newBuilder"));
         Method buildMethod = newBuilder.getReturnType().getDeclaredMethod(names.getProperty("build"));
         Field query = newBuilder.getReturnType().getDeclaredField(names.getProperty("query"));
-        for (java.lang.reflect.AccessibleObject member : new java.lang.reflect.AccessibleObject[]{add, newBuilder, buildMethod, query}) {
+        for (java.lang.reflect.AccessibleObject member : new java.lang.reflect.AccessibleObject[]{add, removeAt, newBuilder, buildMethod, query}) {
             member.setAccessible(true);
         }
-        MapsNavigation navigation = new MapsNavigation(add, newBuilder, buildMethod, query);
+        MapsNavigation navigation = new MapsNavigation(add, removeAt, newBuilder, buildMethod, query);
         try {
             TripReplacer.install(maps, names);
         } catch (ReflectiveOperationException | RuntimeException error) {
@@ -115,6 +121,20 @@ final class MapsNavigation {
         return (Future<?>) add.invoke(current, build.invoke(builder));
     }
 
+    /**
+     * Asks Maps to remove the stop at {@code position} ahead, 1 being the next, as Maps' own remove
+     * does; Maps keeps its destination and reroutes. Removing past the stops would remove the
+     * destination, which Maps allows, so the caller makes sure there is such a stop.
+     *
+     * @return Maps' answer to come: true once the stop is off the route
+     * @throws IllegalStateException if Maps has not guided since its process started
+     */
+    Future<?> removeStop(int position) throws ReflectiveOperationException {
+        Object current = adapter;
+        if (current == null) throw new IllegalStateException("Maps has not guided since it started");
+        return (Future<?>) removeAt.invoke(current, position);
+    }
+
     private static Properties search(String apk) throws ReflectiveOperationException {
         System.loadLibrary("dexkit");
         try (DexKitBridge dex = DexKitBridge.create(apk)) {
@@ -126,6 +146,10 @@ final class MapsNavigation {
             names.setProperty("adapter", add.getClassName());
             names.setProperty("add", add.getMethodName());
             names.setProperty("waypoint", waypoint);
+            MethodData removeAt = only(dex.findMethod(FindMethod.create().matcher(MethodMatcher.create().usingStrings(REMOVE_WAYPOINT_TRACE)
+                    .declaredClass(add.getClassName(), StringMatchType.Equals, false).paramTypes("int"))),
+                    "a method that uses " + REMOVE_WAYPOINT_TRACE + " with an index");
+            names.setProperty("removeAt", removeAt.getMethodName());
             Set<String> builders = new HashSet<>();
             for (MethodData method : dex.findMethod(FindMethod.create().matcher(MethodMatcher.create()
                     .declaredClass(waypoint, StringMatchType.Equals, false).modifiers(Modifier.STATIC, MatchType.Contains).paramCount(0)))) {
