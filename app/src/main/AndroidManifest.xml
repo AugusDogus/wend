@@ -20,6 +20,8 @@
     <!-- In-memory screen captures only: the sheets' blurred backdrop and Maps' frozen transition frames; no files or network export. -->
     <uses-permission android:name="android.permission.DUMP" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.READ_FRAME_BUFFER" tools:ignore="ProtectedPermissions" />
+    <!-- Wend's MCP server for agents (AgentServer); it listens on the loopback interface only. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application android:label="Wend" android:theme="@style/AppTheme"
         android:icon="@drawable/ic_launcher" android:allowBackup="false"
         android:supportsRtl="true">
@@ -50,6 +52,8 @@
         </service>
         <!-- The optional Maps bridge module, inside Google Maps, reports each trip's destination here; only Maps' calls are taken. -->
         <provider android:name=".MapsTrips" android:authorities="dev.augie.wend.mapstrips" android:exported="true" />
+        <!-- Starts Wend's MCP server for agents with Wend's process; it answers nothing itself. -->
+        <provider android:name=".AgentServer$Starter" android:authorities="dev.augie.wend.agentserver" android:exported="false" />
         <activity android:name=".LaunchActivity" android:exported="true"
             android:excludeFromRecents="true" android:noHistory="true">
             <intent-filter>

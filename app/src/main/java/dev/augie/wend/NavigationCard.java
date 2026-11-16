@@ -1,6 +1,7 @@
 package dev.augie.wend;
 
 import android.app.Notification;
+import android.app.PendingIntent;
 import android.graphics.Rect;
 import android.graphics.drawable.Icon;
 import android.os.Bundle;
@@ -33,9 +34,14 @@ final class NavigationCard {
     final boolean arrived;
     /** The shields Maps' own card draws in {@link #road}, or null if none were reported for it. */
     final RoadShields shields;
+    /**
+     * Maps' "Exit navigation", the one action of its guidance notification (Maps 26.43), which
+     * ends guidance without asking; null if the notification has not exactly one action.
+     */
+    final PendingIntent exit;
 
     private NavigationCard(String key, Icon arrow, CharSequence distance, CharSequence road, CharSequence eta, int color,
-            boolean arrived, RoadShields shields) {
+            boolean arrived, RoadShields shields, PendingIntent exit) {
         this.key = key;
         this.arrow = arrow;
         this.distance = distance;
@@ -44,13 +50,14 @@ final class NavigationCard {
         this.color = color;
         this.arrived = arrived;
         this.shields = shields;
+        this.exit = exit;
     }
 
     /** @return this turn with {@code reported} if they are its road's shields, or without any */
     NavigationCard withShields(RoadShields reported) {
         RoadShields own = reported != null && reported.names(road) ? reported : null;
         if (own == shields) return this;
-        return new NavigationCard(key, arrow, distance, road, eta, color, arrived, own);
+        return new NavigationCard(key, arrow, distance, road, eta, color, arrived, own, exit);
     }
 
     /**
@@ -70,8 +77,10 @@ final class NavigationCard {
         // "Rerouting..." has no distance either, and no arrow.
         boolean arrived = distance.length() == 0 && arrow != null && previous != null && previous.key.equals(key)
                 && (previous.arrived || previous.lastTurn());
+        PendingIntent exit = notification.actions != null && notification.actions.length == 1
+                ? notification.actions[0].actionIntent : null;
         return new NavigationCard(key, arrow, distance, road, text(extras, Notification.EXTRA_SUB_TEXT),
-                notification.color, arrived, null);
+                notification.color, arrived, null, exit);
     }
 
     /**

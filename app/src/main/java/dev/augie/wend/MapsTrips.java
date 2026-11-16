@@ -40,7 +40,7 @@ public final class MapsTrips extends ContentProvider {
     private static volatile Trip last;
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    private static final class Trip {
+    static final class Trip {
         final String destination;
         /** The stops still ahead on the way there, in order. */
         final String[] stops;
@@ -62,14 +62,24 @@ public final class MapsTrips extends ContentProvider {
      *     Maps' directions link through them, which opens the route with Start ({@link GuidanceResume}).
      */
     static Intent navigation(Long guidanceBegan, String mapsPackage) {
-        Trip trip = last;
-        if (trip == null || guidanceBegan == null || trip.reportedAt < guidanceBegan - BEFORE_GUIDANCE_MS) return null;
+        Trip trip = of(guidanceBegan);
+        if (trip == null) return null;
         Uri link = trip.stops.length == 0 ? Uri.parse("google.navigation:q=" + Uri.encode(trip.destination))
                 : Uri.parse("https://www.google.com/maps/dir/").buildUpon().appendQueryParameter("api", "1")
                         .appendQueryParameter("destination", trip.destination)
                         .appendQueryParameter("waypoints", TextUtils.join("|", trip.stops))
                         .appendQueryParameter("travelmode", "driving").build();
         return new Intent(Intent.ACTION_VIEW, link).setPackage(mapsPackage).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    }
+
+    /**
+     * @param guidanceBegan when the guidance began, in uptime ms, or null if none did
+     * @return where that guidance goes, as Maps reported it, or null if it reported nothing for it
+     */
+    static Trip of(Long guidanceBegan) {
+        Trip trip = last;
+        if (trip == null || guidanceBegan == null || trip.reportedAt < guidanceBegan - BEFORE_GUIDANCE_MS) return null;
+        return trip;
     }
 
     /** Maps reported where it is going, with no stops ahead. */
