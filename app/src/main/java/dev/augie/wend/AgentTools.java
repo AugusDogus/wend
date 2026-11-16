@@ -74,7 +74,7 @@ final class AgentTools {
     /** @return the tools, as MCP's tools/list gives them */
     JSONArray list() {
         try {
-            return new JSONArray()
+            JSONArray tools = new JSONArray()
                     .put(tool("navigate_to", "Starts Google Maps' turn-by-turn guidance in the car to a destination,"
                             + " replacing any route Maps guides now. Maps searches the destination as given, so pass"
                             + " a full address or \"latitude,longitude\" when you know it, not only a business name.",
@@ -99,6 +99,9 @@ final class AgentTools {
                                     .put("properties", new JSONObject().put("position", new JSONObject()
                                             .put("type", "integer").put("minimum", 1)
                                             .put("description", "Which stop ahead; 1, the next, if left out")))))
+                    .put(tool("remove_next_stop", "Removes the next stop ahead from the trip Google Maps guides in"
+                            + " the car now, through Maps' own navigation: Maps keeps guiding and keeps its destination.",
+                            new JSONObject().put("type", "object").put("properties", new JSONObject())))
                     .put(tool("list_routes", "Lists the routes Google Maps has for the trip it guides in the car now: the one it"
                             + " guides along first (guided true), then the alternatives it offers, each with its id, its travel"
                             + " time in minutes as Maps estimates it, and the roads it goes by (via).",
@@ -117,6 +120,7 @@ final class AgentTools {
                             + " the next turn, the time and distance left, the arrival time, and the destination and"
                             + " stops ahead when Maps reported them. guiding is false when Maps guides nowhere.",
                             new JSONObject().put("type", "object").put("properties", new JSONObject())));
+            return tools;
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
         }
@@ -131,6 +135,7 @@ final class AgentTools {
                 case "add_stop": return addStop(arguments.optString("place", "").trim());
                 case "remove_stop": return removeStop(arguments.optInt("position", 1));
                 case "end_navigation": return endNavigation();
+                case "remove_next_stop": return removeStop(1);
                 case "list_routes": return listRoutes();
                 case "switch_route": return switchRoute(arguments.optString("route", "").trim());
                 case "trip_status": return onMain(this::tripStatus);

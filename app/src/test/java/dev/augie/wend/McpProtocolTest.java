@@ -71,16 +71,17 @@ public class McpProtocolTest {
 
     @Test public void itListsItsToolsWithTheirInputSchemas() throws Exception {
         JSONArray tools = ask("tools/list", new JSONObject()).getJSONObject("result").getJSONArray("tools");
-        assertEquals(7, tools.length());
+        assertEquals(8, tools.length());
         assertEquals("navigate_to", tools.getJSONObject(0).getString("name"));
         assertEquals("destination", tools.getJSONObject(0).getJSONObject("inputSchema").getJSONArray("required").getString(0));
         assertEquals("add_stop", tools.getJSONObject(1).getString("name"));
         assertEquals("place", tools.getJSONObject(1).getJSONObject("inputSchema").getJSONArray("required").getString(0));
         assertEquals("remove_stop", tools.getJSONObject(2).getString("name"));
-        assertEquals("list_routes", tools.getJSONObject(3).getString("name"));
-        assertEquals("switch_route", tools.getJSONObject(4).getString("name"));
-        assertEquals("end_navigation", tools.getJSONObject(5).getString("name"));
-        assertEquals("trip_status", tools.getJSONObject(6).getString("name"));
+        assertEquals("remove_next_stop", tools.getJSONObject(3).getString("name"));
+        assertEquals("list_routes", tools.getJSONObject(4).getString("name"));
+        assertEquals("switch_route", tools.getJSONObject(5).getString("name"));
+        assertEquals("end_navigation", tools.getJSONObject(6).getString("name"));
+        assertEquals("trip_status", tools.getJSONObject(7).getString("name"));
     }
 
     @Test public void navigateToOpensMapsNavigationLinkToTheDestination() throws Exception {
@@ -239,6 +240,17 @@ public class McpProtocolTest {
         guidingThroughTwoStops();
         mapsBridgeListens();
         Future<JSONObject> call = removeStopOffMain(new JSONObject());
+        Intent ask = askedOfMaps(AgentTools.REMOVE_STOP);
+        assertEquals(1, ask.getIntExtra(AgentTools.POSITION, -1));
+        mapsSays(ask.getIntExtra(AgentTools.REQUEST, -1), true, null);
+        MapsTrips.reported(MOTEL, new String[]{"Chevron, 1099 S State St, Ukiah, CA 95482"});
+        assertTrue(text(answered(call)).startsWith("Maps removed \"Safeway"));
+    }
+
+    @Test public void removeNextStopRemovesTheFirstStopAhead() throws Exception {
+        guidingThroughTwoStops();
+        mapsBridgeListens();
+        Future<JSONObject> call = Executors.newSingleThreadExecutor().submit(() -> callTool("remove_next_stop", new JSONObject()));
         Intent ask = askedOfMaps(AgentTools.REMOVE_STOP);
         assertEquals(1, ask.getIntExtra(AgentTools.POSITION, -1));
         mapsSays(ask.getIntExtra(AgentTools.REQUEST, -1), true, null);

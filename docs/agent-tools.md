@@ -21,6 +21,7 @@ Maps in the car. It speaks MCP's Streamable HTTP transport: each JSON-RPC messag
   left out. Wend refuses a position past the stops Maps reported, where Maps would remove its
   destination.
 
+- `remove_next_stop()`: removes the next stop ahead, the same as `remove_stop(1)`.
 - `list_routes()`: the routes Maps has for the trip, the guided one first, each with its `id`,
   `guided`, `minutes` (Maps' travel time estimate) and `via` (the roads Maps names). Maps keeps
   alternatives for a while after guidance starts, then often only the guided route.
@@ -53,6 +54,24 @@ guessed them, and missed the Grace Hudson Museum by 259 and 377 m and Mendocino 
 Maps also showed a stop given by coordinates as bare coordinates. The one text miss on the first
 try ("Schat's Bakery", which Maps names "Schat's Courthouse Bakery") came back as an error, and the
 agent retried with the address.
+
+### Why remove_next_stop is its own tool
+
+On 2026-11-15 the stop tools were compared the same way, merged (only `remove_stop(position)`,
+the next stop by default, and the stops in `trip_status`) against split (also
+`remove_next_stop()` and `list_stops()`). Six requests, twice each, on a trip with two stops; all
+24 runs left the right stops.
+
+| Request | Merged tokens | Split tokens |
+|---|---|---|
+| "Skip the next stop." | 6,877 (3 turns) | 4,673 (2 turns) |
+| "What stops do I have left?" | 4,373 | 4,702 |
+| Remove a named stop, or the last one | about 6,920 | about 7,355 |
+
+With only `remove_stop`, the agent looked up the stops in `trip_status` before every removal, the
+next stop's too; `remove_next_stop` saves that turn. `list_stops` saved nothing over
+`trip_status` and cost about 400 tokens on every other request, for its description, so only
+`remove_next_stop` was kept.
 
 ## Who can reach it
 
