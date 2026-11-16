@@ -118,8 +118,7 @@ final class MapsRoutes {
      * @throws IllegalStateException if Maps is not guiding
      */
     JSONArray routes(Object adapter) throws ReflectiveOperationException, JSONException {
-        Object holder = guidanceHolder.get(state.get(adapter));
-        Object current = holder == null ? null : guidance.invoke(null, holder);
+        Object current = guidance(adapter);
         if (current == null) throw new IllegalStateException("Maps is not guiding");
         Object set = routeSet.invoke(current);
         Object guidedRoute = guided.invoke(set);
@@ -135,6 +134,15 @@ final class MapsRoutes {
             else routes.add(described);
         }
         return new JSONArray(routes);
+    }
+
+    /**
+     * @param adapter Maps' NavigationControllerAdapter
+     * @return Maps' guidance now, or null if Maps is not guiding
+     */
+    Object guidance(Object adapter) throws ReflectiveOperationException {
+        Object holder = guidanceHolder.get(state.get(adapter));
+        return holder == null ? null : guidance.invoke(null, holder);
     }
 
     /** Asks Maps to guide along the route {@code routeId} of its route set, as tapping it does. */

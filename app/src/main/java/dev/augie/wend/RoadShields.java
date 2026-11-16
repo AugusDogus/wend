@@ -9,7 +9,7 @@ import java.util.List;
 
 /**
  * The next turn's road as Google Maps' own turn card shows it, with the route shields Maps draws
- * over the route names ("CA-20 W WEST", a "20" shield over "CA-20 W"). Maps' guidance notification
+ * over the route names ("CA-20 W WEST", a "20" shield over "CA-20 W"). Maps' guidance state
  * carries only the text, so the Maps bridge module renders the shields inside Maps and reports
  * them ({@link MapsTrips}): the text, where each shield lies in it, and its image.
  */
@@ -44,7 +44,7 @@ final class RoadShields {
         return new RoadShields(text, starts.clone(), ends.clone(), Collections.unmodifiableList(new ArrayList<>(images)));
     }
 
-    /** @return whether this is the line of the turn onto {@code road}, as Maps' notification names it */
+    /** @return whether this is the line of the turn onto {@code road}, as Maps' guidance names it */
     boolean names(CharSequence road) {
         String name = road == null ? "" : road.toString().trim();
         return !name.isEmpty() && text.contains(name);

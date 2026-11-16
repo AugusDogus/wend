@@ -39,7 +39,7 @@ final class EmbeddedMaps extends MapPanel {
     private final MapTransition transition;
     /** Live Maps floating above the fullscreen video. Its display keeps the panel's size. */
     private final LiveSurfaceWindow floating;
-    private final NavigationNotifications.Listener turns;
+    private final MapsGuidance.Listener turns;
     /** Whether floating Maps' crop leaves room for the next-turn card; chosen as it starts floating. */
     private boolean cropUnderTurnCard;
     /**
@@ -155,8 +155,8 @@ final class EmbeddedMaps extends MapPanel {
         mapsCard = new MapsCardEdge(cardReader, context.getResources().getDisplayMetrics().density,
                 this::topOfDisplay, this::mapsCardMeasured);
         turns = this::turnCardChanged;
-        floating.turnCard(NavigationNotifications.current());
-        NavigationNotifications.listen(turns);
+        floating.turnCard(MapsGuidance.current());
+        MapsGuidance.listen(turns);
         context.getWindowManager().getDefaultDisplay().getRealSize(screen);
         setBackground(Ui.surface(context, Ui.PANEL, 10));
         status = new LinearLayout(context);
@@ -315,7 +315,7 @@ final class EmbeddedMaps extends MapPanel {
     private void taskRemoved(int taskId) {
         // A launch has no task yet.
         if (state != State.READY || launching || !mapsGone("after task " + taskId + " was destroyed")) return;
-        NavigationNotifications.mapsGone();
+        MapsGuidance.mapsGone();
         cancelTakeover();
         cancelPendingFloat();
         // A message already says Maps closed and offers Open Maps: nothing reopens under it.
@@ -344,7 +344,7 @@ final class EmbeddedMaps extends MapPanel {
         if (again) showError("Maps keeps closing. Tap Open Maps to try again.");
         else reopenedAt = now;
         // Asked as Maps next opens (launchNew), which is on Home if Wend is hidden now.
-        resumeGuidance = resumesGuidance.getAsBoolean() && NavigationNotifications.guidedWithin(GUIDING_MS);
+        resumeGuidance = resumesGuidance.getAsBoolean() && MapsGuidance.guidedWithin(GUIDING_MS);
         return !again;
     }
 
@@ -449,7 +449,7 @@ final class EmbeddedMaps extends MapPanel {
 
     /** Only guidance floats, as Maps' own PiP: without it Maps stays in its panel under the video. */
     private boolean canFloat() {
-        return NavigationNotifications.current() != null && activityView != null && displayLifecycle != null && state == State.READY && !launching
+        return MapsGuidance.current() != null && activityView != null && displayLifecycle != null && state == State.READY && !launching
                 && !floating.active() && status.getVisibility() != View.VISIBLE && isLaidOut()
                 && !(motion != null && motion.pending()) && !transition.pending();
     }
@@ -464,7 +464,7 @@ final class EmbeddedMaps extends MapPanel {
                     ActivityViewSurface.PreviewInput.FORWARDED);
             // Before anything can hide Wend: its surface changes must not move this root.
             displayLifecycle.presentElsewhere();
-            cropUnderTurnCard = NavigationNotifications.current() != null;
+            cropUnderTurnCard = MapsGuidance.current() != null;
             floating.openFloating(this, surface, new RectF(0, 0, getWidth(), getHeight()), floatingCrop(),
                     new Point(getWidth(), getHeight()), floatingPlacement(), corner, entry, listener,
                     this::floatingEnded);
@@ -844,7 +844,7 @@ final class EmbeddedMaps extends MapPanel {
         }
         // Where the guidance that died was going, if Maps reported it (the Maps bridge module): a
         // Maps opened by that link navigates there, even where it would restore no route.
-        Intent trip = resumeGuidance ? MapsTrips.navigation(NavigationNotifications.began(), PACKAGE) : null;
+        Intent trip = resumeGuidance ? MapsTrips.navigation(MapsGuidance.began(), PACKAGE) : null;
         if (trip != null) intent = trip;
         try {
             if (displayId == 0) {
@@ -931,7 +931,7 @@ final class EmbeddedMaps extends MapPanel {
 
     void release() {
         taskRemovals.stop();
-        NavigationNotifications.stop(turns);
+        MapsGuidance.stop(turns);
         mapsCard.stop();
         cardReader.shutdownNow();
         cancelPendingFloat();

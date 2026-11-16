@@ -32,7 +32,7 @@ import org.json.JSONObject;
  * port. The car's own network is turned away. It turns away browsers' requests, which carry an
  * Origin, so no web page can drive it. Started
  * once per process, as Wend's process starts ({@link Starter}), whether for its home screen or for
- * Maps' notification.
+ * a report from the Maps bridge module.
  */
 final class AgentServer {
     static final int PORT = 7311;

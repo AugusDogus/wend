@@ -30,7 +30,7 @@ Then press Home, pick Wend and tap Always. Requires JDK 17+ and Android SDK plat
 
 ## Optional: Maps bridge
 
-[`maps-bridge`](maps-bridge/README.md) is an LSPosed module that runs inside Google Maps and hands Wend its turn-by-turn guidance and destination. Install it on a rooted unit with Maps' notifications turned off, or to resume trips Maps itself won't restore. Wend works without it.
+[`maps-bridge`](maps-bridge/README.md) is an LSPosed module that runs inside Google Maps and hands Wend its turn-by-turn guidance, read from Maps' own navigation state, and its destination. Floating Maps' next-turn card, resuming trips, and the agent tools need it; the rest of Wend works without it.
 
 ## Docs
 

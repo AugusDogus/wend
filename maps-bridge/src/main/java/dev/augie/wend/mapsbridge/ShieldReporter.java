@@ -19,8 +19,8 @@ import java.util.List;
 
 /**
  * Runs inside Google Maps. Hands Wend the route shields Maps' own turn card draws in the next
- * turn's road ("CA-20 W WEST", a "20" shield drawn over "CA-20 W"), which Maps' guidance
- * notification lacks: the line's text, where each shield lies in it, and each rendered as Maps
+ * turn's road ("CA-20 W WEST", a "20" shield drawn over "CA-20 W"), which Maps' guidance state has
+ * as text only: the line's text, where each shield lies in it, and each rendered as Maps
  * draws it. The card's line is a {@code TurnCardStepCueTextView} ({@code top_cue_text}); each
  * shield is a {@link ReplacementSpan} over the route's name. Maps' own calls go on unchanged.
  *

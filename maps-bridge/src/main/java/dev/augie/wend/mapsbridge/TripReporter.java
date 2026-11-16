@@ -30,7 +30,7 @@ import java.nio.file.Files;
  *     destination as result data, and the same extras.
  * </ul>
  *
- * It also carries {@link GuidanceReporter}'s, {@link ShieldReporter}'s and {@link TripStops}'s reports to Wend, off Maps' own threads.
+ * It also carries {@link GuidanceState}'s, {@link ShieldReporter}'s and {@link TripStops}'s reports to Wend, off Maps' own threads.
  */
 final class TripReporter {
     static final String ASK = "dev.augie.wend.mapsbridge.TRIP";
@@ -53,7 +53,7 @@ final class TripReporter {
     /** Touched on the worker thread only. */
     private boolean failureLogged;
     private final Runnable report = this::report;
-    private GuidanceReporter guidance;
+    private volatile GuidanceState guidance;
     private ShieldReporter shields;
 
     private TripReporter(Context maps) {
@@ -84,8 +84,14 @@ final class TripReporter {
             @Override public void onReceive(Context context, Intent intent) { reporter.answer(this); }
         }, new IntentFilter(ASK), ASKERS, reporter.worker);
         reporter.observer.startWatching();
-        reporter.guidance = GuidanceReporter.install(reporter);
         reporter.shields = ShieldReporter.install(reporter);
+        // A first search of a Maps build takes seconds; Maps guides on meanwhile, unreported.
+        reporter.worker.post(() -> {
+            try { reporter.guidance = GuidanceState.install(reporter, maps, maps.getApplicationInfo().sourceDir); }
+            catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
+                Log.w(MapsBridge.TAG, "Maps' navigation state was not found in this Maps; Wend hears no guidance from it", error);
+            }
+        });
         TripStops.install(maps, reporter, navigation, why);
         reporter.worker.post(reporter.report);
         started = reporter;

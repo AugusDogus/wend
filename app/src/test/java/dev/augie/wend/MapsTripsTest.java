@@ -1,9 +1,6 @@
 package dev.augie.wend;
 
-import android.app.Notification;
 import android.content.Intent;
-import android.graphics.Bitmap;
-import android.graphics.drawable.Icon;
 import android.os.Bundle;
 import android.net.Uri;
 import android.os.Looper;
@@ -89,43 +86,35 @@ public class MapsTripsTest {
         assertNull("Guidance never began", MapsTrips.navigation(null, MAPS));
     }
 
-    /** The module also hands over Maps' guidance notification, for a head unit that shows none. */
+    /** The module also hands over Maps' navigation state, as Maps' own guidance holds it. */
     @Test public void guidanceMapsReportsReachesTheTurnCard() {
-        Notification guidance = new Notification.Builder(RuntimeEnvironment.getApplication(), "1_foreground_1")
-                .setSmallIcon(Icon.createWithBitmap(Bitmap.createBitmap(36, 36, Bitmap.Config.ARGB_8888)))
-                .setCategory(Notification.CATEGORY_NAVIGATION).setContentTitle("0.4 mi").setContentText("US-101 S").build();
-        Bundle extras = new Bundle();
-        extras.putParcelable("notification", guidance);
+        Bundle extras = GuidanceReports.guiding("0.4 mi", "US-101 S");
         ShadowBinder.setCallingUid(OTHER_UID);
         assertThrows(SecurityException.class, () -> trips.call("guidance", null, extras));
         ShadowBinder.setCallingUid(MAPS_UID);
         trips.call("guidance", null, extras);
         shadowOf(Looper.getMainLooper()).idle();
-        assertEquals("US-101 S", NavigationNotifications.current().road.toString());
-        trips.call("guidance", null, new Bundle());
+        assertEquals("US-101 S", MapsGuidance.current().road.toString());
+        trips.call("guidance", null, GuidanceReports.off());
         shadowOf(Looper.getMainLooper()).idle();
-        assertNull(NavigationNotifications.current());
-        NavigationNotifications.forget();
+        assertNull(MapsGuidance.current());
+        MapsGuidance.forget();
     }
 
     @Test public void shieldsMapsReportsReachTheTurnCard() {
-        Notification guidance = new Notification.Builder(RuntimeEnvironment.getApplication(), "1_foreground_1")
-                .setSmallIcon(Icon.createWithBitmap(Bitmap.createBitmap(36, 36, Bitmap.Config.ARGB_8888)))
-                .setCategory(Notification.CATEGORY_NAVIGATION).setContentTitle("0 ft").setContentText("CA-20 W").build();
-        Bundle notification = new Bundle();
-        notification.putParcelable("notification", guidance);
+        Bundle guidance = GuidanceReports.guiding("0 ft", "CA-20 W");
         Bundle shields = RoadShieldsTest.reported("CA-20 W WEST", new int[]{0}, new int[]{7}, RoadShieldsTest.shield());
         ShadowBinder.setCallingUid(OTHER_UID);
         assertThrows(SecurityException.class, () -> trips.call("shields", null, shields));
         ShadowBinder.setCallingUid(MAPS_UID);
-        trips.call("guidance", null, notification);
+        trips.call("guidance", null, guidance);
         trips.call("shields", null, shields);
         shadowOf(Looper.getMainLooper()).idle();
-        assertEquals("CA-20 W WEST", NavigationNotifications.current().shields.text);
+        assertEquals("CA-20 W WEST", MapsGuidance.current().shields.text);
         trips.call("shields", null, new Bundle());
         shadowOf(Looper.getMainLooper()).idle();
-        assertNull("Maps' card shows no shield any more", NavigationNotifications.current().shields);
-        NavigationNotifications.forget();
+        assertNull("Maps' card shows no shield any more", MapsGuidance.current().shields);
+        MapsGuidance.forget();
     }
 
     @Test public void nothingReportedIsNoTrip() {

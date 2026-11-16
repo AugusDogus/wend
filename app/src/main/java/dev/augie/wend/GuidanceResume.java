@@ -26,8 +26,8 @@ import java.util.Set;
 
 /**
  * Presses Maps' own Start button once, after Wend reopened a Maps whose process died while it
- * guided. Maps then restores its route preview by itself but waits for that press, and its guidance
- * notification names no destination Wend could hand back to it. Pressing another app's button is
+ * guided. Maps then restores its route preview by itself but waits for that press, and its
+ * guidance names no destination Wend could hand back to it. Pressing another app's button is
  * what Android's accessibility services are for, so this is one: Wend turns it on only while it
  * waits for the button (as the system user it may), it hears only Maps, and it turns itself off.
  */
@@ -184,8 +184,8 @@ public final class GuidanceResume extends AccessibilityService {
         // Turned on by hand, or already done: it is only for the moment after Maps reopens.
         if (deadline == null) { disableSelf(); return; }
         // A Maps reopened by a navigation link (MapsTrips) guides without showing Start.
-        Long began = NavigationNotifications.began();
-        if (began != null && began >= requestedAt && NavigationNotifications.current() != null) {
+        Long began = MapsGuidance.began();
+        if (began != null && began >= requestedAt && MapsGuidance.current() != null) {
             until = null;
             Log.i(TAG, "The reopened Maps guides again; no press on Start was needed");
             disableSelf();

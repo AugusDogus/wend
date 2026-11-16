@@ -32,9 +32,10 @@ Maps in the car. It speaks MCP's Streamable HTTP transport: each JSON-RPC messag
 `add_stop` and `remove_stop` answer once Maps has also reported its new stops (up to 5 s more),
 and list them, so a change right after another counts the stops Maps has, and the agent needs no
 `trip_status` call to see them.
-- `trip_status()`: the guidance Maps runs now, as its notification shows it: the next turn, the
-  time and distance left, the arrival time. With the Maps bridge module it also gives the
-  destination and the stops ahead.
+- `trip_status()`: the guidance Maps runs now, as Maps' own navigation state holds it (through the
+  Maps bridge module): the next turn (its distance as Maps words it, and in meters and seconds;
+  none while Maps does not know it, as off the route), the time and distance left, the arrival
+  time, whether the car is on the route, the destination and the stops ahead.
 
 ### Why add_stop takes text
 

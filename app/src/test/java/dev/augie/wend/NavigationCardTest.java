@@ -1,14 +1,10 @@
 package dev.augie.wend;
 
-import android.app.Notification;
-import android.content.Context;
-import android.graphics.Bitmap;
 import android.graphics.Rect;
-import android.graphics.drawable.Icon;
+import android.os.Bundle;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
-import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -19,110 +15,68 @@ import static org.junit.Assert.assertTrue;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 29)
 public class NavigationCardTest {
-    private static final String MAPS = "com.google.android.apps.maps";
-    private static final String KEY = "0|com.google.android.apps.maps|1|null|10111";
-    private final Context context = RuntimeEnvironment.getApplication();
-
-    /** As Google Maps posted it in live guidance on the emulator (dumpsys notification). */
-    private Notification.Builder guidance() {
-        return new Notification.Builder(context, "1_foreground_1")
-                .setSmallIcon(Icon.createWithBitmap(Bitmap.createBitmap(36, 36, Bitmap.Config.ARGB_8888)))
-                .setLargeIcon(Icon.createWithBitmap(Bitmap.createBitmap(54, 54, Bitmap.Config.ARGB_8888)))
-                .setCategory(Notification.CATEGORY_NAVIGATION)
-                .setOngoing(true)
-                .setColor(0xff015f61)
-                .setContentTitle("0 ft")
-                .setContentText("CA-20 W")
-                .setSubText("10 min · 8.4 mi · 5:23 PM PST ETA");
-    }
-
-    @Test public void readsTheNextTurnFromMapsGuidanceNotification() {
-        NavigationCard card = NavigationCard.from(MAPS, KEY, guidance().build(), MAPS, null);
+    /** Maps' state as the Maps bridge module read it from Maps 26.43 on the emulator. */
+    @Test public void readsTheNextTurnFromMapsGuidanceState() {
+        NavigationCard card = NavigationCard.from(GuidanceReports.guiding("3.3 mi", "US-101 S"));
         assertNotNull(card);
-        assertEquals(KEY, card.key);
-        assertEquals("0 ft", card.distance.toString());
-        assertEquals("CA-20 W", card.road.toString());
-        assertEquals("10 min · 8.4 mi · 5:23 PM PST ETA", card.eta.toString());
+        assertEquals("3.3 mi", card.distance.toString());
+        assertEquals("US-101 S", card.road.toString());
+        assertNotNull("Maps' arrow", card.arrow);
         assertEquals(0xff015f61, card.color);
-        assertNotNull(card.arrow);
+        assertEquals(322, card.metersToTurn);
+        assertEquals(20, card.secondsToTurn);
+        assertTrue(card.onRoute);
+        assertFalse(card.arrived);
+        assertTrue(card.eta.toString(), card.eta.toString().startsWith("9 min · 8.4 mi · "));
+        assertTrue("The arrival ends the trip line", card.eta.toString().endsWith(card.arrival()));
     }
 
-    /** Maps' own PiP shows the arrival time under the road, without its zone; so does the card. */
-    @Test public void theArrivalIsTheTripLinesLastPartWithoutZoneOrEta() {
-        NavigationCard card = NavigationCard.from(MAPS, KEY, guidance().build(), MAPS, null);
-        assertEquals("5:23 PM", card.arrival());
-        assertEquals("17:23", NavigationCard.from(MAPS, KEY, guidance().setSubText("10 min · 8.4 mi · 17:23 ETA").build(),
-                MAPS, null).arrival());
-        assertEquals("5:23 PM", NavigationCard.from(MAPS, KEY, guidance().setSubText("1 hr 5 min · 64 mi · 5:23 PM").build(),
-                MAPS, null).arrival());
+    @Test public void mapsGuidingNowhereHasNoTurn() {
+        assertNull(NavigationCard.from(GuidanceReports.off()));
+        Bundle cruising = new Bundle();
+        cruising.putString("state", "CRUISING");
+        assertNull("Maps follows the car without a route", NavigationCard.from(cruising));
     }
 
-    @Test public void aTripLineWithoutTimeDistanceAndArrivalHasNoArrival() {
-        assertEquals("", NavigationCard.from(MAPS, KEY, guidance().setSubText(null).build(), MAPS, null).arrival());
-        assertEquals("", NavigationCard.from(MAPS, KEY, guidance().setSubText("Rerouting").build(), MAPS, null).arrival());
-    }
-
-    @Test public void ignoresOtherAppsAndMapsOtherNotifications() {
-        assertNull(NavigationCard.from("com.example.nav", KEY, guidance().build(), MAPS, null));
-        assertNull(NavigationCard.from(MAPS, KEY, guidance().setCategory(Notification.CATEGORY_STATUS).build(), MAPS, null));
-    }
-
-    @Test public void ignoresGuidanceWithNothingToShow() {
-        assertNull(NavigationCard.from(MAPS, KEY, guidance().setContentTitle("").setContentText(null).build(), MAPS, null));
-    }
-
-    @Test public void keepsATurnWithoutAnArrowOrRoad() {
-        NavigationCard card = NavigationCard.from(MAPS, KEY,
-                guidance().setLargeIcon((Icon) null).setContentText(null).build(), MAPS, null);
-        assertNotNull(card);
+    /** Maps reroutes: its state has no step, so no distance and no arrow, only what Maps says instead. */
+    @Test public void reroutingHasNeitherArrowNorDistance() {
+        Bundle report = GuidanceReports.guiding("", "Rerouting...");
+        report.remove("arrow");
+        report.remove("distance");
+        report.putInt("meters_to_step", -1);
+        NavigationCard card = NavigationCard.from(report);
         assertNull(card.arrow);
-        assertEquals("", card.road.toString());
+        assertEquals("", card.distance.toString());
+        assertEquals("Rerouting...", card.road.toString());
+        assertEquals(-1, card.metersToTurn);
     }
 
-    private NavigationCard card(Notification.Builder guidance, NavigationCard previous) {
-        return NavigationCard.from(MAPS, KEY, guidance.build(), MAPS, previous);
+    @Test public void theRouteMapsFinishedHasArrived() {
+        Bundle report = GuidanceReports.guiding("", "Motel 6 Ukiah, CA - North");
+        report.putBoolean("done", true);
+        assertTrue(NavigationCard.from(report).arrived);
     }
 
-    /** The last turn, to the destination: its distance is the whole trip's. */
-    private Notification.Builder lastTurn() {
-        return guidance().setContentTitle("350 ft").setContentText("Motel 6 Ukiah, CA - North  / 1340 N State St")
-                .setSubText("0 min · 350 ft · 5:53 AM PST ETA");
+    /** Maps words the arrival in the route's time zone, as "1:14 PM PST" on an emulator set to Central time. */
+    @Test public void theArrivalIsInTheRoutesTimeZone() {
+        Bundle report = GuidanceReports.guiding();
+        report.putString("time_zone", "America/Los_Angeles");
+        java.text.DateFormat clock = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT);
+        clock.setTimeZone(java.util.TimeZone.getTimeZone("America/Los_Angeles"));
+        String expected = clock.format(new java.util.Date(System.currentTimeMillis() + 540_000L));
+        String arrival = NavigationCard.from(report).arrival();
+        // The minute may turn between the two clocks.
+        String later = clock.format(new java.util.Date(System.currentTimeMillis() + 540_000L));
+        assertTrue(arrival, arrival.equals(expected) || arrival.equals(later));
     }
 
-    /** What Maps posted at the destination on a simulated drive: the place, and no distance. */
-    private Notification.Builder atDestination() {
-        return guidance().setContentTitle("").setContentText("Motel 6 Ukiah, CA - North")
-                .setSubText("0 min · 100 ft · 5:53 AM PST ETA");
-    }
-
-    /**
-     * Maps posts no arrival. Its notification only loses its distance, which is arriving when it
-     * follows the last turn. Until then a floating Maps window showed a piece of the "Arriving at"
-     * sheet that covers Maps' map there.
-     */
-    @Test public void losingTheDistanceAfterTheLastTurnIsArriving() {
-        NavigationCard lastTurn = card(lastTurn(), null);
-        assertFalse(lastTurn.arrived);
-        NavigationCard arrived = card(atDestination(), lastTurn);
-        assertTrue(arrived.arrived);
-        assertTrue("Maps posts it again and again", card(atDestination(), arrived).arrived);
-        assertFalse("The next trip's first turn", card(guidance(), arrived).arrived);
-    }
-
-    @Test public void losingTheDistanceAnywhereElseIsNotArriving() {
-        // Maps posted "CA-20 W" without its "0 ft" for a second as guidance began.
-        assertFalse(card(guidance().setContentTitle(""), card(guidance(), null)).arrived);
-        // "0.1 mi" to the turn is not the "10.1 mi" left of the trip.
-        NavigationCard near = card(guidance().setContentTitle("0.1 mi").setSubText("9 min · 10.1 mi · 5:23 PM PST ETA"), null);
-        assertFalse(card(guidance().setContentTitle(""), near).arrived);
-        // "Rerouting..." comes without an arrow or the trip.
-        assertFalse(card(guidance().setContentTitle("").setContentText("Rerouting...").setSubText(null)
-                .setLargeIcon((Icon) null), card(lastTurn(), null)).arrived);
-        // Another notification's last turn.
-        NavigationCard other = NavigationCard.from(MAPS, "other", lastTurn().build(), MAPS, null);
-        assertFalse(card(atDestination(), other).arrived);
-        // First heard at the destination, Wend cannot tell.
-        assertFalse(card(atDestination(), null).arrived);
+    @Test public void aTripWithoutTimeLeftHasNoArrival() {
+        Bundle report = GuidanceReports.guiding();
+        report.remove("time_left");
+        report.putInt("seconds_remaining", -1);
+        NavigationCard card = NavigationCard.from(report);
+        assertEquals("", card.arrival());
+        assertEquals("8.4 mi", card.eta.toString());
     }
 
     /**

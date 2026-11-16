@@ -1,6 +1,5 @@
 package dev.augie.wend;
 
-import android.app.Notification;
 import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.content.Context;
@@ -17,20 +16,18 @@ import java.util.Arrays;
 
 /**
  * Where Google Maps is navigating to, as Maps itself reports it through the optional Maps bridge
- * module (an LSPosed module that runs inside Maps; see {@code maps-bridge/README.md}). Maps'
- * guidance notification names no destination, and Maps restores no route for a trip that is
- * nearly over, so without this Wend cannot resume such a trip after Maps' process dies.
+ * module (an LSPosed module that runs inside Maps; see {@code maps-bridge/README.md}), with Maps'
+ * guidance. Maps restores no route for a trip that is nearly over, so without this Wend cannot
+ * resume such a trip after Maps' process dies.
  *
  * <p>The module calls {@code trip} on this provider with the destination as the argument and the
  * stops still ahead as the extra {@code stops}, as a trip starts and whenever Maps saves its
- * directions again, and {@code guidance} with each guidance
- * notification Maps builds (extra {@code notification}; none once guidance ended), which reaches
- * Wend even where Android delivers no notifications ({@link NavigationNotifications#reportedByMaps}),
- * and {@code shields} with the route shields Maps' own card draws in the next turn's road
+ * directions again, and {@code guidance} with Maps' navigation state each time it changes
+ * ({@link MapsGuidance#reportedByMaps}), and {@code shields} with the route shields Maps' own card draws in the next turn's road
  * ({@link RoadShields}; none once it shows none), and {@code stop} with whether Maps added the stop
  * an agent asked for ({@link AgentTools}).
  * Only Maps may call it. Both stay in memory. Without the module nothing is ever reported, and
- * Wend resumes as before ({@link GuidanceResume}) and hears guidance from Android alone.
+ * Wend hears no guidance.
  */
 public final class MapsTrips extends ContentProvider {
     /**
@@ -121,12 +118,11 @@ public final class MapsTrips extends ContentProvider {
         else if (stop) AgentTools.stopReported(extras);
         else if (shields) {
             RoadShields reported = RoadShields.from(extras);
-            main.post(() -> NavigationNotifications.shieldsReportedByMaps(reported));
+            main.post(() -> MapsGuidance.shieldsReportedByMaps(reported));
         }
         else {
-            // Maps' own guidance notification, or none once its guidance ended.
-            Notification notification = extras == null ? null : extras.getParcelable("notification");
-            main.post(() -> NavigationNotifications.reportedByMaps(notification));
+            // Maps' navigation state, as the module read it from Maps.
+            main.post(() -> MapsGuidance.reportedByMaps(extras));
         }
         return null;
     }

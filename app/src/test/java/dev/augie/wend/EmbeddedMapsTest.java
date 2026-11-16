@@ -1,7 +1,7 @@
 package dev.augie.wend;
 
 import android.app.Activity;
-import android.app.Notification;
+import android.os.Bundle;
 import android.app.ActivityView;
 import android.app.PendingIntent;
 import android.app.TaskStackListener;
@@ -18,7 +18,6 @@ import android.hardware.display.DisplayManager;
 import android.os.Looper;
 import android.os.Process;
 import android.provider.Settings;
-import android.service.notification.StatusBarNotification;
 import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
 import android.view.View;
@@ -66,11 +65,10 @@ public class EmbeddedMapsTest {
     /** The "resume guidance" setting each test's Maps panel reads. */
     private boolean resumesGuidance;
     /** Maps guides in each test unless it says otherwise: only guidance floats. */
-    private final NavigationNotifications guiding = new NavigationNotifications();
 
-    @Before public void guide() { guiding.onNotificationPosted(guidance()); }
+    @Before public void guide() { MapsGuidance.reportedByMaps(GuidanceReports.guiding()); }
 
-    @After public void stopGuiding() { guiding.onListenerDisconnected(); NavigationNotifications.forget(); }
+    @After public void stopGuiding() { MapsGuidance.forget(); }
 
     @Test public void reusingAnExistingTaskDoesNotWaitForTaskCreated() throws Exception {
         installMaps();
@@ -185,7 +183,7 @@ public class EmbeddedMapsTest {
         EmbeddedMaps maps = readyMaps(tasks);
         tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
         maps.resume();
-        guiding.onNotificationRemoved(guidance());
+        MapsGuidance.reportedByMaps(GuidanceReports.off());
         assertFalse(maps.floatAboveVideo(FloatingPlacement.Corner.BOTTOM_RIGHT, listener(),
                 LiveSurfaceWindow.Entry.FROM_CARD));
         assertFalse(maps.floatAboveVideoApp(FloatingPlacement.Corner.BOTTOM_RIGHT, listener()));
@@ -197,19 +195,18 @@ public class EmbeddedMapsTest {
         EmbeddedMaps maps = readyMaps(tasks);
         tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
         maps.resume();
-        NavigationNotifications notifications = new NavigationNotifications();
-        StatusBarNotification guidance = guidance();
+        Bundle guidance = GuidanceReports.guiding();
         try {
             assertTrue(maps.floatAboveVideo(FloatingPlacement.Corner.BOTTOM_RIGHT, listener(),
                     LiveSurfaceWindow.Entry.HELD_AT_CARD));
             float density = host.getResources().getDisplayMetrics().density;
             assertEquals("Under the card", FloatingMapCrop.of(833, 720, density, true, 0), floatingSource(maps));
-            notifications.onNotificationRemoved(guidance);
+            MapsGuidance.reportedByMaps(GuidanceReports.off());
             assertEquals("Without it", FloatingMapCrop.of(833, 720, density, false, 0), floatingSource(maps));
-            notifications.onNotificationPosted(guidance);
+            MapsGuidance.reportedByMaps(guidance);
             assertEquals("Under it again", FloatingMapCrop.of(833, 720, density, true, 0), floatingSource(maps));
         } finally {
-            notifications.onListenerDisconnected();
+            MapsGuidance.forget();
             maps.release();
         }
     }
@@ -309,12 +306,11 @@ public class EmbeddedMapsTest {
         EmbeddedMaps maps = readyMaps(tasks);
         tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
         maps.resume();
-        NavigationNotifications notifications = new NavigationNotifications();
-        StatusBarNotification guidance = guidance();
+        Bundle guidance = GuidanceReports.guiding();
         try {
-            notifications.onNotificationPosted(guidance);
+            MapsGuidance.reportedByMaps(guidance);
             fileMapsCrash();
-            notifications.onNotificationRemoved(guidance);
+            MapsGuidance.reportedByMaps(GuidanceReports.off());
             tasks.maps = null;
             callback(maps).onTaskRemovalStarted(7);
             shadowOf(Looper.getMainLooper()).idle();
@@ -324,7 +320,7 @@ public class EmbeddedMapsTest {
             assertReopened("Wend reopens Maps in its panel");
             assertTrue("And asks for Maps' Start to be pressed", guidanceResumeRequested());
         } finally {
-            notifications.onListenerDisconnected();
+            MapsGuidance.forget();
             maps.release();
         }
     }
@@ -474,19 +470,18 @@ public class EmbeddedMapsTest {
         EmbeddedMaps maps = readyMaps(tasks);
         tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
         maps.resume();
-        NavigationNotifications notifications = new NavigationNotifications();
-        StatusBarNotification guidance = guidance();
+        Bundle guidance = GuidanceReports.guiding();
         try {
-            notifications.onNotificationPosted(guidance);
+            MapsGuidance.reportedByMaps(guidance);
             assertFalse(guidanceResumeRequested());
-            notifications.onNotificationRemoved(guidance);
+            MapsGuidance.reportedByMaps(GuidanceReports.off());
             tasks.maps = null;
             taskRemovals(maps).onTaskRemoved(7);
             shadowOf(Looper.getMainLooper()).idle();
             assertReopened("Wend reopens Maps in its panel");
             assertTrue("And asks for Maps' Start to be pressed", guidanceResumeRequested());
         } finally {
-            notifications.onListenerDisconnected();
+            MapsGuidance.forget();
             maps.release();
         }
     }
@@ -503,12 +498,11 @@ public class EmbeddedMapsTest {
         EmbeddedMaps maps = readyMaps(tasks);
         tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
         maps.resume();
-        NavigationNotifications notifications = new NavigationNotifications();
-        StatusBarNotification guidance = guidance();
+        Bundle guidance = GuidanceReports.guiding();
         try {
-            notifications.onNotificationPosted(guidance);
+            MapsGuidance.reportedByMaps(guidance);
             MapsTrips.reported("1340 N State St, Ukiah, CA 95482");
-            notifications.onNotificationRemoved(guidance);
+            MapsGuidance.reportedByMaps(GuidanceReports.off());
             tasks.maps = null;
             taskRemovals(maps).onTaskRemoved(7);
             shadowOf(Looper.getMainLooper()).idle();
@@ -520,7 +514,7 @@ public class EmbeddedMapsTest {
             assertTrue("Start is still pressed if Maps shows it instead of guiding", guidanceResumeRequested());
         } finally {
             MapsTrips.forget();
-            notifications.onListenerDisconnected();
+            MapsGuidance.forget();
             maps.release();
         }
     }
@@ -532,19 +526,18 @@ public class EmbeddedMapsTest {
         EmbeddedMaps maps = readyMaps(tasks);
         tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
         maps.resume();
-        NavigationNotifications notifications = new NavigationNotifications();
-        StatusBarNotification guidance = guidance();
+        Bundle guidance = GuidanceReports.guiding();
         try {
-            notifications.onNotificationPosted(guidance);
+            MapsGuidance.reportedByMaps(guidance);
             MapsTrips.reported("1340 N State St, Ukiah, CA 95482");
-            notifications.onNotificationRemoved(guidance);
+            MapsGuidance.reportedByMaps(GuidanceReports.off());
             tasks.maps = null;
             taskRemovals(maps).onTaskRemoved(7);
             shadowOf(Looper.getMainLooper()).idle();
             assertReopened("Wend reopens Maps as it is");
         } finally {
             MapsTrips.forget();
-            notifications.onListenerDisconnected();
+            MapsGuidance.forget();
             maps.release();
         }
     }
@@ -556,16 +549,15 @@ public class EmbeddedMapsTest {
         EmbeddedMaps maps = readyMaps(tasks);
         tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
         maps.resume();
-        NavigationNotifications notifications = new NavigationNotifications();
         try {
-            notifications.onNotificationPosted(guidance());
+            MapsGuidance.reportedByMaps(GuidanceReports.guiding());
             tasks.maps = null;
             taskRemovals(maps).onTaskRemoved(7);
             shadowOf(Looper.getMainLooper()).idle();
             assertReopened("Wend reopens Maps in its panel");
             assertFalse(guidanceResumeRequested());
         } finally {
-            notifications.onListenerDisconnected();
+            MapsGuidance.forget();
             maps.release();
         }
     }
@@ -578,11 +570,10 @@ public class EmbeddedMapsTest {
         EmbeddedMaps maps = readyMaps(tasks);
         tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
         maps.resume();
-        NavigationNotifications notifications = new NavigationNotifications();
-        StatusBarNotification guidance = guidance();
+        Bundle guidance = GuidanceReports.guiding();
         try {
-            notifications.onNotificationPosted(guidance);
-            notifications.onNotificationRemoved(guidance);
+            MapsGuidance.reportedByMaps(guidance);
+            MapsGuidance.reportedByMaps(GuidanceReports.off());
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(10));
             tasks.maps = null;
             taskRemovals(maps).onTaskRemoved(7);
@@ -590,7 +581,7 @@ public class EmbeddedMapsTest {
             assertReopened("Wend reopens Maps in its panel");
             assertFalse(guidanceResumeRequested());
         } finally {
-            notifications.onListenerDisconnected();
+            MapsGuidance.forget();
             maps.release();
         }
     }
@@ -603,9 +594,8 @@ public class EmbeddedMapsTest {
         EmbeddedMaps maps = readyMaps(tasks);
         tasks.maps = new MapsTask.Task(7, panelDisplay(maps), 1);
         maps.resume();
-        NavigationNotifications notifications = new NavigationNotifications();
         try {
-            notifications.onNotificationPosted(guidance());
+            MapsGuidance.reportedByMaps(GuidanceReports.guiding());
             maps.suspend();
             assertTrue(maps.floatAboveVideoApp(FloatingPlacement.Corner.BOTTOM_RIGHT, listener()));
             maps.suspend();
@@ -617,7 +607,7 @@ public class EmbeddedMapsTest {
             assertReopened("Home reopens Maps in its panel");
             assertTrue(guidanceResumeRequested());
         } finally {
-            notifications.onListenerDisconnected();
+            MapsGuidance.forget();
             maps.release();
         }
     }
@@ -1135,14 +1125,6 @@ public class EmbeddedMapsTest {
     }
 
     /** Maps' ongoing guidance notification, as it posts it while navigating. */
-    private StatusBarNotification guidance() {
-        Notification notification = new Notification.Builder(host, "1_foreground_1")
-                .setSmallIcon(Icon.createWithBitmap(Bitmap.createBitmap(36, 36, Bitmap.Config.ARGB_8888)))
-                .setCategory(Notification.CATEGORY_NAVIGATION).setOngoing(true)
-                .setContentTitle("0 ft").setContentText("CA-20 W").build();
-        return new StatusBarNotification(EmbeddedMaps.PACKAGE, EmbeddedMaps.PACKAGE, 1, null, 10111, 0, 0,
-                notification, Process.myUserHandle(), 0);
-    }
 
     /** The part of Maps' display its floating window shows. */
     private static RectF floatingSource(EmbeddedMaps maps) throws ReflectiveOperationException {

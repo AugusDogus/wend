@@ -1,7 +1,6 @@
 package dev.augie.wend;
 
 import android.app.Application;
-import android.app.Notification;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.drawable.Icon;
@@ -34,7 +33,7 @@ public class McpProtocolTest {
     private final Application context = RuntimeEnvironment.getApplication();
     private final McpProtocol protocol = new McpProtocol(new AgentTools(context));
 
-    @After public void forget() { NavigationNotifications.forget(); MapsTrips.forget(); }
+    @After public void forget() { MapsGuidance.forget(); MapsTrips.forget(); }
 
     private JSONObject ask(String method, JSONObject params) throws Exception {
         return protocol.answer(new JSONObject().put("jsonrpc", "2.0").put("id", 7).put("method", method).put("params", params).toString());
@@ -48,16 +47,13 @@ public class McpProtocolTest {
         return result.getJSONArray("content").getJSONObject(0).getString("text");
     }
 
-    private Notification guidance(String distance, String road, String trip) {
-        return guidanceBuilder(distance, road, trip).build();
-    }
-
-    private Notification.Builder guidanceBuilder(String distance, String road, String trip) {
-        return new Notification.Builder(context, "1_foreground_1")
-                .setSmallIcon(Icon.createWithBitmap(Bitmap.createBitmap(36, 36, Bitmap.Config.ARGB_8888)))
-                .setLargeIcon(Icon.createWithBitmap(Bitmap.createBitmap(54, 54, Bitmap.Config.ARGB_8888)))
-                .setCategory(Notification.CATEGORY_NAVIGATION).setOngoing(true)
-                .setContentTitle(distance).setContentText(road).setSubText(trip);
+    /** Maps guides, as the Maps bridge module reports it; {@code trip} names the time and distance left in Maps' words. */
+    private static Bundle guidance(String distance, String road, String trip) {
+        Bundle report = GuidanceReports.guiding(distance, road);
+        String[] parts = trip.split(" · ");
+        report.putCharSequence("time_left", parts[0]);
+        report.putCharSequence("distance_left", parts[1]);
+        return report;
     }
 
     @Test public void itSpeaksTheVersionTheClientAsksForWhenItKnowsItAndItsNewestOtherwise() throws Exception {
@@ -158,7 +154,7 @@ public class McpProtocolTest {
 
     /** Maps' own Add stop, through the module: Maps keeps guiding and reroutes through the place. */
     @Test public void addStopAsksMapsAndSaysWhatMapsAnswered() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
         mapsBridgeListens();
         Future<JSONObject> call = addStopOffMain("Chevron, 1099 S State St, Ukiah, CA");
         Intent ask = askedOfMaps();
@@ -174,7 +170,7 @@ public class McpProtocolTest {
 
     /** A business name Maps cannot match from text alone; the agent knows where it is. */
     @Test public void addStopAtCoordinatesAsksMapsForThatPointUnderTheName() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
         mapsBridgeListens();
         Future<JSONObject> call = Executors.newSingleThreadExecutor().submit(() -> callTool("add_stop",
                 new JSONObject().put("place", "Wawa").put("latitude", 30.6012).put("longitude", -87.1405)));
@@ -188,12 +184,12 @@ public class McpProtocolTest {
         JSONObject result = answered(call);
         assertFalse(result.getBoolean("isError"));
         assertTrue(text(result), text(result).endsWith("Stops ahead now, from 1: [\"Wawa\"]."));
-        JSONObject status = new JSONObject(text(callTool("trip_status", new JSONObject())));
+        JSONObject status = new JSONObject(text(answered(tripStatusOffMain())));
         assertEquals("Wawa", status.getJSONArray("stops_ahead").getString(0));
     }
 
     @Test public void addStopTakesLatitudeLongitudeTextAsThatPoint() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
         mapsBridgeListens();
         addStopOffMain(" 30.6012, -87.1405 ");
         Intent ask = askedOfMaps();
@@ -202,7 +198,7 @@ public class McpProtocolTest {
     }
 
     @Test public void addStopRefusesHalfOrImpossibleCoordinatesWithoutAskingMaps() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
         mapsBridgeListens();
         JSONObject half = callTool("add_stop", new JSONObject().put("place", "Wawa").put("latitude", 30.6));
         assertTrue(half.getBoolean("isError"));
@@ -214,7 +210,7 @@ public class McpProtocolTest {
     }
 
     @Test public void addStopByTextMapsRefusedSaysToPassCoordinates() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
         shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(21)); // guidance long under way
         mapsBridgeListens();
         Future<JSONObject> call = addStopOffMain("Wawa");
@@ -225,7 +221,7 @@ public class McpProtocolTest {
     }
 
     @Test public void addStopSaysWhyMapsAddedNothing() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
         shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(21)); // guidance long under way
         mapsBridgeListens();
         Future<JSONObject> call = addStopOffMain("Nowhere at all");
@@ -237,7 +233,7 @@ public class McpProtocolTest {
 
     /** Maps refuses a stop while it sets up a route it just began guiding along; it is asked again once. */
     @Test public void addStopAsksAgainWhenGuidanceHasJustBegun() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
         mapsBridgeListens();
         Future<JSONObject> call = addStopOffMain("Chevron, 1099 S State St, Ukiah, CA");
         mapsSays(askedOfMaps().getIntExtra(AgentTools.REQUEST, -1), false, "Maps did not add \"Chevron\"");
@@ -258,7 +254,7 @@ public class McpProtocolTest {
 
     /** No module in Maps answers the ordered broadcast, which comes back with its first result. */
     @Test public void addStopWithoutTheMapsBridgeSaysSoAtOnce() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
         JSONObject result = answered(addStopOffMain("Chevron, Ukiah, CA"));
         assertTrue(result.getBoolean("isError"));
         assertTrue(text(result).startsWith("The Maps bridge module did not answer"));
@@ -269,7 +265,7 @@ public class McpProtocolTest {
     }
 
     private void guidingThroughTwoStops() {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "13 min · 11 mi · 4:41 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "13 min · 11 mi · 4:41 PM PST ETA"));
         MapsTrips.reported(MOTEL, new String[]{"Safeway, 653 S State St, Ukiah, CA 95482", "Chevron, 1099 S State St, Ukiah, CA 95482"});
     }
 
@@ -320,7 +316,7 @@ public class McpProtocolTest {
     }
 
     @Test public void removeStopWithoutStopsAheadAsksNothing() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
         MapsTrips.reported(MOTEL);
         JSONObject result = callTool("remove_stop", new JSONObject());
         assertTrue(result.getBoolean("isError"));
@@ -329,13 +325,13 @@ public class McpProtocolTest {
 
     /** Maps' own end-navigation, through the module; it answers once Maps' guidance notification is gone. */
     @Test public void endNavigationAsksMapsToEndItsGuidance() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
         mapsBridgeListens();
         Future<JSONObject> call = Executors.newSingleThreadExecutor().submit(() -> callTool("end_navigation", new JSONObject()));
         Intent ask = askedOfMaps(AgentTools.END_NAVIGATION);
         assertEquals(EmbeddedMaps.PACKAGE, ask.getPackage());
         mapsSays(ask.getIntExtra(AgentTools.REQUEST, -1), true, null);
-        NavigationNotifications.reportedByMaps(null);
+        MapsGuidance.reportedByMaps(GuidanceReports.off());
         JSONObject result = answered(call);
         assertFalse(result.getBoolean("isError"));
         assertTrue(text(result).startsWith("Maps ended its guidance"));
@@ -343,7 +339,7 @@ public class McpProtocolTest {
 
     /** The routes Maps has, as the module reads them from Maps' guidance, the guided one first. */
     @Test public void listRoutesGivesTheRoutesMapsHas() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "2 hr 11 min · 124 mi · 9:47 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "2 hr 11 min · 124 mi · 9:47 PM PST ETA"));
         mapsBridgeListens();
         Future<JSONObject> call = Executors.newSingleThreadExecutor().submit(() -> callTool("list_routes", new JSONObject()));
         Intent ask = askedOfMaps(AgentTools.ROUTES);
@@ -362,7 +358,7 @@ public class McpProtocolTest {
     }
 
     @Test public void switchRouteAsksMapsForThatRoute() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "2 hr 11 min · 124 mi · 9:47 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "2 hr 11 min · 124 mi · 9:47 PM PST ETA"));
         mapsBridgeListens();
         Future<JSONObject> call = Executors.newSingleThreadExecutor().submit(() -> callTool("switch_route", new JSONObject().put("route", "b")));
         Intent ask = askedOfMaps(AgentTools.SWITCH_ROUTE);
@@ -395,17 +391,52 @@ public class McpProtocolTest {
         assertNull(shadowOf(context).getNextStartedActivity());
     }
 
+    /** trip_status as Wend's MCP server calls it, off the main thread. */
+    private Future<JSONObject> tripStatusOffMain() {
+        return Executors.newSingleThreadExecutor().submit(() -> callTool("trip_status", new JSONObject()));
+    }
+
+    /** Maps' own guidance knows the distance to the turn, in its words and in meters, and whether the car is on the route. */
+    @Test public void tripStatusTakesTheTurnFromMapsGuidance() throws Exception {
+        Bundle report = guidance("1.2 mi", "toward T R Robinson Dr", "13 min · 6.8 mi · 1:33 PM ETA");
+        report.putInt("meters_to_step", 1931);
+        report.putInt("seconds_to_step", 95);
+        MapsGuidance.reportedByMaps(report);
+        JSONObject status = new JSONObject(text(answered(tripStatusOffMain())));
+        JSONObject turn = status.getJSONObject("next_turn");
+        assertEquals("1.2 mi", turn.getString("distance"));
+        assertEquals(1931, turn.getInt("meters"));
+        assertEquals(95, turn.getInt("seconds"));
+        assertEquals("toward T R Robinson Dr", turn.getString("road"));
+        assertTrue(status.getBoolean("on_route"));
+    }
+
+    /** Maps does not know the distance to the turn, as off its route: it words none, and gives -1 meters. */
+    @Test public void tripStatusLeavesOutADistanceMapsDoesNotKnow() throws Exception {
+        Bundle report = guidance("", "toward T R Robinson Dr", "13 min · 6.8 mi · 1:33 PM ETA");
+        report.remove("distance");
+        report.putInt("meters_to_step", -1);
+        report.putInt("seconds_to_step", -1);
+        report.putBoolean("on_route", false);
+        MapsGuidance.reportedByMaps(report);
+        JSONObject status = new JSONObject(text(answered(tripStatusOffMain())));
+        JSONObject turn = status.getJSONObject("next_turn");
+        assertEquals("", turn.getString("distance"));
+        assertFalse(turn.has("meters"));
+        assertFalse(status.getBoolean("on_route"));
+    }
+
     @Test public void tripStatusSaysWhenMapsGuidesNowhere() throws Exception {
-        JSONObject status = new JSONObject(text(callTool("trip_status", new JSONObject())));
+        JSONObject status = new JSONObject(text(answered(tripStatusOffMain())));
         assertFalse(status.getBoolean("guiding"));
         assertEquals(1, status.length());
     }
 
     /** What Maps' guidance notification and the Maps bridge module report, as the agent reads it. */
     @Test public void tripStatusIsTheGuidanceMapsReportsWithItsDestination() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
         MapsTrips.reported(MOTEL, new String[]{"Chevron, 1000 N State St"});
-        JSONObject status = new JSONObject(text(callTool("trip_status", new JSONObject())));
+        JSONObject status = new JSONObject(text(answered(tripStatusOffMain())));
         assertTrue(status.getBoolean("guiding"));
         assertEquals(MOTEL, status.getString("destination"));
         assertEquals("Chevron, 1000 N State St", status.getJSONArray("stops_ahead").getString(0));
@@ -413,13 +444,15 @@ public class McpProtocolTest {
         assertEquals("0.2 mi", turn.getString("distance"));
         assertEquals("CA-20 W", turn.getString("road"));
         assertFalse(turn.getBoolean("arrived"));
-        assertEquals("9 min · 8.4 mi · 4:37 PM PST ETA", status.getString("remaining"));
-        assertEquals("4:37 PM", status.getString("arrival"));
+        // Maps' 540 s left, from now, as the clock words it.
+        String arrival = status.getString("arrival");
+        assertTrue(arrival, arrival.matches("\\d{1,2}:\\d{2}( [AP]M)?"));
+        assertEquals("9 min · 8.4 mi · " + arrival, status.getString("remaining"));
     }
 
     @Test public void tripStatusWithoutAReportedDestinationLeavesItOut() throws Exception {
-        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
-        JSONObject status = new JSONObject(text(callTool("trip_status", new JSONObject())));
+        MapsGuidance.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        JSONObject status = new JSONObject(text(answered(tripStatusOffMain())));
         assertTrue(status.getBoolean("guiding"));
         assertFalse(status.has("destination"));
     }

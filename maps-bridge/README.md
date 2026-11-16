@@ -14,17 +14,21 @@ Wend works without it, with the limits below.
   the first, which is the origin or the stop Maps last went on from), and calls `trip` on Wend's
   provider `content://dev.augie.wend.mapstrips`. Without it, Wend cannot resume a trip that Maps does not
   restore: Maps restores none for a trip within about 1 km of its end.
-- **Its guidance** (`GuidanceReporter`). Each guidance notification Maps builds (the turn's arrow,
-  the distance to it, the road, the trip's time), handed to Wend as Maps posts it, by calling
-  `guidance` on the same provider, and once more without it when Maps takes it down. It is read in
-  Maps, before Android's notification service: it reaches Wend with Maps' notifications turned
-  off, where Android would deliver a notification listener nothing, so floating Maps keeps its
-  next-turn card, its "Arrived" card, and resuming after Maps dies.
+- **Its guidance** (`GuidanceState`, `MapsProgress`). Maps' own navigation state, each time it
+  changes, by calling `guidance` on the same provider: whether Maps guides, the step ahead as Maps
+  words it (distance and cue, from Maps' own summary and distance wording), Maps' arrow for it,
+  the meters and seconds to it, the meters and time left to the next destination (also as Maps
+  words them) and the route's time zone, whether the car is on the route, and whether the route
+  is done. The module hooks Maps' handler of navigation state changes and reads the state; no
+  notification is involved, so it works with Maps' notifications turned off. Wend hears guidance
+  only from this: floating Maps' next-turn and "Arrived" cards, resuming after Maps dies, and
+  `trip_status` all depend on it. Where Maps itself does not know the distance to the turn (off
+  the route), it reports none.
 - **Its road shields** (`ShieldReporter`). The route shields Maps' own turn card draws in the next
-  turn's road ("CA-20 W WEST" with a "20" shield over "CA-20 W"), which its notification lacks:
+  turn's road ("CA-20 W WEST" with a "20" shield over "CA-20 W"), which its state has as text only:
   the card's line, where each shield lies in it, and each shield rendered as Maps draws it, by
   calling `shields` on the same provider whenever the line changes, or without extras when it has
-  no shield. Without it, floating Maps' card shows such a road as the notification's text.
+  no shield. Without it, floating Maps' card shows such a road as plain text.
 
 ## Adding and removing stops
 
@@ -151,5 +155,6 @@ module in LSPosed for Google Maps, and restart Maps. Its log tag is `wend-maps-b
   one: the module logs which, and Wend's `add_stop` and `remove_stop` say Maps' stops were not found (`list_routes` and `switch_route`
   the same for routes); all else
   works. Checked against Maps 26.43.
-- A Maps that stops posting a guidance notification. It is Maps' foreground-service notification,
-  which Android requires of it while it navigates in the background.
+- A Maps whose code no longer has what `GuidanceState` looks for (its state handler, summary,
+  arrow renderer, or the progress `MapsProgress` reads): the module logs which, and Wend hears no
+  guidance. Checked against Maps 26.43.

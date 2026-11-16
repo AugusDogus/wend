@@ -124,9 +124,11 @@ final class AgentTools {
                     .put(tool("end_navigation", "Ends the guidance Google Maps runs in the car, as Maps' own end-navigation"
                             + " button does; Maps then shows the trip's route with Start. Its stops are not kept.",
                             new JSONObject().put("type", "object").put("properties", new JSONObject())))
-                    .put(tool("trip_status", "Reads the trip Google Maps guides in the car now, as Maps itself shows it:"
-                            + " the next turn, the time and distance left, the arrival time, and the destination and"
-                            + " stops ahead when Maps reported them. guiding is false when Maps guides nowhere.",
+                    .put(tool("trip_status", "Reads the trip Google Maps guides in the car now, as Maps itself tracks it:"
+                            + " the next turn (its distance, also in meters and seconds), the time and distance left, the"
+                            + " arrival time, whether the car is on the route, and the destination and stops ahead when"
+                            + " Maps reported them. guiding is false when Maps guides nowhere. The turn's distance is"
+                            + " empty, and its meters left out, while Maps itself does not know it, as off the route.",
                             new JSONObject().put("type", "object").put("properties", new JSONObject())));
             return tools;
         } catch (JSONException impossible) {
@@ -199,7 +201,7 @@ final class AgentTools {
                 return Result.failed("longitude " + longitude + " is not between -180 and 180; nothing changed.");
             }
         }
-        if (!onMain(() -> NavigationNotifications.current() != null)) {
+        if (!onMain(() -> MapsGuidance.current() != null)) {
             return Result.failed("Maps guides nowhere now, so there is no trip to add a stop to; nothing changed."
                     + " Use navigate_to to go to \"" + place + "\" instead.");
         }
@@ -211,7 +213,7 @@ final class AgentTools {
         Result added = changeStops(ask, "add \"" + place + "\"",
                 "Maps added \"" + place + "\" as a stop on the trip it guides and keeps guiding.", 1);
         // Maps refuses new waypoints while it still sets up a route it just began guiding along.
-        Long began = onMain(NavigationNotifications::began);
+        Long began = onMain(MapsGuidance::began);
         if (added.error && began != null && android.os.SystemClock.uptimeMillis() - began < JUST_BEGAN_MS) {
             try { Thread.sleep(RETRY_AFTER_MS); }
             catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); return added; }
@@ -232,7 +234,7 @@ final class AgentTools {
      * reported ahead ({@link MapsTrips}) may be removed.
      */
     private Result removeStop(int position) throws TimeoutException {
-        if (!onMain(() -> NavigationNotifications.current() != null)) {
+        if (!onMain(() -> MapsGuidance.current() != null)) {
             return Result.failed("Maps guides nowhere now, so there is no stop to remove; nothing changed.");
         }
         String[] stops = stopsAhead();
@@ -271,7 +273,7 @@ final class AgentTools {
 
     /** Reads Maps' routes for the trip it guides through the Maps bridge module. */
     private Result listRoutes() throws TimeoutException {
-        if (!onMain(() -> NavigationNotifications.current() != null)) return Result.failed("Maps guides nowhere now, so it has no routes.");
+        if (!onMain(() -> MapsGuidance.current() != null)) return Result.failed("Maps guides nowhere now, so it has no routes.");
         Bundle said = askBridge(new Intent(ROUTES));
         if (said == null) return Result.failed("Maps did not list its routes within " + STOP_WAIT_MS / 1000 + " s.");
         if (!said.getBoolean("done")) return Result.failed(said.getString("problem", "Maps did not list its routes") + ".");
@@ -281,7 +283,7 @@ final class AgentTools {
     /** Asks Maps, through the Maps bridge module, to guide along another of its routes. */
     private Result switchRoute(String route) throws TimeoutException {
         if (route.isEmpty()) return Result.failed("switch_route needs a route id from list_routes.");
-        if (!onMain(() -> NavigationNotifications.current() != null)) return Result.failed("Maps guides nowhere now; nothing changed.");
+        if (!onMain(() -> MapsGuidance.current() != null)) return Result.failed("Maps guides nowhere now; nothing changed.");
         Bundle said = askBridge(new Intent(SWITCH_ROUTE).putExtra(ROUTE, route));
         if (said == null) {
             return Result.failed("Maps did not say within " + STOP_WAIT_MS / 1000 + " s whether it switched; call list_routes to see.");
@@ -292,7 +294,7 @@ final class AgentTools {
 
     /** Ends Maps' guidance through the Maps bridge module, as Maps' own end-navigation button does. */
     private Result endNavigation() throws TimeoutException {
-        if (!onMain(() -> NavigationNotifications.current() != null)) return Result.failed("Maps guides nowhere now; nothing changed.");
+        if (!onMain(() -> MapsGuidance.current() != null)) return Result.failed("Maps guides nowhere now; nothing changed.");
         Bundle said = askBridge(new Intent(END_NAVIGATION));
         if (said == null) {
             return Result.failed("Maps did not say within " + STOP_WAIT_MS / 1000 + " s whether it ended its guidance; call"
@@ -300,7 +302,7 @@ final class AgentTools {
         }
         if (!said.getBoolean("done")) return Result.failed(said.getString("problem", "Maps did not end its guidance") + ". Maps still guides.");
         long until = System.currentTimeMillis() + REPORT_WAIT_MS;
-        while (onMain(() -> NavigationNotifications.current() != null) && System.currentTimeMillis() < until) {
+        while (onMain(() -> MapsGuidance.current() != null) && System.currentTimeMillis() < until) {
             try { Thread.sleep(200); }
             catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); break; }
         }
@@ -365,7 +367,7 @@ final class AgentTools {
     /** @return the stops ahead Maps last reported for the trip it guides; none if it reported none */
     private String[] stopsAhead() throws TimeoutException {
         return onMain(() -> {
-            MapsTrips.Trip trip = NavigationNotifications.current() == null ? null : MapsTrips.of(NavigationNotifications.began());
+            MapsTrips.Trip trip = MapsGuidance.current() == null ? null : MapsTrips.of(MapsGuidance.began());
             return trip == null ? new String[0] : named(trip.stops);
         });
     }
@@ -419,23 +421,26 @@ final class AgentTools {
         }
     }
 
+    /** Reads the trip as Maps' own navigation state holds it, through the Maps bridge module ({@link MapsGuidance}). */
     private Result tripStatus() {
-        NavigationCard turn = NavigationNotifications.current();
+        NavigationCard turn = MapsGuidance.current();
         try {
             JSONObject status = new JSONObject().put("guiding", turn != null);
             if (turn == null) return Result.ok(status.toString());
-            MapsTrips.Trip trip = MapsTrips.of(NavigationNotifications.began());
+            MapsTrips.Trip trip = MapsTrips.of(MapsGuidance.began());
             if (trip != null) {
                 status.put("destination", trip.destination);
                 JSONArray stops = new JSONArray();
                 for (String stop : named(trip.stops)) stops.put(stop);
                 status.put("stops_ahead", stops);
             }
-            status.put("next_turn", new JSONObject().put("distance", turn.distance.toString())
-                    .put("road", turn.road.toString()).put("arrived", turn.arrived));
+            status.put("on_route", turn.onRoute);
+            JSONObject next = new JSONObject().put("distance", turn.distance.toString());
+            if (turn.metersToTurn >= 0) next.put("meters", turn.metersToTurn);
+            if (turn.secondsToTurn >= 0) next.put("seconds", turn.secondsToTurn);
+            status.put("next_turn", next.put("road", turn.road.toString()).put("arrived", turn.arrived));
             if (turn.eta.length() > 0) status.put("remaining", turn.eta.toString());
-            String arrival = turn.arrival();
-            if (!arrival.isEmpty()) status.put("arrival", arrival);
+            if (!turn.arrival.isEmpty()) status.put("arrival", turn.arrival);
             return Result.ok(status.toString());
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
