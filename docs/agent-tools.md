@@ -75,20 +75,16 @@ next stop's too; `remove_next_stop` saves that turn. `list_stops` saved nothing 
 
 ## Who can reach it
 
-The server listens on port 7311 and answers:
-
-- the head unit itself, or a computer through `adb forward tcp:7311 tcp:7311`;
-- tailnet machines whose Tailscale addresses are listed, comma-separated, in the global setting
-  `wend_agent_peers` (none by default), over the tailnet, at the unit's Tailscale address. Set it
-  with `adb shell settings put global wend_agent_peers 100.x.y.z`. Tailscale's WireGuard ties each
-  tailnet address to one machine, so this is the tailnet's own authentication, with no tokens.
-
-Everything else, other tailnet machines and the car's own network included, gets 403. The intended
-peer is the host of an MCP gateway (a self-hosted Executor) that agents such as Grok Bot already
-reach over the tailnet; the gateway connects to `http://<unit's Tailscale address>:7311/mcp`. It
-also rejects any request that carries an `Origin` header, so a web page cannot drive it. It starts
-with Wend's process, whatever started that process. Each tool call is logged under the
-`WendAgent` tag.
+The server listens on port 7311 and answers the head unit itself (or a computer through
+`adb forward tcp:7311 tcp:7311`) and any machine of the owner's tailnet, over it, at the unit's
+Tailscale address or MagicDNS name (`http://px6.<tailnet>.ts.net:7311/mcp`; plain HTTP, since the
+Tailscale app has no `tailscale serve`, but WireGuard encrypts it). The tailnet is the boundary:
+Tailscale ties each tailnet address to one machine, and the tailnet's access rules say which
+machines reach this port. Everything else, the car's own network included, gets 403. The intended
+client is an MCP gateway on the tailnet (a self-hosted Executor) that agents such as Grok Bot
+already use. It also rejects any request that carries an `Origin` header, so a web page cannot
+drive it. It starts with Wend's process, whatever started that process. Each tool call is logged
+under the `WendAgent` tag.
 
 ## Checked on the emulator (2026-11-15, Maps 26.43)
 

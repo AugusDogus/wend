@@ -1,12 +1,10 @@
 package dev.augie.wend;
 
 import android.content.ContentProvider;
-import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
-import android.provider.Settings;
 import android.util.Log;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -28,28 +26,22 @@ import org.json.JSONObject;
  * each JSON-RPC message POSTed to {@code /mcp} and answered as JSON, at port {@value #PORT}.
  *
  * <p>Who may use it ({@link #allowed}): the head unit itself (or a computer through
- * {@code adb forward tcp:7311 tcp:7311}), and the tailnet machines listed in the global setting
- * {@value #PEERS_SETTING} (their Tailscale addresses, comma-separated; none by default), such as
- * the host of an MCP gateway agents reach. Tailscale's WireGuard ties each tailnet address to one
- * machine, so a connection that came over the tailnet from a listed address is from that machine.
- * It turns away browsers' requests, which carry an Origin, so no web page can drive it. Started
+ * {@code adb forward tcp:7311 tcp:7311}), and any machine of the owner's tailnet, over it, such as
+ * the host of an MCP gateway agents reach. The tailnet is the boundary: Tailscale's WireGuard ties
+ * each tailnet address to one machine, and the tailnet's access rules say which may reach this
+ * port. The car's own network is turned away. It turns away browsers' requests, which carry an
+ * Origin, so no web page can drive it. Started
  * once per process, as Wend's process starts ({@link Starter}), whether for its home screen or for
  * Maps' notification.
  */
 final class AgentServer {
     static final int PORT = 7311;
-    /** {@link Settings.Global} key: the Tailscale addresses, comma-separated, of the machines that may use the tools. */
-    static final String PEERS_SETTING = "wend_agent_peers";
     private static final int MAX_HEADERS = 16 * 1024, MAX_BODY = 1024 * 1024, READ_TIMEOUT_MS = 10_000;
     private static AgentServer started;
     private final McpProtocol protocol;
-    private final ContentResolver settings;
     private final ExecutorService connections = Executors.newFixedThreadPool(4);
 
-    private AgentServer(McpProtocol protocol, ContentResolver settings) {
-        this.protocol = protocol;
-        this.settings = settings;
-    }
+    private AgentServer(McpProtocol protocol) { this.protocol = protocol; }
 
     /** Starts the server as Wend's process starts: Android creates a process's providers before anything else runs in it. */
     public static final class Starter extends ContentProvider {
@@ -68,15 +60,15 @@ final class AgentServer {
     /** Starts the server unless it runs already. Main thread. */
     static void start(Context context) {
         if (started != null) return;
-        started = new AgentServer(new McpProtocol(new AgentTools(context.getApplicationContext())), context.getContentResolver());
+        started = new AgentServer(new McpProtocol(new AgentTools(context.getApplicationContext())));
         new Thread(started::listen, "WendAgentServer").start();
     }
 
     private void listen() {
-        // Every interface, for the tailnet's; allowed() turns away all but the unit and listed peers.
+        // Every interface, for the tailnet's; allowed() turns away all but the unit and the tailnet.
         try (ServerSocket server = new ServerSocket(PORT, 8)) {
-            Log.i(AgentTools.TAG, "Agents can use Wend's tools over MCP at http://127.0.0.1:" + PORT + "/mcp, and the tailnet"
-                    + " machines in the global setting " + PEERS_SETTING + " at this unit's Tailscale address");
+            Log.i(AgentTools.TAG, "Agents can use Wend's tools over MCP at http://127.0.0.1:" + PORT + "/mcp, and from the"
+                    + " tailnet at this unit's Tailscale address");
             while (true) {
                 Socket socket = server.accept();
                 connections.execute(() -> serve(socket));
@@ -93,12 +85,10 @@ final class AgentServer {
             connection.setSoTimeout(READ_TIMEOUT_MS);
             InputStream in = connection.getInputStream();
             OutputStream out = connection.getOutputStream();
-            String peers = Settings.Global.getString(settings, PEERS_SETTING);
-            if (!allowed(connection.getInetAddress(), connection.getLocalAddress(), peers)) {
-                Log.w(AgentTools.TAG, "Turned away " + connection.getInetAddress().getHostAddress() + ", which is not in "
-                        + PEERS_SETTING + " (" + peers + ")");
-                respond(out, 403, "text/plain", "Wend's MCP server answers this head unit and the tailnet machines in its global"
-                        + " setting " + PEERS_SETTING + "; " + connection.getInetAddress().getHostAddress() + " is not one\n");
+            if (!allowed(connection.getInetAddress(), connection.getLocalAddress())) {
+                Log.w(AgentTools.TAG, "Turned away " + connection.getInetAddress().getHostAddress() + ", which is not on the tailnet");
+                respond(out, 403, "text/plain", "Wend's MCP server answers this head unit and its tailnet, at the unit's Tailscale"
+                        + " address\n");
                 return;
             }
             String head = readHead(in);
@@ -145,17 +135,11 @@ final class AgentServer {
     /**
      * @param from where a connection comes from
      * @param to the unit's address it came to
-     * @param peers the {@value #PEERS_SETTING} setting, or null
-     * @return whether it may use the tools: from the unit itself, or over the tailnet (to the unit's
-     *     Tailscale address) from a listed peer
+     * @return whether it may use the tools: from the unit itself, or over the tailnet (from a
+     *     Tailscale address to the unit's)
      */
-    static boolean allowed(InetAddress from, InetAddress to, String peers) {
-        if (from.isLoopbackAddress()) return true;
-        if (!tailnet(from) || !tailnet(to) || peers == null) return false;
-        for (String peer : peers.split(",")) {
-            if (peer.trim().equals(from.getHostAddress())) return true;
-        }
-        return false;
+    static boolean allowed(InetAddress from, InetAddress to) {
+        return from.isLoopbackAddress() || tailnet(from) && tailnet(to);
     }
 
     /** @return whether {@code address} is a Tailscale address, in 100.64.0.0/10 */
