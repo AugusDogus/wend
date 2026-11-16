@@ -7,10 +7,10 @@ Maps in the car. It speaks MCP's Streamable HTTP transport: each JSON-RPC messag
 ## Tools
 
 - `navigate_to(destination)`: starts Maps' guidance to an address, `latitude,longitude` or a
-  place name, through Maps' `google.navigation:` link. If Maps is guiding already, it would ask
-  the driver "Exit navigation?" and keep its route when nobody answers. So Wend first sends the
-  "Exit navigation" action of Maps' own guidance notification, and opens the link once the
-  guidance has ended (or after 3 s).
+  place name, through Maps' `google.navigation:` link, in place of any trip Maps guides (its stops
+  too). A Maps that guides already would first ask the driver "Exit navigation?"; the Maps bridge
+  module answers yes for Wend's links, through Maps' own code for that answer, so the new trip
+  starts at once (see `maps-bridge/README.md`). Without the module, Maps asks.
 - `add_stop(place)`: adds a stop to the trip Maps guides, through Maps' own Add stop, as on a road
   trip when a gas station comes up: Maps keeps guiding and keeps its destination, finds the place
   from the text, and reroutes through it. It needs the Maps bridge module, which calls Maps'
@@ -54,8 +54,10 @@ sign-in first, and is not done yet.
 - The official MCP TypeScript client (`@modelcontextprotocol/sdk` 1.20.0) connects, lists the
   tools and calls them.
 - With Maps open but not guiding, `navigate_to` started guidance at once, in Wend's panel.
-- While guiding to one place, `navigate_to` another place ended that route and guided to the new
-  one, with no dialog. `trip_status` named the new destination.
+- While guiding to the motel through a stop, `navigate_to` the brewery replaced the trip with no
+  dialog and no gap in guidance: `trip_status` named the brewery, with no stops ahead. A link
+  carrying Wend's mark sent from `adb shell` (with a forged `EXTRA_REFERRER`) still got Maps'
+  dialog.
 - While guiding to the motel, `add_stop("Chevron, 1099 S State St, Ukiah, CA")` added the stop
   with no change on screen but the route: 10 min / 8.4 mi became 14 min / 11 mi, `trip_status`
   listed the Chevron as a stop ahead and the motel as the destination. A second stop went before

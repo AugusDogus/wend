@@ -2,13 +2,11 @@ package dev.augie.wend;
 
 import android.app.Application;
 import android.app.Notification;
-import android.app.PendingIntent;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Looper;
-import java.time.Duration;
 import android.os.Bundle;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -54,13 +52,6 @@ public class McpProtocolTest {
         return guidanceBuilder(distance, road, trip).build();
     }
 
-    /** Maps' guidance with its one action, "Exit navigation", which starts a service of Maps. */
-    private Notification guidanceWithExit() {
-        PendingIntent exit = PendingIntent.getService(context, 0, new Intent("exit-navigation").setClassName(EmbeddedMaps.PACKAGE, "MapsNavigationService"), PendingIntent.FLAG_IMMUTABLE);
-        return guidanceBuilder("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA")
-                .addAction(new Notification.Action.Builder(null, "Exit navigation", exit).build()).build();
-    }
-
     private Notification.Builder guidanceBuilder(String distance, String road, String trip) {
         return new Notification.Builder(context, "1_foreground_1")
                 .setSmallIcon(Icon.createWithBitmap(Bitmap.createBitmap(36, 36, Bitmap.Config.ARGB_8888)))
@@ -96,30 +87,7 @@ public class McpProtocolTest {
         assertEquals(EmbeddedMaps.PACKAGE, link.getPackage());
         assertEquals("google.navigation", link.getData().getScheme());
         assertEquals("q=" + MOTEL, Uri.decode(link.getData().getEncodedSchemeSpecificPart()));
-    }
-
-    /**
-     * Maps, already guiding, asks the driver whether to exit its route when a new link arrives, and
-     * keeps the route when nobody answers. Its own "Exit navigation" ends it without asking.
-     */
-    @Test public void navigateToWhileMapsGuidesEndsThatGuidanceFirst() throws Exception {
-        NavigationNotifications.reportedByMaps(guidanceWithExit());
-        JSONObject result = callTool("navigate_to", new JSONObject().put("destination", MOTEL));
-        assertFalse(result.getBoolean("isError"));
-        assertEquals("exit-navigation", shadowOf(context).getNextStartedService().getAction());
-        assertNull("Not before the guidance ended", shadowOf(context).getNextStartedActivity());
-        NavigationNotifications.reportedByMaps(null);
-        Intent link = shadowOf(context).getNextStartedActivity();
-        assertEquals("q=" + MOTEL, Uri.decode(link.getData().getEncodedSchemeSpecificPart()));
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(AgentTools.EXIT_WAIT_MS));
-        assertNull("Only once", shadowOf(context).getNextStartedActivity());
-    }
-
-    @Test public void navigateToOpensTheLinkAnywayIfMapsKeepsGuiding() throws Exception {
-        NavigationNotifications.reportedByMaps(guidanceWithExit());
-        callTool("navigate_to", new JSONObject().put("destination", MOTEL));
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(AgentTools.EXIT_WAIT_MS));
-        assertEquals("google.navigation", shadowOf(context).getNextStartedActivity().getData().getScheme());
+        assertTrue("The Maps bridge module answers Maps' Exit navigation? for it", link.getBooleanExtra(AgentTools.REPLACE_TRIP, false));
     }
 
     /** The Maps bridge module takes Wend's ask, as it does inside Maps; it answers later through Wend's provider. */

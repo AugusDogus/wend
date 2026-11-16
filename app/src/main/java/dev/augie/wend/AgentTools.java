@@ -1,6 +1,5 @@
 package dev.augie.wend;
 
-import android.app.PendingIntent;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
@@ -52,17 +51,14 @@ final class AgentTools {
         UnknownTool(String name) { super("Wend has no tool named " + name + "; tools/list names its tools"); }
     }
 
-    /**
-     * How long Maps may take to end its guidance on its "Exit navigation" before the new link
-     * opens anyway; Maps then asks the driver whether to exit.
-     */
-    static final long EXIT_WAIT_MS = 3_000;
     /** How long Wend's main thread may take to answer a tool. */
     private static final long MAIN_WAIT_MS = 5_000;
     /** How long Maps may take to say whether it added a stop; it reroutes over the network. */
     static final long STOP_WAIT_MS = 25_000;
     /** The Maps bridge module's broadcast that asks Maps to add a stop, and its extras. */
     static final String ADD_STOP = "dev.augie.wend.mapsbridge.ADD_STOP", PLACE = "place", REQUEST = "request";
+    /** Asks the Maps bridge module to replace the trip Maps guides with a navigation link's, without asking the driver. */
+    static final String REPLACE_TRIP = "dev.augie.wend.REPLACE_TRIP";
     private static final AtomicInteger stopRequests = new AtomicInteger();
     /** Maps' answers to come, by request. */
     private static final Map<Integer, CompletableFuture<Bundle>> stopAnswers = new ConcurrentHashMap<>();
@@ -179,50 +175,19 @@ final class AgentTools {
     }
 
     /**
-     * Opens Maps' navigation link. A Maps that guides already would ask the driver whether to exit
-     * that guidance, and take no as its answer, so its guidance is ended first through its own
-     * notification's "Exit navigation", and the link opens once it has ended.
+     * Opens Maps' navigation link, which guides at once. A Maps that guides already would first ask
+     * the driver "Exit navigation?"; marked {@link #REPLACE_TRIP}, the Maps bridge module answers
+     * yes for Wend, through Maps' own code for that answer (see {@code maps-bridge/README.md}).
+     * Without the module, Maps still asks.
      */
     private Result navigateTo(String destination) {
         if (destination.isEmpty()) return Result.failed("navigate_to needs a destination: an address, coordinates or a place name");
         Intent link = new Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=" + Uri.encode(destination)))
-                .setPackage(EmbeddedMaps.PACKAGE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        NavigationCard guiding = NavigationNotifications.current();
-        if (guiding != null && guiding.exit != null && exit(guiding.exit)) {
-            openWhenGuidanceEnds(link, destination);
-            return Result.ok("Ended Maps' current guidance and asked Google Maps to navigate to \"" + destination + "\"."
-                    + " Maps searches it and starts guiding; call trip_status in a few seconds to see where it is going.");
-        }
+                .setPackage(EmbeddedMaps.PACKAGE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra(REPLACE_TRIP, true);
         String failed = open(link, destination);
         if (failed != null) return Result.failed(failed);
-        return Result.ok("Asked Google Maps to navigate to \"" + destination + "\". Maps searches it and starts guiding;"
-                + " call trip_status in a few seconds to see where it is going."
-                + (guiding != null ? " Maps was guiding already and may ask the driver whether to exit that route." : ""));
-    }
-
-    private static boolean exit(PendingIntent exit) {
-        try {
-            exit.send();
-            return true;
-        } catch (PendingIntent.CanceledException gone) {
-            Log.w(TAG, "Maps' Exit navigation is no longer valid; opening the new link anyway, so Maps asks the driver", gone);
-            return false;
-        }
-    }
-
-    private void openWhenGuidanceEnds(Intent link, String destination) {
-        boolean[] opened = {false};
-        NavigationNotifications.Listener[] ended = {null};
-        Runnable openOnce = () -> {
-            if (opened[0]) return;
-            opened[0] = true;
-            NavigationNotifications.stop(ended[0]);
-            String failed = open(link, destination);
-            if (failed != null) Log.w(TAG, failed);
-        };
-        ended[0] = card -> { if (card == null) { main.removeCallbacks(openOnce); openOnce.run(); } };
-        NavigationNotifications.listen(ended[0]);
-        main.postDelayed(openOnce, EXIT_WAIT_MS);
+        return Result.ok("Asked Google Maps to navigate to \"" + destination + "\", in place of any trip it guides. Maps"
+                + " searches it and starts guiding; call trip_status in a few seconds to see where it is going.");
     }
 
     /** @return null once Android started the link, or what went wrong */
