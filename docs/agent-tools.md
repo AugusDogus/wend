@@ -16,6 +16,14 @@ Maps in the car. It speaks MCP's Streamable HTTP transport: each JSON-RPC messag
   from the text, and reroutes through it. It needs the Maps bridge module, which calls Maps'
   navigation inside Maps (see `maps-bridge/README.md`); Wend asks it and waits up to 25 s for Maps'
   answer, which says whether the stop is on the route.
+- `remove_stop(position)`: removes a stop ahead, through Maps' own navigation; Maps keeps guiding
+  and keeps its destination. `position` counts the stops ahead from 1, the next, which it is when
+  left out. Wend refuses a position past the stops Maps reported, where Maps would remove its
+  destination.
+
+`add_stop` and `remove_stop` answer once Maps has also reported its new stops (up to 5 s more),
+and list them, so a change right after another counts the stops Maps has, and the agent needs no
+`trip_status` call to see them.
 - `trip_status()`: the guidance Maps runs now, as its notification shows it: the next turn, the
   time and distance left, the arrival time. With the Maps bridge module it also gives the
   destination and the stops ahead.
@@ -63,5 +71,9 @@ sign-in first, and is not done yet.
   listed the Chevron as a stop ahead and the motel as the destination. A second stop went before
   the Chevron. A place Maps cannot find (`qxzv plorkington zzyx 99999`) came back as an error,
   with the route unchanged.
+- With the Chevron and the Safeway as stops, `remove_stop(2)` removed the Chevron, `remove_stop()`
+  the Safeway, back to the motel alone (10 min / 8.4 mi); `remove_stop(3)` and a `remove_stop()`
+  with no stops left were refused. Two adds and two removes back to back, with no pause, each
+  answered with the stops Maps then had.
 - After Wend restarted with Maps fullscreen, the server was back without the home screen being
   created, and `trip_status` still read the trip.

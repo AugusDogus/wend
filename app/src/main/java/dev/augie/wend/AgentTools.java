@@ -25,7 +25,7 @@ import org.json.JSONObject;
 
 /**
  * What an agent may do in the car through Wend's MCP server ({@link AgentServer}): start Maps'
- * guidance somewhere, add a stop to the trip Maps guides, and read that trip. Each tool has a name,
+ * guidance somewhere, add or remove a stop of the trip Maps guides, and read that trip. Each tool has a name,
  * a description and an input schema for the agent, and a call. Called on any thread; what reads or
  * changes Maps' guidance as Wend keeps it runs on the main thread, and adding a stop waits off it.
  */
@@ -53,10 +53,11 @@ final class AgentTools {
 
     /** How long Wend's main thread may take to answer a tool. */
     private static final long MAIN_WAIT_MS = 5_000;
-    /** How long Maps may take to say whether it added a stop; it reroutes over the network. */
+    /** How long Maps may take to say whether it changed a stop; it reroutes over the network. */
     static final long STOP_WAIT_MS = 25_000;
-    /** The Maps bridge module's broadcast that asks Maps to add a stop, and its extras. */
-    static final String ADD_STOP = "dev.augie.wend.mapsbridge.ADD_STOP", PLACE = "place", REQUEST = "request";
+    /** The Maps bridge module's broadcasts that ask Maps to add or remove a stop, and their extras. */
+    static final String ADD_STOP = "dev.augie.wend.mapsbridge.ADD_STOP", REMOVE_STOP = "dev.augie.wend.mapsbridge.REMOVE_STOP",
+            PLACE = "place", POSITION = "position", REQUEST = "request";
     /** Asks the Maps bridge module to replace the trip Maps guides with a navigation link's, without asking the driver. */
     static final String REPLACE_TRIP = "dev.augie.wend.REPLACE_TRIP";
     private static final AtomicInteger stopRequests = new AtomicInteger();
@@ -88,6 +89,13 @@ final class AgentTools {
                                             .put("type", "string")
                                             .put("description", "An address, or a place name with its town")))
                                     .put("required", new JSONArray().put("place"))))
+                    .put(tool("remove_stop", "Removes a stop from the trip Google Maps guides in the car now, through"
+                            + " Maps' own navigation: Maps keeps guiding and keeps its destination, and reroutes. position"
+                            + " counts the stops ahead as trip_status lists them in stops_ahead, from 1, the next.",
+                            new JSONObject().put("type", "object")
+                                    .put("properties", new JSONObject().put("position", new JSONObject()
+                                            .put("type", "integer").put("minimum", 1)
+                                            .put("description", "Which stop ahead; 1, the next, if left out")))))
                     .put(tool("trip_status", "Reads the trip Google Maps guides in the car now, as Maps itself shows it:"
                             + " the next turn, the time and distance left, the arrival time, and the destination and"
                             + " stops ahead when Maps reported them. guiding is false when Maps guides nowhere.",
@@ -104,6 +112,7 @@ final class AgentTools {
             switch (name) {
                 case "navigate_to": return onMain(() -> navigateTo(arguments.optString("destination", "").trim()));
                 case "add_stop": return addStop(arguments.optString("place", "").trim());
+                case "remove_stop": return removeStop(arguments.optInt("position", 1));
                 case "trip_status": return onMain(this::tripStatus);
                 default: throw new UnknownTool(name);
             }
@@ -128,39 +137,70 @@ final class AgentTools {
         }
     }
 
-    /**
-     * Asks the Maps bridge module to add {@code place} through Maps' own Add stop, and waits for
-     * Maps' answer ({@link #stopReported}). Off the main thread, which carries the answer.
-     */
+    /** Asks the Maps bridge module to add {@code place} through Maps' own Add stop ({@link #changeStops}). */
     private Result addStop(String place) throws TimeoutException {
         if (place.isEmpty()) return Result.failed("add_stop needs a place: an address, or a place name with its town");
         if (!onMain(() -> NavigationNotifications.current() != null)) {
             return Result.failed("Maps guides nowhere now, so there is no trip to add a stop to; nothing changed."
                     + " Use navigate_to to go to \"" + place + "\" instead.");
         }
+        return changeStops(new Intent(ADD_STOP).putExtra(PLACE, place), "add \"" + place + "\"",
+                "Maps added \"" + place + "\" as a stop on the trip it guides and keeps guiding.", 1);
+    }
+
+    /**
+     * Asks the Maps bridge module to remove the stop at {@code position} ahead ({@link #changeStops}).
+     * Maps would remove its destination at the position after the last stop, so only stops Maps
+     * reported ahead ({@link MapsTrips}) may be removed.
+     */
+    private Result removeStop(int position) throws TimeoutException {
+        if (!onMain(() -> NavigationNotifications.current() != null)) {
+            return Result.failed("Maps guides nowhere now, so there is no stop to remove; nothing changed.");
+        }
+        String[] stops = stopsAhead();
+        if (stops.length == 0) return Result.failed("The trip Maps guides has no stops ahead to remove; nothing changed.");
+        if (position < 1 || position > stops.length) {
+            return Result.failed("position " + position + " is not a stop ahead: the trip has " + stops.length
+                    + (stops.length == 1 ? " stop" : " stops") + " ahead, from 1; nothing changed.");
+        }
+        String stop = stops[position - 1];
+        return changeStops(new Intent(REMOVE_STOP).putExtra(POSITION, position), "remove \"" + stop + "\"",
+                "Maps removed \"" + stop + "\" from the trip it guides and keeps guiding.", -1);
+    }
+
+    /**
+     * Sends the Maps bridge module {@code ask} and waits for Maps' answer ({@link #stopReported}).
+     * Off the main thread, which carries the answer.
+     *
+     * Once Maps did it, it waits for Maps' report of the new stops ({@link MapsTrips}), up to
+     * {@link #REPORT_WAIT_MS}, and gives them: the next ask then counts the stops Maps has, and
+     * the agent needs no trip_status call to see them.
+     *
+     * @param change what is asked, for the agent: "add ..." or "remove ..."
+     * @param done what the agent hears once Maps did it
+     * @param stopsChange how many stops ahead Maps has once it did it, more or fewer
+     */
+    private Result changeStops(Intent ask, String change, String done, int stopsChange) throws TimeoutException {
+        int before = stopsAhead().length;
         int request = stopRequests.incrementAndGet();
         CompletableFuture<Bundle> answer = new CompletableFuture<>();
         stopAnswers.put(request, answer);
         try {
-            Intent ask = new Intent(ADD_STOP).setPackage(EmbeddedMaps.PACKAGE).putExtra(PLACE, place).putExtra(REQUEST, request);
-            context.sendOrderedBroadcast(ask, null, new BroadcastReceiver() {
+            context.sendOrderedBroadcast(ask.setPackage(EmbeddedMaps.PACKAGE).putExtra(REQUEST, request), null, new BroadcastReceiver() {
                 @Override public void onReceive(Context context, Intent intent) {
                     if (getResultCode() == 1) return;
                     Bundle none = new Bundle();
                     none.putString("problem", "The Maps bridge module did not answer: it is not installed, not enabled for"
-                            + " Maps in LSPosed, or older than this Wend.");
+                            + " Maps in LSPosed, or older than this Wend");
                     answer.complete(none);
                 }
             }, main, Activity.RESULT_CANCELED, null, null);
             Bundle said = answer.get(STOP_WAIT_MS, TimeUnit.MILLISECONDS);
-            if (said.getBoolean("added")) {
-                return Result.ok("Maps added \"" + place + "\" as a stop on the trip it guides and keeps guiding. Call"
-                        + " trip_status for the stops ahead and the new arrival time.");
-            }
-            return Result.failed(said.getString("problem", "Maps did not add the stop") + ". The route did not change.");
+            if (said.getBoolean("done")) return Result.ok(done + " " + reportedStops(before + stopsChange));
+            return Result.failed(said.getString("problem", "Maps did not " + change) + ". The route did not change.");
         } catch (TimeoutException slow) {
-            return Result.failed("Maps did not say within " + STOP_WAIT_MS / 1000 + " s whether it added \"" + place
-                    + "\"; call trip_status to see whether the stop is on the route.");
+            return Result.failed("Maps did not say within " + STOP_WAIT_MS / 1000 + " s whether it did " + change
+                    + "; call trip_status to see the route.");
         } catch (InterruptedException | ExecutionException failed) {
             throw new IllegalStateException(failed);
         } finally {
@@ -168,7 +208,33 @@ final class AgentTools {
         }
     }
 
-    /** The Maps bridge module said whether Maps added the stop of {@code extras}' request. Any thread. */
+    /** How long Maps' report of changed stops may take: it saves its directions, then the module reads them. */
+    private static final long REPORT_WAIT_MS = 5_000;
+
+    /** @return the stops ahead Maps last reported for the trip it guides; none if it reported none */
+    private String[] stopsAhead() throws TimeoutException {
+        return onMain(() -> {
+            MapsTrips.Trip trip = NavigationNotifications.current() == null ? null : MapsTrips.of(NavigationNotifications.began());
+            return trip == null ? new String[0] : trip.stops;
+        });
+    }
+
+    /** @return the stops ahead, once Maps reported {@code expected} of them, or what it reported last */
+    private String reportedStops(int expected) throws TimeoutException {
+        long until = System.currentTimeMillis() + REPORT_WAIT_MS;
+        String[] stops = stopsAhead();
+        while (stops.length != expected && System.currentTimeMillis() < until) {
+            try { Thread.sleep(200); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); break; }
+            stops = stopsAhead();
+        }
+        if (stops.length != expected) {
+            return "Maps has not reported its new stops yet; call trip_status before changing them again.";
+        }
+        return stops.length == 0 ? "No stops ahead now." : "Stops ahead now, from 1: " + new JSONArray(java.util.Arrays.asList(stops)) + ".";
+    }
+
+    /** The Maps bridge module said whether Maps changed the stops as {@code extras}' request asked. Any thread. */
     static void stopReported(Bundle extras) {
         CompletableFuture<Bundle> answer = extras == null ? null : stopAnswers.get(extras.getInt(REQUEST));
         if (answer != null) answer.complete(extras);

@@ -71,12 +71,13 @@ public class McpProtocolTest {
 
     @Test public void itListsItsToolsWithTheirInputSchemas() throws Exception {
         JSONArray tools = ask("tools/list", new JSONObject()).getJSONObject("result").getJSONArray("tools");
-        assertEquals(3, tools.length());
+        assertEquals(4, tools.length());
         assertEquals("navigate_to", tools.getJSONObject(0).getString("name"));
         assertEquals("destination", tools.getJSONObject(0).getJSONObject("inputSchema").getJSONArray("required").getString(0));
         assertEquals("add_stop", tools.getJSONObject(1).getString("name"));
         assertEquals("place", tools.getJSONObject(1).getJSONObject("inputSchema").getJSONArray("required").getString(0));
-        assertEquals("trip_status", tools.getJSONObject(2).getString("name"));
+        assertEquals("remove_stop", tools.getJSONObject(2).getString("name"));
+        assertEquals("trip_status", tools.getJSONObject(3).getString("name"));
     }
 
     @Test public void navigateToOpensMapsNavigationLinkToTheDestination() throws Exception {
@@ -95,6 +96,9 @@ public class McpProtocolTest {
         context.registerReceiver(new android.content.BroadcastReceiver() {
             @Override public void onReceive(android.content.Context received, Intent intent) { setResultCode(1); }
         }, new android.content.IntentFilter(AgentTools.ADD_STOP));
+        context.registerReceiver(new android.content.BroadcastReceiver() {
+            @Override public void onReceive(android.content.Context received, Intent intent) { setResultCode(1); }
+        }, new android.content.IntentFilter(AgentTools.REMOVE_STOP));
     }
 
     /** add_stop as Wend's MCP server calls it, off the main thread, while the main thread runs. */
@@ -105,10 +109,14 @@ public class McpProtocolTest {
 
     /** Runs the main thread until the module's ask goes out, as it does for the server's thread. */
     private Intent askedOfMaps() throws InterruptedException {
+        return askedOfMaps(AgentTools.ADD_STOP);
+    }
+
+    private Intent askedOfMaps(String action) throws InterruptedException {
         for (int i = 0; i < 500; i++) {
             shadowOf(Looper.getMainLooper()).idle();
             for (Intent sent : shadowOf(context).getBroadcastIntents()) {
-                if (AgentTools.ADD_STOP.equals(sent.getAction())) return sent;
+                if (action.equals(sent.getAction())) return sent;
             }
             Thread.sleep(10);
         }
@@ -129,7 +137,7 @@ public class McpProtocolTest {
         ShadowBinder.setCallingUid(10111);
         Bundle extras = new Bundle();
         extras.putInt(AgentTools.REQUEST, request);
-        extras.putBoolean("added", added);
+        extras.putBoolean("done", added);
         if (problem != null) extras.putString("problem", problem);
         org.robolectric.Robolectric.buildContentProvider(MapsTrips.class).create("dev.augie.wend.mapstrips").get()
                 .call("stop", null, extras);
@@ -145,9 +153,11 @@ public class McpProtocolTest {
         assertEquals(EmbeddedMaps.PACKAGE, ask.getPackage());
         assertEquals("Chevron, 1099 S State St, Ukiah, CA", ask.getStringExtra(AgentTools.PLACE));
         mapsSays(ask.getIntExtra(AgentTools.REQUEST, -1), true, null);
+        MapsTrips.reported(MOTEL, new String[]{"Chevron, 1099 S State St, Ukiah, CA 95482"});
         JSONObject result = answered(call);
         assertFalse(result.getBoolean("isError"));
         assertTrue(text(result).startsWith("Maps added \"Chevron, 1099 S State St, Ukiah, CA\""));
+        assertTrue("With the stops Maps reported", text(result).endsWith("Stops ahead now, from 1: [\"Chevron, 1099 S State St, Ukiah, CA 95482\"]."));
     }
 
     @Test public void addStopSaysWhyMapsAddedNothing() throws Exception {
@@ -166,6 +176,58 @@ public class McpProtocolTest {
         JSONObject result = answered(addStopOffMain("Chevron, Ukiah, CA"));
         assertTrue(result.getBoolean("isError"));
         assertTrue(text(result).startsWith("The Maps bridge module did not answer"));
+    }
+
+    private Future<JSONObject> removeStopOffMain(JSONObject arguments) {
+        return Executors.newSingleThreadExecutor().submit(() -> callTool("remove_stop", arguments));
+    }
+
+    private void guidingThroughTwoStops() {
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "13 min · 11 mi · 4:41 PM PST ETA"));
+        MapsTrips.reported(MOTEL, new String[]{"Safeway, 653 S State St, Ukiah, CA 95482", "Chevron, 1099 S State St, Ukiah, CA 95482"});
+    }
+
+    /** Maps' own remove, through the module: position counts the stops ahead from 1, as trip_status lists them. */
+    @Test public void removeStopAsksMapsToRemoveThatStopAhead() throws Exception {
+        guidingThroughTwoStops();
+        mapsBridgeListens();
+        Future<JSONObject> call = removeStopOffMain(new JSONObject().put("position", 2));
+        Intent ask = askedOfMaps(AgentTools.REMOVE_STOP);
+        assertEquals(EmbeddedMaps.PACKAGE, ask.getPackage());
+        assertEquals(2, ask.getIntExtra(AgentTools.POSITION, -1));
+        mapsSays(ask.getIntExtra(AgentTools.REQUEST, -1), true, null);
+        MapsTrips.reported(MOTEL, new String[]{"Safeway, 653 S State St, Ukiah, CA 95482"});
+        JSONObject result = answered(call);
+        assertFalse(result.getBoolean("isError"));
+        assertTrue(text(result).startsWith("Maps removed \"Chevron, 1099 S State St, Ukiah, CA 95482\""));
+    }
+
+    @Test public void removeStopWithoutAPositionRemovesTheNextStop() throws Exception {
+        guidingThroughTwoStops();
+        mapsBridgeListens();
+        Future<JSONObject> call = removeStopOffMain(new JSONObject());
+        Intent ask = askedOfMaps(AgentTools.REMOVE_STOP);
+        assertEquals(1, ask.getIntExtra(AgentTools.POSITION, -1));
+        mapsSays(ask.getIntExtra(AgentTools.REQUEST, -1), true, null);
+        MapsTrips.reported(MOTEL, new String[]{"Chevron, 1099 S State St, Ukiah, CA 95482"});
+        assertTrue(text(answered(call)).startsWith("Maps removed \"Safeway"));
+    }
+
+    /** Past the last stop Maps would remove its destination, so Wend asks nothing. */
+    @Test public void removeStopPastTheStopsAheadAsksNothing() throws Exception {
+        guidingThroughTwoStops();
+        JSONObject result = callTool("remove_stop", new JSONObject().put("position", 3));
+        assertTrue(result.getBoolean("isError"));
+        assertTrue(text(result).contains("2 stops ahead"));
+        assertTrue(shadowOf(context).getBroadcastIntents().isEmpty());
+    }
+
+    @Test public void removeStopWithoutStopsAheadAsksNothing() throws Exception {
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        MapsTrips.reported(MOTEL);
+        JSONObject result = callTool("remove_stop", new JSONObject());
+        assertTrue(result.getBoolean("isError"));
+        assertTrue(shadowOf(context).getBroadcastIntents().isEmpty());
     }
 
     @Test public void addStopWithoutGuidanceAsksNothing() throws Exception {
