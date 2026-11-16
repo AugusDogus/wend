@@ -20,6 +20,25 @@ Maps in the car. It speaks MCP's Streamable HTTP transport: each JSON-RPC messag
   time and distance left, the arrival time. With the Maps bridge module it also gives the
   destination and the stops ahead.
 
+### Why add_stop takes text
+
+On 2026-11-15, three `add_stop` input schemas were compared on the emulator. A headless Claude
+Sonnet 5.5 agent (a stand-in for Grok Bot) with web search ran each of them twice on six real
+places along the route ("Add a stop at the Safeway in Ukiah.", and so on):
+
+| Schema | Correct | Mean tokens | Mean turns |
+|---|---|---|---|
+| `place` (text; Maps finds it) | 12 / 12 | 4,796 | 2.2 |
+| `name` + `address` | 12 / 12 | 7,296 | 2.9 |
+| `name` + `latitude` + `longitude` | 8 / 12 | 8,701 | 3.3 |
+
+With text, the agent mostly passed the name and town without searching, and Maps found the right
+place. With an address, it searched for the address first. With coordinates, it searched, or
+guessed them, and missed the Grace Hudson Museum by 259 and 377 m and Mendocino College by 207 m.
+Maps also showed a stop given by coordinates as bare coordinates. The one text miss on the first
+try ("Schat's Bakery", which Maps names "Schat's Courthouse Bakery") came back as an error, and the
+agent retried with the address.
+
 ## Who can reach it
 
 The server listens on the loopback interface only, so only the head unit itself can reach it,

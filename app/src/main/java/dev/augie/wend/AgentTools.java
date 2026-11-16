@@ -83,11 +83,10 @@ final class AgentTools {
                                             .put("type", "string")
                                             .put("description", "An address, \"latitude,longitude\", or a place name")))
                                     .put("required", new JSONArray().put("destination"))))
-                    .put(tool("add_stop", "Adds a stop to the trip Google Maps guides in the car now, through Maps' own"
-                            + " Add stop: Maps keeps guiding, keeps its destination, and reroutes through the stop, which"
-                            + " goes before the destination (Maps picks where among the stops ahead). Use it for a detour"
-                            + " on the way, like a gas station; use navigate_to to go somewhere else instead. Maps finds"
-                            + " the place from the text, so pass a full address when you know it.",
+                    .put(tool("add_stop", "Adds a stop to the trip Google Maps guides in the car now, through Maps'"
+                            + " own Add stop: Maps keeps guiding and keeps its destination, and reroutes through the stop."
+                            + " Use it for a detour on the way, like a gas station; use navigate_to to go somewhere else"
+                            + " instead. Maps finds the place from the text, so pass a full address when you know it.",
                             new JSONObject().put("type", "object")
                                     .put("properties", new JSONObject().put("place", new JSONObject()
                                             .put("type", "string")
