@@ -131,7 +131,14 @@ public final class MapsTrips extends ContentProvider {
         return null;
     }
 
-    @Override public boolean onCreate() { return true; }
+    /**
+     * Wend's process started, for its home screen or not (an agent's call, say): a Maps already
+     * running has reported nothing to it yet, so it is asked as it is when the home screen opens.
+     */
+    @Override public boolean onCreate() {
+        if (getContext() != null) ask(getContext());
+        return true;
+    }
     // Not a store of anything: only call() is answered.
     @Override public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) { return null; }
     @Override public String getType(Uri uri) { return null; }
