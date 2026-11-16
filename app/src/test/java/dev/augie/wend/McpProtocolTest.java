@@ -172,6 +172,58 @@ public class McpProtocolTest {
         assertTrue("With the stops Maps reported", text(result).endsWith("Stops ahead now, from 1: [\"Chevron, 1099 S State St, Ukiah, CA 95482\"]."));
     }
 
+    /** A business name Maps cannot match from text alone; the agent knows where it is. */
+    @Test public void addStopAtCoordinatesAsksMapsForThatPointUnderTheName() throws Exception {
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        mapsBridgeListens();
+        Future<JSONObject> call = Executors.newSingleThreadExecutor().submit(() -> callTool("add_stop",
+                new JSONObject().put("place", "Wawa").put("latitude", 30.6012).put("longitude", -87.1405)));
+        Intent ask = askedOfMaps();
+        assertEquals("Wawa", ask.getStringExtra(AgentTools.PLACE));
+        assertEquals(30.6012, ask.getDoubleExtra(AgentTools.LATITUDE, Double.NaN), 0);
+        assertEquals(-87.1405, ask.getDoubleExtra(AgentTools.LONGITUDE, Double.NaN), 0);
+        mapsSays(ask.getIntExtra(AgentTools.REQUEST, -1), true, null);
+        // Maps keeps no name for a stop at a point; the module reports its coordinates.
+        MapsTrips.reported(MOTEL, new String[]{"30.601200,-87.140500"});
+        JSONObject result = answered(call);
+        assertFalse(result.getBoolean("isError"));
+        assertTrue(text(result), text(result).endsWith("Stops ahead now, from 1: [\"Wawa (30.601200,-87.140500)\"]."));
+        JSONObject status = new JSONObject(text(callTool("trip_status", new JSONObject())));
+        assertEquals("Wawa (30.601200,-87.140500)", status.getJSONArray("stops_ahead").getString(0));
+    }
+
+    @Test public void addStopTakesLatitudeLongitudeTextAsThatPoint() throws Exception {
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        mapsBridgeListens();
+        addStopOffMain(" 30.6012, -87.1405 ");
+        Intent ask = askedOfMaps();
+        assertEquals(30.6012, ask.getDoubleExtra(AgentTools.LATITUDE, Double.NaN), 0);
+        assertEquals(-87.1405, ask.getDoubleExtra(AgentTools.LONGITUDE, Double.NaN), 0);
+    }
+
+    @Test public void addStopRefusesHalfOrImpossibleCoordinatesWithoutAskingMaps() throws Exception {
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        mapsBridgeListens();
+        JSONObject half = callTool("add_stop", new JSONObject().put("place", "Wawa").put("latitude", 30.6));
+        assertTrue(half.getBoolean("isError"));
+        assertEquals("add_stop needs both latitude and longitude, or neither; nothing changed.", text(half));
+        JSONObject impossible = callTool("add_stop", new JSONObject().put("place", "Wawa").put("latitude", 91).put("longitude", 0));
+        assertTrue(impossible.getBoolean("isError"));
+        assertTrue(text(impossible).startsWith("latitude 91.0 is not between -90 and 90"));
+        for (Intent sent : shadowOf(context).getBroadcastIntents()) assertFalse(AgentTools.ADD_STOP.equals(sent.getAction()));
+    }
+
+    @Test public void addStopByTextMapsRefusedSaysToPassCoordinates() throws Exception {
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(21)); // guidance long under way
+        mapsBridgeListens();
+        Future<JSONObject> call = addStopOffMain("Wawa");
+        mapsSays(askedOfMaps().getIntExtra(AgentTools.REQUEST, -1), false, "Maps did not add \"Wawa\"");
+        JSONObject result = answered(call);
+        assertTrue(result.getBoolean("isError"));
+        assertTrue(text(result).endsWith("pass the place's latitude and longitude with its name to add it there."));
+    }
+
     @Test public void addStopSaysWhyMapsAddedNothing() throws Exception {
         NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
         shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(21)); // guidance long under way

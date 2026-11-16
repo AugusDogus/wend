@@ -38,7 +38,11 @@ import org.luckypray.dexkit.result.UsingFieldData;
  * <li>a waypoint is made by a builder, which the waypoint's one static method without parameters
  *     returns, and which has one method without parameters that returns the waypoint;
  * <li>a waypoint to a place Maps finds itself from text, as for a directions shortcut, has that
- *     text in the builder's String field written beside {@value #SHORTCUT_NAME}.
+ *     text in the builder's String field written beside {@value #SHORTCUT_NAME};
+ * <li>a waypoint at a point, as for the car's own location, is made by the waypoint's one static
+ *     method that takes a String and a point and returns a builder: it writes the name to show in
+ *     one String field of the builder and the point in its one field of the point's type, a class
+ *     made from latitude and longitude in degrees.
  * </ul>
  *
  * Maps makes adapters as it guides; the newest one adds the waypoint (checked on Maps 26.43).
@@ -47,7 +51,7 @@ final class MapsNavigation {
     static final String ADD_WAYPOINT_TRACE = "NavigationControllerAdapter.addWaypointToRoute.GuidanceSDK";
     static final String REMOVE_WAYPOINT_TRACE = "NavigationControllerAdapter.removeWaypointFromRoute.GuidanceSDK";
     static final String SHORTCUT_NAME = "directionsShortcut_%s";
-    private static final String CACHE_VERSION = "4";
+    private static final String CACHE_VERSION = "5";
 
     private final Method add;
     /** Removes the route's waypoint at an index: 0 is where the car is, 1 the next stop, the last the destination. */
@@ -57,11 +61,18 @@ final class MapsNavigation {
     private final Method newBuilder;
     private final Method build;
     private final Field query;
+    /** A point's name, its point, and how a point is made; null if this Maps had none found. */
+    private final Field name, at;
+    private final java.lang.reflect.Constructor<?> point;
     private volatile Object adapter;
     private final String apk;
 
-    private MapsNavigation(String apk, Method add, Method removeAt, Method stop, Method newBuilder, Method build, Field query) {
+    private MapsNavigation(String apk, Method add, Method removeAt, Method stop, Method newBuilder, Method build, Field query,
+            Field name, Field at, java.lang.reflect.Constructor<?> point) {
         this.apk = apk;
+        this.name = name;
+        this.at = at;
+        this.point = point;
         this.add = add;
         this.removeAt = removeAt;
         this.stop = stop;
@@ -101,7 +112,23 @@ final class MapsNavigation {
         for (java.lang.reflect.AccessibleObject member : new java.lang.reflect.AccessibleObject[]{add, removeAt, stop, newBuilder, buildMethod, query}) {
             member.setAccessible(true);
         }
-        MapsNavigation navigation = new MapsNavigation(apk, add, removeAt, stop, newBuilder, buildMethod, query);
+        Field name = null, at = null;
+        java.lang.reflect.Constructor<?> point = null;
+        if (names.getProperty("at") != null) {
+            try {
+                name = newBuilder.getReturnType().getDeclaredField(names.getProperty("name"));
+                at = newBuilder.getReturnType().getDeclaredField(names.getProperty("at"));
+                point = at.getType().getDeclaredConstructor(double.class, double.class);
+                name.setAccessible(true);
+                at.setAccessible(true);
+                point.setAccessible(true);
+            } catch (ReflectiveOperationException | RuntimeException error) {
+                Log.w(MapsBridge.TAG, "Maps' waypoint at a point was not found; Wend adds stops from text only", error);
+                name = at = null;
+                point = null;
+            }
+        }
+        MapsNavigation navigation = new MapsNavigation(apk, add, removeAt, stop, newBuilder, buildMethod, query, name, at, point);
         try {
             TripReplacer.install(maps, names);
         } catch (ReflectiveOperationException | RuntimeException error) {
@@ -125,6 +152,24 @@ final class MapsNavigation {
         if (current == null) throw new IllegalStateException("Maps has not guided since it started");
         Object builder = newBuilder.invoke(null);
         query.set(builder, place);
+        return (Future<?>) add.invoke(current, build.invoke(builder));
+    }
+
+    /**
+     * Asks Maps to add a stop at a point, before its destination, while it guides; Maps shows it
+     * as {@code place}, and finds nothing from text.
+     *
+     * @return Maps' answer to come: true once the stop is on the route
+     * @throws IllegalStateException if Maps has not guided since its process started
+     * @throws NoSuchFieldException if this Maps had no waypoint at a point found
+     */
+    Future<?> addStop(String place, double latitude, double longitude) throws ReflectiveOperationException {
+        Object current = adapter;
+        if (current == null) throw new IllegalStateException("Maps has not guided since it started");
+        if (at == null) throw new NoSuchFieldException("Wend's Maps bridge found no waypoint at a point in this Maps");
+        Object builder = newBuilder.invoke(null);
+        name.set(builder, place);
+        at.set(builder, point.newInstance(latitude, longitude));
         return (Future<?>) add.invoke(current, build.invoke(builder));
     }
 
@@ -212,12 +257,44 @@ final class MapsNavigation {
             if (fields.size() != 1) throw new NoSuchFieldException("Maps' waypoint builder " + builder + " has " + fields + " as its text, not one field");
             names.setProperty("query", fields.iterator().next());
             try {
+                searchPoint(dex, waypoint, builder, names);
+            } catch (NoSuchMethodException | NoSuchFieldException | RuntimeException error) {
+                Log.w(MapsBridge.TAG, "Maps' waypoint at a point was not found; Wend adds stops from text only", error);
+            }
+            try {
                 TripReplacer.search(dex, names);
             } catch (NoSuchMethodException | RuntimeException error) {
                 Log.w(MapsBridge.TAG, "Maps' reset interceptor was not found; Maps will ask the driver before Wend replaces a trip", error);
             }
             return names;
         }
+    }
+
+    /** Finds a waypoint's name and point fields in its builder, as {@code names}' "name" and "at". */
+    private static void searchPoint(DexKitBridge dex, String waypoint, String builder, Properties names)
+            throws NoSuchMethodException, NoSuchFieldException {
+        Set<String> found = new HashSet<>();
+        for (MethodData method : dex.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                .declaredClass(waypoint, StringMatchType.Equals, false).modifiers(Modifier.STATIC, MatchType.Contains)
+                .paramCount(2).returnType(builder, StringMatchType.Equals, false)))) {
+            List<String> params = method.getParamTypeNames();
+            if (!params.get(0).equals("java.lang.String")) continue;
+            Set<String> name = new HashSet<>(), at = new HashSet<>();
+            for (UsingFieldData using : method.getUsingFields()) {
+                if (using.getUsingType() != FieldUsingType.Write || !using.getField().getClassName().equals(builder)) continue;
+                String type = using.getField().getTypeName();
+                if (type.equals("java.lang.String")) name.add(using.getField().getFieldName());
+                else if (type.equals(params.get(1))) at.add(using.getField().getFieldName());
+            }
+            if (name.size() != 1 || at.size() != 1) {
+                throw new NoSuchFieldException("Maps' waypoint method " + method + " writes " + name + " as its name and " + at + " as its point, not one of each");
+            }
+            found.add(name.iterator().next() + " " + at.iterator().next());
+        }
+        if (found.size() != 1) throw new NoSuchMethodException("Maps' waypoint " + waypoint + " has " + found + " as its name and point, not one pair");
+        String[] pair = found.iterator().next().split(" ");
+        names.setProperty("name", pair[0]);
+        names.setProperty("at", pair[1]);
     }
 
     private static MethodData only(List<MethodData> found, String what) throws NoSuchMethodException {

@@ -21,7 +21,8 @@ import java.util.concurrent.TimeoutException;
  *
  * <ul>
  * <li>{@link #ADD}, with {@link #PLACE}: adds a stop there, as Maps' "Add stop" does. Maps finds
- *     the place from its text itself.
+ *     the place from its text itself; with {@link #LATITUDE} and {@link #LONGITUDE} too, the stop
+ *     is at that point, named {@link #PLACE}.
  * <li>{@link #REMOVE}, with {@link #POSITION}: removes that stop ahead, 1 being the next.
  * <li>{@link #END}: ends the guidance, as Maps' own end-navigation button does.
  * <li>{@link #ROUTES}: answers with Maps' routes for the trip ({@link MapsRoutes}) as JSON in
@@ -38,7 +39,7 @@ final class TripStops {
     static final String ADD = "dev.augie.wend.mapsbridge.ADD_STOP", REMOVE = "dev.augie.wend.mapsbridge.REMOVE_STOP",
             END = "dev.augie.wend.mapsbridge.END_NAVIGATION", ROUTES = "dev.augie.wend.mapsbridge.ROUTES",
             SWITCH = "dev.augie.wend.mapsbridge.SWITCH_ROUTE";
-    static final String PLACE = "place", POSITION = "position", ROUTE = "route", REQUEST = "request", DONE = "done",
+    static final String PLACE = "place", LATITUDE = "latitude", LONGITUDE = "longitude", POSITION = "position", ROUTE = "route", REQUEST = "request", DONE = "done",
             PROBLEM = "problem";
     private static final String ASKERS = "android.permission.MANAGE_ACTIVITY_STACKS";
     /** Maps answered within about 1 s on the emulator; it reroutes over the network. */
@@ -134,7 +135,9 @@ final class TripStops {
         else if (!add && position < 1) problem = "No stop was named to remove";
         else {
             try {
-                Future<?> changed = add ? navigation.addStop(place.trim()) : navigation.removeStop(position);
+                Future<?> changed = !add ? navigation.removeStop(position)
+                        : asked.hasExtra(LATITUDE) ? navigation.addStop(place.trim(), asked.getDoubleExtra(LATITUDE, 0), asked.getDoubleExtra(LONGITUDE, 0))
+                        : navigation.addStop(place.trim());
                 if (!Boolean.TRUE.equals(changed.get(ANSWER_WAIT_S, TimeUnit.SECONDS))) problem = "Maps did not " + change;
             } catch (IllegalStateException notGuided) {
                 problem = "Maps is not guiding a trip to change: " + notGuided.getMessage();

@@ -60,7 +60,7 @@ final class AgentTools {
     static final String ADD_STOP = "dev.augie.wend.mapsbridge.ADD_STOP", REMOVE_STOP = "dev.augie.wend.mapsbridge.REMOVE_STOP",
             END_NAVIGATION = "dev.augie.wend.mapsbridge.END_NAVIGATION", ROUTES = "dev.augie.wend.mapsbridge.ROUTES",
             SWITCH_ROUTE = "dev.augie.wend.mapsbridge.SWITCH_ROUTE", ROUTE = "route",
-            PLACE = "place", POSITION = "position", REQUEST = "request";
+            PLACE = "place", LATITUDE = "latitude", LONGITUDE = "longitude", POSITION = "position", REQUEST = "request";
     /** Asks the Maps bridge module to replace the trip Maps guides with a navigation link's, without asking the driver. */
     static final String REPLACE_TRIP = "dev.augie.wend.REPLACE_TRIP";
     private static final AtomicInteger stopRequests = new AtomicInteger();
@@ -86,11 +86,18 @@ final class AgentTools {
                     .put(tool("add_stop", "Adds a stop to the trip Google Maps guides in the car now, through Maps'"
                             + " own Add stop: Maps keeps guiding and keeps its destination, and reroutes through the stop."
                             + " Use it for a detour on the way, like a gas station; use navigate_to to go somewhere else"
-                            + " instead. Maps finds the place from the text, so pass a full address when you know it.",
+                            + " instead. Given only place, Maps searches its text and adds only what it matches to one"
+                            + " address; a business name alone often fails. With latitude and longitude, Maps adds the"
+                            + " stop at that point and shows place as its name: pass both when you know where the place is.",
                             new JSONObject().put("type", "object")
-                                    .put("properties", new JSONObject().put("place", new JSONObject()
-                                            .put("type", "string")
-                                            .put("description", "An address, or a place name with its town")))
+                                    .put("properties", new JSONObject()
+                                            .put("place", new JSONObject().put("type", "string")
+                                                    .put("description", "The stop's name, like \"Wawa\", with latitude and longitude;"
+                                                            + " otherwise an address, or \"latitude,longitude\""))
+                                            .put(LATITUDE, new JSONObject().put("type", "number").put("minimum", -90).put("maximum", 90)
+                                                    .put("description", "The place's latitude, with longitude"))
+                                            .put(LONGITUDE, new JSONObject().put("type", "number").put("minimum", -180).put("maximum", 180)
+                                                    .put("description", "The place's longitude, with latitude")))
                                     .put("required", new JSONArray().put("place"))))
                     .put(tool("remove_stop", "Removes a stop from the trip Google Maps guides in the car now, through"
                             + " Maps' own navigation: Maps keeps guiding and keeps its destination, and reroutes. position"
@@ -132,7 +139,7 @@ final class AgentTools {
         try {
             switch (name) {
                 case "navigate_to": return onMain(() -> navigateTo(arguments.optString("destination", "").trim()));
-                case "add_stop": return addStop(arguments.optString("place", "").trim());
+                case "add_stop": return addStop(arguments);
                 case "remove_stop": return removeStop(arguments.optInt("position", 1));
                 case "end_navigation": return endNavigation();
                 case "remove_next_stop": return removeStop(1);
@@ -162,22 +169,58 @@ final class AgentTools {
         }
     }
 
-    /** Asks the Maps bridge module to add {@code place} through Maps' own Add stop ({@link #changeStops}). */
-    private Result addStop(String place) throws TimeoutException {
-        if (place.isEmpty()) return Result.failed("add_stop needs a place: an address, or a place name with its town");
+    /**
+     * Asks the Maps bridge module to add the stop {@code arguments} name through Maps' own Add stop
+     * ({@link #changeStops}): at their latitude and longitude, or at "latitude,longitude" text, under
+     * the place's name; otherwise where Maps finds the place's text.
+     */
+    private Result addStop(JSONObject arguments) throws TimeoutException {
+        String place = arguments.optString(PLACE, "").trim();
+        if (place.isEmpty()) return Result.failed("add_stop needs a place: a name with latitude and longitude, or an address");
+        boolean hasLatitude = arguments.has(LATITUDE), hasLongitude = arguments.has(LONGITUDE);
+        if (hasLatitude != hasLongitude) return Result.failed("add_stop needs both latitude and longitude, or neither; nothing changed.");
+        double latitude = Double.NaN, longitude = Double.NaN;
+        if (hasLatitude) {
+            latitude = arguments.optDouble(LATITUDE);
+            longitude = arguments.optDouble(LONGITUDE);
+        } else {
+            java.util.regex.Matcher point = POINT.matcher(place);
+            if (point.matches()) {
+                latitude = Double.parseDouble(point.group(1));
+                longitude = Double.parseDouble(point.group(2));
+            }
+        }
+        if (hasLatitude || !Double.isNaN(latitude)) {
+            if (!(latitude >= -90 && latitude <= 90)) {
+                return Result.failed("latitude " + latitude + " is not between -90 and 90; nothing changed.");
+            }
+            if (!(longitude >= -180 && longitude <= 180)) {
+                return Result.failed("longitude " + longitude + " is not between -180 and 180; nothing changed.");
+            }
+        }
         if (!onMain(() -> NavigationNotifications.current() != null)) {
             return Result.failed("Maps guides nowhere now, so there is no trip to add a stop to; nothing changed."
                     + " Use navigate_to to go to \"" + place + "\" instead.");
         }
-        Result added = changeStops(new Intent(ADD_STOP).putExtra(PLACE, place), "add \"" + place + "\"",
+        Intent ask = new Intent(ADD_STOP).putExtra(PLACE, place);
+        if (!Double.isNaN(latitude)) {
+            ask.putExtra(LATITUDE, latitude).putExtra(LONGITUDE, longitude);
+            if (hasLatitude) pointNames.put(String.format(java.util.Locale.US, "%.6f,%.6f", latitude, longitude), place);
+        }
+        Result added = changeStops(ask, "add \"" + place + "\"",
                 "Maps added \"" + place + "\" as a stop on the trip it guides and keeps guiding.", 1);
         // Maps refuses new waypoints while it still sets up a route it just began guiding along.
         Long began = onMain(NavigationNotifications::began);
         if (added.error && began != null && android.os.SystemClock.uptimeMillis() - began < JUST_BEGAN_MS) {
             try { Thread.sleep(RETRY_AFTER_MS); }
             catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); return added; }
-            added = changeStops(new Intent(ADD_STOP).putExtra(PLACE, place), "add \"" + place + "\"",
+            added = changeStops(new Intent(ask), "add \"" + place + "\"",
                     "Maps added \"" + place + "\" as a stop on the trip it guides and keeps guiding.", 1);
+        }
+        // Maps answers only no for text it cannot match to one address, as for a business name alone.
+        if (added.error && Double.isNaN(latitude) && added.text.startsWith("Maps did not add")) {
+            return Result.failed(added.text + " Maps adds a stop from text only when it matches the text to one address;"
+                    + " pass the place's latitude and longitude with its name to add it there.");
         }
         return added;
     }
@@ -293,6 +336,25 @@ final class AgentTools {
         }
     }
 
+    /**
+     * The names agents gave stops at a point, by the point as the Maps bridge module reports such a
+     * stop ("%.6f,%.6f"): Maps keeps no name for a stop at a point.
+     */
+    private static final Map<String, String> pointNames = new ConcurrentHashMap<>();
+
+    /** @return {@code stops}, each at a point an agent named shown as "name (point)" */
+    private static String[] named(String[] stops) {
+        String[] named = stops.clone();
+        for (int i = 0; i < named.length; i++) {
+            String name = pointNames.get(named[i]);
+            if (name != null) named[i] = name + " (" + named[i] + ")";
+        }
+        return named;
+    }
+
+    /** "latitude,longitude" as an agent may write it for a place. */
+    private static final java.util.regex.Pattern POINT = java.util.regex.Pattern.compile("(-?\\d+(?:\\.\\d+)?)\\s*,\\s*(-?\\d+(?:\\.\\d+)?)");
+
     /** Guidance this young may still refuse a stop, as Maps sets up its route; the stop is asked again once. */
     private static final long JUST_BEGAN_MS = 20_000, RETRY_AFTER_MS = 3_000;
 
@@ -303,7 +365,7 @@ final class AgentTools {
     private String[] stopsAhead() throws TimeoutException {
         return onMain(() -> {
             MapsTrips.Trip trip = NavigationNotifications.current() == null ? null : MapsTrips.of(NavigationNotifications.began());
-            return trip == null ? new String[0] : trip.stops;
+            return trip == null ? new String[0] : named(trip.stops);
         });
     }
 
@@ -365,7 +427,7 @@ final class AgentTools {
             if (trip != null) {
                 status.put("destination", trip.destination);
                 JSONArray stops = new JSONArray();
-                for (String stop : trip.stops) stops.put(stop);
+                for (String stop : named(trip.stops)) stops.put(stop);
                 status.put("stops_ahead", stops);
             }
             status.put("next_turn", new JSONObject().put("distance", turn.distance.toString())
