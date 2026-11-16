@@ -21,6 +21,13 @@ Maps in the car. It speaks MCP's Streamable HTTP transport: each JSON-RPC messag
   left out. Wend refuses a position past the stops Maps reported, where Maps would remove its
   destination.
 
+- `list_routes()`: the routes Maps has for the trip, the guided one first, each with its `id`,
+  `guided`, `minutes` (Maps' travel time estimate) and `via` (the roads Maps names). Maps keeps
+  alternatives for a while after guidance starts, then often only the guided route.
+- `switch_route(route)`: guides along another of those routes, by id, through Maps' own switch.
+- `end_navigation()`: ends Maps' guidance as its end-navigation button does; Maps then shows the
+  trip's route with Start.
+
 `add_stop` and `remove_stop` answer once Maps has also reported its new stops (up to 5 s more),
 and list them, so a change right after another counts the stops Maps has, and the agent needs no
 `trip_status` call to see them.
@@ -82,5 +89,9 @@ with Wend's process, whatever started that process. Each tool call is logged und
   the Safeway, back to the motel alone (10 min / 8.4 mi); `remove_stop(3)` and a `remove_stop()`
   with no stops left were refused. Two adds and two removes back to back, with no pause, each
   answered with the stops Maps then had.
+- Guiding to San Francisco, `list_routes` gave three routes (131 min via US-101 S, 134 min via
+  US-101 S and I-580 E, 153 min via US-101 S and I-80 W); `switch_route` to the I-580 one made it
+  the guided route, and `trip_status` said 2 hr 14 min, 134 mi. `end_navigation` ended guidance
+  (`trip_status` then said guiding false), and a second call was refused.
 - After Wend restarted with Maps fullscreen, the server was back without the home screen being
   created, and `trip_status` still read the trip.

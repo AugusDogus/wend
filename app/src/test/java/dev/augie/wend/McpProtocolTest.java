@@ -71,13 +71,16 @@ public class McpProtocolTest {
 
     @Test public void itListsItsToolsWithTheirInputSchemas() throws Exception {
         JSONArray tools = ask("tools/list", new JSONObject()).getJSONObject("result").getJSONArray("tools");
-        assertEquals(4, tools.length());
+        assertEquals(7, tools.length());
         assertEquals("navigate_to", tools.getJSONObject(0).getString("name"));
         assertEquals("destination", tools.getJSONObject(0).getJSONObject("inputSchema").getJSONArray("required").getString(0));
         assertEquals("add_stop", tools.getJSONObject(1).getString("name"));
         assertEquals("place", tools.getJSONObject(1).getJSONObject("inputSchema").getJSONArray("required").getString(0));
         assertEquals("remove_stop", tools.getJSONObject(2).getString("name"));
-        assertEquals("trip_status", tools.getJSONObject(3).getString("name"));
+        assertEquals("list_routes", tools.getJSONObject(3).getString("name"));
+        assertEquals("switch_route", tools.getJSONObject(4).getString("name"));
+        assertEquals("end_navigation", tools.getJSONObject(5).getString("name"));
+        assertEquals("trip_status", tools.getJSONObject(6).getString("name"));
     }
 
     @Test public void navigateToOpensMapsNavigationLinkToTheDestination() throws Exception {
@@ -99,6 +102,14 @@ public class McpProtocolTest {
         context.registerReceiver(new android.content.BroadcastReceiver() {
             @Override public void onReceive(android.content.Context received, Intent intent) { setResultCode(1); }
         }, new android.content.IntentFilter(AgentTools.REMOVE_STOP));
+        context.registerReceiver(new android.content.BroadcastReceiver() {
+            @Override public void onReceive(android.content.Context received, Intent intent) { setResultCode(1); }
+        }, new android.content.IntentFilter(AgentTools.END_NAVIGATION));
+        for (String action : new String[]{AgentTools.ROUTES, AgentTools.SWITCH_ROUTE}) {
+            context.registerReceiver(new android.content.BroadcastReceiver() {
+                @Override public void onReceive(android.content.Context received, Intent intent) { setResultCode(1); }
+            }, new android.content.IntentFilter(action));
+        }
     }
 
     /** add_stop as Wend's MCP server calls it, off the main thread, while the main thread runs. */
@@ -226,6 +237,62 @@ public class McpProtocolTest {
         NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
         MapsTrips.reported(MOTEL);
         JSONObject result = callTool("remove_stop", new JSONObject());
+        assertTrue(result.getBoolean("isError"));
+        assertTrue(shadowOf(context).getBroadcastIntents().isEmpty());
+    }
+
+    /** Maps' own end-navigation, through the module; it answers once Maps' guidance notification is gone. */
+    @Test public void endNavigationAsksMapsToEndItsGuidance() throws Exception {
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "9 min · 8.4 mi · 4:37 PM PST ETA"));
+        mapsBridgeListens();
+        Future<JSONObject> call = Executors.newSingleThreadExecutor().submit(() -> callTool("end_navigation", new JSONObject()));
+        Intent ask = askedOfMaps(AgentTools.END_NAVIGATION);
+        assertEquals(EmbeddedMaps.PACKAGE, ask.getPackage());
+        mapsSays(ask.getIntExtra(AgentTools.REQUEST, -1), true, null);
+        NavigationNotifications.reportedByMaps(null);
+        JSONObject result = answered(call);
+        assertFalse(result.getBoolean("isError"));
+        assertTrue(text(result).startsWith("Maps ended its guidance"));
+    }
+
+    /** The routes Maps has, as the module reads them from Maps' guidance, the guided one first. */
+    @Test public void listRoutesGivesTheRoutesMapsHas() throws Exception {
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "2 hr 11 min · 124 mi · 9:47 PM PST ETA"));
+        mapsBridgeListens();
+        Future<JSONObject> call = Executors.newSingleThreadExecutor().submit(() -> callTool("list_routes", new JSONObject()));
+        Intent ask = askedOfMaps(AgentTools.ROUTES);
+        shadowOf(context.getPackageManager()).setPackagesForUid(10111, EmbeddedMaps.PACKAGE);
+        ShadowBinder.setCallingUid(10111);
+        Bundle extras = new Bundle();
+        extras.putInt(AgentTools.REQUEST, ask.getIntExtra(AgentTools.REQUEST, -1));
+        extras.putBoolean("done", true);
+        extras.putString(AgentTools.ROUTES, "[{\"id\":\"a\",\"guided\":true,\"minutes\":131,\"via\":\"US-101 S\"},"
+                + "{\"id\":\"b\",\"guided\":false,\"minutes\":134,\"via\":\"US-101 S and I-580 E\"}]");
+        org.robolectric.Robolectric.buildContentProvider(MapsTrips.class).create("dev.augie.wend.mapstrips").get().call("stop", null, extras);
+        ShadowBinder.reset();
+        JSONArray routes = new JSONObject(text(answered(call))).getJSONArray("routes");
+        assertEquals(2, routes.length());
+        assertEquals("US-101 S and I-580 E", routes.getJSONObject(1).getString("via"));
+    }
+
+    @Test public void switchRouteAsksMapsForThatRoute() throws Exception {
+        NavigationNotifications.reportedByMaps(guidance("0.2 mi", "CA-20 W", "2 hr 11 min · 124 mi · 9:47 PM PST ETA"));
+        mapsBridgeListens();
+        Future<JSONObject> call = Executors.newSingleThreadExecutor().submit(() -> callTool("switch_route", new JSONObject().put("route", "b")));
+        Intent ask = askedOfMaps(AgentTools.SWITCH_ROUTE);
+        assertEquals("b", ask.getStringExtra(AgentTools.ROUTE));
+        mapsSays(ask.getIntExtra(AgentTools.REQUEST, -1), true, null);
+        assertFalse(answered(call).getBoolean("isError"));
+    }
+
+    @Test public void routesWithoutGuidanceAskNothing() throws Exception {
+        assertTrue(callTool("list_routes", new JSONObject()).getBoolean("isError"));
+        assertTrue(callTool("switch_route", new JSONObject().put("route", "b")).getBoolean("isError"));
+        assertTrue(shadowOf(context).getBroadcastIntents().isEmpty());
+    }
+
+    @Test public void endNavigationWithoutGuidanceAsksNothing() throws Exception {
+        JSONObject result = callTool("end_navigation", new JSONObject());
         assertTrue(result.getBoolean("isError"));
         assertTrue(shadowOf(context).getBroadcastIntents().isEmpty());
     }

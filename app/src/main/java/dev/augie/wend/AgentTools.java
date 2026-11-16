@@ -25,7 +25,8 @@ import org.json.JSONObject;
 
 /**
  * What an agent may do in the car through Wend's MCP server ({@link AgentServer}): start Maps'
- * guidance somewhere, add or remove a stop of the trip Maps guides, and read that trip. Each tool has a name,
+ * guidance somewhere, add or remove a stop of the trip Maps guides, list and switch its routes, end that
+ * guidance, and read the trip. Each tool has a name,
  * a description and an input schema for the agent, and a call. Called on any thread; what reads or
  * changes Maps' guidance as Wend keeps it runs on the main thread, and adding a stop waits off it.
  */
@@ -57,6 +58,8 @@ final class AgentTools {
     static final long STOP_WAIT_MS = 25_000;
     /** The Maps bridge module's broadcasts that ask Maps to add or remove a stop, and their extras. */
     static final String ADD_STOP = "dev.augie.wend.mapsbridge.ADD_STOP", REMOVE_STOP = "dev.augie.wend.mapsbridge.REMOVE_STOP",
+            END_NAVIGATION = "dev.augie.wend.mapsbridge.END_NAVIGATION", ROUTES = "dev.augie.wend.mapsbridge.ROUTES",
+            SWITCH_ROUTE = "dev.augie.wend.mapsbridge.SWITCH_ROUTE", ROUTE = "route",
             PLACE = "place", POSITION = "position", REQUEST = "request";
     /** Asks the Maps bridge module to replace the trip Maps guides with a navigation link's, without asking the driver. */
     static final String REPLACE_TRIP = "dev.augie.wend.REPLACE_TRIP";
@@ -96,6 +99,20 @@ final class AgentTools {
                                     .put("properties", new JSONObject().put("position", new JSONObject()
                                             .put("type", "integer").put("minimum", 1)
                                             .put("description", "Which stop ahead; 1, the next, if left out")))))
+                    .put(tool("list_routes", "Lists the routes Google Maps has for the trip it guides in the car now: the one it"
+                            + " guides along first (guided true), then the alternatives it offers, each with its id, its travel"
+                            + " time in minutes as Maps estimates it, and the roads it goes by (via).",
+                            new JSONObject().put("type", "object").put("properties", new JSONObject())))
+                    .put(tool("switch_route", "Switches the trip Google Maps guides in the car to another of its routes, as"
+                            + " tapping that route in Maps does; Maps keeps the destination and stops. Take the id from"
+                            + " list_routes.",
+                            new JSONObject().put("type", "object")
+                                    .put("properties", new JSONObject().put("route", new JSONObject()
+                                            .put("type", "string").put("description", "The route's id, from list_routes")))
+                                    .put("required", new JSONArray().put("route"))))
+                    .put(tool("end_navigation", "Ends the guidance Google Maps runs in the car, as Maps' own end-navigation"
+                            + " button does; Maps then shows the trip's route with Start. Its stops are not kept.",
+                            new JSONObject().put("type", "object").put("properties", new JSONObject())))
                     .put(tool("trip_status", "Reads the trip Google Maps guides in the car now, as Maps itself shows it:"
                             + " the next turn, the time and distance left, the arrival time, and the destination and"
                             + " stops ahead when Maps reported them. guiding is false when Maps guides nowhere.",
@@ -113,6 +130,9 @@ final class AgentTools {
                 case "navigate_to": return onMain(() -> navigateTo(arguments.optString("destination", "").trim()));
                 case "add_stop": return addStop(arguments.optString("place", "").trim());
                 case "remove_stop": return removeStop(arguments.optInt("position", 1));
+                case "end_navigation": return endNavigation();
+                case "list_routes": return listRoutes();
+                case "switch_route": return switchRoute(arguments.optString("route", "").trim());
                 case "trip_status": return onMain(this::tripStatus);
                 default: throw new UnknownTool(name);
             }
@@ -182,6 +202,60 @@ final class AgentTools {
      */
     private Result changeStops(Intent ask, String change, String done, int stopsChange) throws TimeoutException {
         int before = stopsAhead().length;
+        Bundle said = askBridge(ask);
+        if (said == null) {
+            return Result.failed("Maps did not say within " + STOP_WAIT_MS / 1000 + " s whether it did " + change
+                    + "; call trip_status to see the route.");
+        }
+        if (said.getBoolean("done")) return Result.ok(done + " " + reportedStops(before + stopsChange));
+        return Result.failed(said.getString("problem", "Maps did not " + change) + ". The route did not change.");
+    }
+
+    /** Reads Maps' routes for the trip it guides through the Maps bridge module. */
+    private Result listRoutes() throws TimeoutException {
+        if (!onMain(() -> NavigationNotifications.current() != null)) return Result.failed("Maps guides nowhere now, so it has no routes.");
+        Bundle said = askBridge(new Intent(ROUTES));
+        if (said == null) return Result.failed("Maps did not list its routes within " + STOP_WAIT_MS / 1000 + " s.");
+        if (!said.getBoolean("done")) return Result.failed(said.getString("problem", "Maps did not list its routes") + ".");
+        return Result.ok("{\"routes\":" + said.getString(ROUTES, "[]") + "}");
+    }
+
+    /** Asks Maps, through the Maps bridge module, to guide along another of its routes. */
+    private Result switchRoute(String route) throws TimeoutException {
+        if (route.isEmpty()) return Result.failed("switch_route needs a route id from list_routes.");
+        if (!onMain(() -> NavigationNotifications.current() != null)) return Result.failed("Maps guides nowhere now; nothing changed.");
+        Bundle said = askBridge(new Intent(SWITCH_ROUTE).putExtra(ROUTE, route));
+        if (said == null) {
+            return Result.failed("Maps did not say within " + STOP_WAIT_MS / 1000 + " s whether it switched; call list_routes to see.");
+        }
+        if (!said.getBoolean("done")) return Result.failed(said.getString("problem", "Maps did not switch") + ". The route did not change.");
+        return Result.ok("Maps now guides along route " + route + ". Call trip_status for the new arrival time.");
+    }
+
+    /** Ends Maps' guidance through the Maps bridge module, as Maps' own end-navigation button does. */
+    private Result endNavigation() throws TimeoutException {
+        if (!onMain(() -> NavigationNotifications.current() != null)) return Result.failed("Maps guides nowhere now; nothing changed.");
+        Bundle said = askBridge(new Intent(END_NAVIGATION));
+        if (said == null) {
+            return Result.failed("Maps did not say within " + STOP_WAIT_MS / 1000 + " s whether it ended its guidance; call"
+                    + " trip_status to see.");
+        }
+        if (!said.getBoolean("done")) return Result.failed(said.getString("problem", "Maps did not end its guidance") + ". Maps still guides.");
+        long until = System.currentTimeMillis() + REPORT_WAIT_MS;
+        while (onMain(() -> NavigationNotifications.current() != null) && System.currentTimeMillis() < until) {
+            try { Thread.sleep(200); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); break; }
+        }
+        return Result.ok("Maps ended its guidance and shows the trip's route with Start; navigate_to starts guiding again.");
+    }
+
+    /**
+     * Sends the Maps bridge module {@code ask} and waits for Maps' answer ({@link #stopReported}).
+     * Off the main thread, which carries the answer.
+     *
+     * @return Maps' answer: "done", or "problem"; null if none came within {@link #STOP_WAIT_MS}
+     */
+    private Bundle askBridge(Intent ask) {
         int request = stopRequests.incrementAndGet();
         CompletableFuture<Bundle> answer = new CompletableFuture<>();
         stopAnswers.put(request, answer);
@@ -195,12 +269,9 @@ final class AgentTools {
                     answer.complete(none);
                 }
             }, main, Activity.RESULT_CANCELED, null, null);
-            Bundle said = answer.get(STOP_WAIT_MS, TimeUnit.MILLISECONDS);
-            if (said.getBoolean("done")) return Result.ok(done + " " + reportedStops(before + stopsChange));
-            return Result.failed(said.getString("problem", "Maps did not " + change) + ". The route did not change.");
+            return answer.get(STOP_WAIT_MS, TimeUnit.MILLISECONDS);
         } catch (TimeoutException slow) {
-            return Result.failed("Maps did not say within " + STOP_WAIT_MS / 1000 + " s whether it did " + change
-                    + "; call trip_status to see the route.");
+            return null;
         } catch (InterruptedException | ExecutionException failed) {
             throw new IllegalStateException(failed);
         } finally {
