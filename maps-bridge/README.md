@@ -58,6 +58,22 @@ the emulator), and keeps the names in Maps' `files/wend-maps-bridge-names.proper
 The adapter itself is taken as Maps makes it while guiding, so a stop can be added from the first
 guidance after Maps starts.
 
+## Replacing the trip
+
+While Maps guides, a navigation link makes it ask the driver "Exit navigation?" first. Maps routes
+every request that would replace its screen through a reset interceptor, which shows that
+question and, on yes, resets Maps' activity (stopping the guidance) and runs the request.
+`TripReplacer` answers yes at once, through that same code, for links Wend sent with the extra
+`dev.augie.wend.REPLACE_TRIP`, so Wend's `navigate_to` replaces the trip and its stops in one
+step. Android hands Maps each intent with the app that sent it (`ReferrerIntent.mReferrer`, which
+an intent's extras cannot forge); the module drops the mark from any intent not sent by Wend.
+
+The interceptor is found with the rest (`MapsNavigation`): the class that logs `Tried to register
+ResetInterceptor %s when %s is still registered.`, its one method that takes a Runnable (the
+ask), its interface's method without parameters (the stop), and the one method that calls that
+stop and the unregistering that logs `Tried to unregister a nonexistent ResetInterceptor.` (the
+activity's reset). Without them, Maps asks the driver as usual.
+
 Wend takes these calls from Maps' own uid only (`MapsTrips`). The module holds no stable connection
 to Wend, so Wend's process dying does not take Maps with it.
 
@@ -90,6 +106,9 @@ module in LSPosed for Google Maps, and restart Maps. Its log tag is `wend-maps-b
   Checked against Maps 26.43.
 - A Maps whose turn card is no longer a `TurnCardStepCueTextView` named `top_cue_text`, or draws
   its shields otherwise than as a `ReplacementSpan`: Wend then shows roads as text. Checked against
+  Maps 26.43.
+- A Maps without the reset interceptor `TripReplacer` looks for: Maps asks "Exit navigation?" before
+  Wend's `navigate_to` replaces a trip, and keeps it unless the driver says yes. Checked against
   Maps 26.43.
 - A Maps whose code no longer has the three things `MapsNavigation` looks for, or has several of
   one: the module logs which, and Wend's `add_stop` says Maps' Add stop was not found; all else

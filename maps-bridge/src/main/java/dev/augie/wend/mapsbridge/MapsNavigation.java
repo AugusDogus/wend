@@ -44,7 +44,7 @@ import org.luckypray.dexkit.result.UsingFieldData;
 final class MapsNavigation {
     static final String ADD_WAYPOINT_TRACE = "NavigationControllerAdapter.addWaypointToRoute.GuidanceSDK";
     static final String SHORTCUT_NAME = "directionsShortcut_%s";
-    private static final String CACHE_VERSION = "1";
+    private static final String CACHE_VERSION = "2";
 
     private final Method add;
     private final Method newBuilder;
@@ -89,6 +89,11 @@ final class MapsNavigation {
             member.setAccessible(true);
         }
         MapsNavigation navigation = new MapsNavigation(add, newBuilder, buildMethod, query);
+        try {
+            TripReplacer.install(maps, names);
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Log.w(MapsBridge.TAG, "Maps asks the driver before Wend replaces a trip it guides: its reset interceptor was not found", error);
+        }
         XposedBridge.hookAllConstructors(adapterClass, new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) { navigation.adapter = param.thisObject; }
         });
@@ -146,6 +151,11 @@ final class MapsNavigation {
             }
             if (fields.size() != 1) throw new NoSuchFieldException("Maps' waypoint builder " + builder + " has " + fields + " as its text, not one field");
             names.setProperty("query", fields.iterator().next());
+            try {
+                TripReplacer.search(dex, names);
+            } catch (NoSuchMethodException | RuntimeException error) {
+                Log.w(MapsBridge.TAG, "Maps' reset interceptor was not found; Maps will ask the driver before Wend replaces a trip", error);
+            }
             return names;
         }
     }
