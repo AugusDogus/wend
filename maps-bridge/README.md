@@ -67,6 +67,34 @@ The adapter itself is taken as Maps makes it while guiding, so stops can be chan
 guidance after Maps starts. The adapter has more: `removeNextWaypointFromRoute`, `setRoutes`,
 `start`, `switchRoute` and `switchRouteWithUndo` (each names its trace the same way).
 
+## Ending guidance and switching routes
+
+`TripStops` also takes `dev.augie.wend.mapsbridge.END_NAVIGATION`, which ends Maps' guidance as
+Maps' own end-navigation button does (the NavigationControllerAdapter's one method that takes a
+boolean, called with true as that button does; Maps then shows the trip's route with Start), and
+`ROUTES` and `SWITCH_ROUTE` (extra `route`), answered as above, `ROUTES` with the routes as JSON in
+the extra `dev.augie.wend.mapsbridge.ROUTES`.
+
+`MapsRoutes` reads the routes from Maps' guidance and switches through Maps' own switch. What it
+reads is found the first time Wend asks (a second on the emulator) and kept in Maps'
+`files/wend-maps-bridge-routes.properties`:
+
+- the switch: the adapter's method that uses `NavigationControllerAdapter.switchRoute.GuidanceSDK`;
+- the route set Maps guides by: the adapter's other method that takes a route id and says
+  `Guidance not running` reads it through a field of the adapter, a field of that, a static
+  getter of the guidance, and the guidance's getter of the route set;
+- the guided route: what the adapter's waypoint removal (`Waypoint index to remove: %d was not in
+  the range of the current route's waypoints.`) takes from the route set;
+- each route's id: the String field of a route that the adapter's route switch reads;
+- each route's travel time and roads: what Maps' description of an alternative route (string
+  resource `ACCESSIBILITY_ALTERNATE_ROUTE_DESCRIPTION`, "Alternate route %1$s via %2$s") reads
+  from a route, its one Duration getter (Maps' own copy of java.time) and the String field that
+  the code of `VIA_ROADS` ("via %1$s") also reads. The resource ids are read from Maps.
+
+Maps keeps alternatives in its guidance only for a while after guidance starts: on the emulator,
+a trip to San Francisco had three routes for some seconds after starting, then the guided one
+alone. A switch then worked: Maps guided along the I-580 route, and its card said 2 hr 14 min.
+
 ## Replacing the trip
 
 While Maps guides, a navigation link makes it ask the driver "Exit navigation?" first. Maps routes
@@ -120,7 +148,8 @@ module in LSPosed for Google Maps, and restart Maps. Its log tag is `wend-maps-b
   Wend's `navigate_to` replaces a trip, and keeps it unless the driver says yes. Checked against
   Maps 26.43.
 - A Maps whose code no longer has the three things `MapsNavigation` looks for, or has several of
-  one: the module logs which, and Wend's `add_stop` and `remove_stop` say Maps' stops were not found; all else
+  one: the module logs which, and Wend's `add_stop` and `remove_stop` say Maps' stops were not found (`list_routes` and `switch_route`
+  the same for routes); all else
   works. Checked against Maps 26.43.
 - A Maps that stops posting a guidance notification. It is Maps' foreground-service notification,
   which Android requires of it while it navigates in the background.

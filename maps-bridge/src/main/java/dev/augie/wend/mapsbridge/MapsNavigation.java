@@ -34,6 +34,7 @@ import org.luckypray.dexkit.result.UsingFieldData;
  * <li>the adapter's add method is the one method that names its trace
  *     {@value #ADD_WAYPOINT_TRACE}; its one parameter is Maps' waypoint;
  * <li>its remove method is the one that names {@value #REMOVE_WAYPOINT_TRACE} and takes an index;
+ * <li>its stop is its one method that takes a boolean and returns nothing;
  * <li>a waypoint is made by a builder, which the waypoint's one static method without parameters
  *     returns, and which has one method without parameters that returns the waypoint;
  * <li>a waypoint to a place Maps finds itself from text, as for a directions shortcut, has that
@@ -46,19 +47,24 @@ final class MapsNavigation {
     static final String ADD_WAYPOINT_TRACE = "NavigationControllerAdapter.addWaypointToRoute.GuidanceSDK";
     static final String REMOVE_WAYPOINT_TRACE = "NavigationControllerAdapter.removeWaypointFromRoute.GuidanceSDK";
     static final String SHORTCUT_NAME = "directionsShortcut_%s";
-    private static final String CACHE_VERSION = "3";
+    private static final String CACHE_VERSION = "4";
 
     private final Method add;
     /** Removes the route's waypoint at an index: 0 is where the car is, 1 the next stop, the last the destination. */
     private final Method removeAt;
+    /** Stops guidance; Maps' own end-navigation button passes true. */
+    private final Method stop;
     private final Method newBuilder;
     private final Method build;
     private final Field query;
     private volatile Object adapter;
+    private final String apk;
 
-    private MapsNavigation(Method add, Method removeAt, Method newBuilder, Method build, Field query) {
+    private MapsNavigation(String apk, Method add, Method removeAt, Method stop, Method newBuilder, Method build, Field query) {
+        this.apk = apk;
         this.add = add;
         this.removeAt = removeAt;
+        this.stop = stop;
         this.newBuilder = newBuilder;
         this.build = build;
         this.query = query;
@@ -88,13 +94,14 @@ final class MapsNavigation {
         Class<?> waypoint = maps.loadClass(names.getProperty("waypoint"));
         Method add = adapterClass.getDeclaredMethod(names.getProperty("add"), waypoint);
         Method removeAt = adapterClass.getDeclaredMethod(names.getProperty("removeAt"), int.class);
+        Method stop = adapterClass.getDeclaredMethod(names.getProperty("stop"), boolean.class);
         Method newBuilder = waypoint.getDeclaredMethod(names.getProperty("newBuilder"));
         Method buildMethod = newBuilder.getReturnType().getDeclaredMethod(names.getProperty("build"));
         Field query = newBuilder.getReturnType().getDeclaredField(names.getProperty("query"));
-        for (java.lang.reflect.AccessibleObject member : new java.lang.reflect.AccessibleObject[]{add, removeAt, newBuilder, buildMethod, query}) {
+        for (java.lang.reflect.AccessibleObject member : new java.lang.reflect.AccessibleObject[]{add, removeAt, stop, newBuilder, buildMethod, query}) {
             member.setAccessible(true);
         }
-        MapsNavigation navigation = new MapsNavigation(add, removeAt, newBuilder, buildMethod, query);
+        MapsNavigation navigation = new MapsNavigation(apk, add, removeAt, stop, newBuilder, buildMethod, query);
         try {
             TripReplacer.install(maps, names);
         } catch (ReflectiveOperationException | RuntimeException error) {
@@ -135,6 +142,31 @@ final class MapsNavigation {
         return (Future<?>) removeAt.invoke(current, position);
     }
 
+    /** @return Maps' NavigationControllerAdapter it made last, which acts on its guidance */
+    Object adapter() {
+        Object current = adapter;
+        if (current == null) throw new IllegalStateException("Maps has not guided since it started");
+        return current;
+    }
+
+    /** @return Maps' NavigationControllerAdapter class */
+    Class<?> adapterClass() { return add.getDeclaringClass(); }
+
+    /** @return Maps' APK */
+    String apk() { return apk; }
+
+    /**
+     * Ends Maps' guidance as its own end-navigation button does; Maps then shows the trip's route
+     * with Start, as after that button.
+     *
+     * @throws IllegalStateException if Maps has not guided since its process started
+     */
+    void endGuidance() throws ReflectiveOperationException {
+        Object current = adapter;
+        if (current == null) throw new IllegalStateException("Maps has not guided since it started");
+        stop.invoke(current, true);
+    }
+
     private static Properties search(String apk) throws ReflectiveOperationException {
         System.loadLibrary("dexkit");
         try (DexKitBridge dex = DexKitBridge.create(apk)) {
@@ -150,6 +182,10 @@ final class MapsNavigation {
                     .declaredClass(add.getClassName(), StringMatchType.Equals, false).paramTypes("int"))),
                     "a method that uses " + REMOVE_WAYPOINT_TRACE + " with an index");
             names.setProperty("removeAt", removeAt.getMethodName());
+            MethodData stop = only(dex.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                    .declaredClass(add.getClassName(), StringMatchType.Equals, false).paramTypes("boolean")
+                    .returnType("void", StringMatchType.Equals, false))), "the adapter's one method that takes a boolean");
+            names.setProperty("stop", stop.getMethodName());
             Set<String> builders = new HashSet<>();
             for (MethodData method : dex.findMethod(FindMethod.create().matcher(MethodMatcher.create()
                     .declaredClass(waypoint, StringMatchType.Equals, false).modifiers(Modifier.STATIC, MatchType.Contains).paramCount(0)))) {
