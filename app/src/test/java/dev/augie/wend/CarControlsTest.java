@@ -3,7 +3,11 @@ package dev.augie.wend;
 import android.app.ActivityManager;
 import android.app.Application;
 import android.content.ComponentName;
+import android.content.Intent;
+import android.view.KeyEvent;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import org.json.JSONObject;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -12,13 +16,15 @@ import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.robolectric.Shadows.shadowOf;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 29)
 public class CarControlsTest {
     private final Application context = RuntimeEnvironment.getApplication();
-    private final CarControls car = new CarControls(context);
+    private final List<Integer> pressed = new ArrayList<>();
+    private final CarControls car = new CarControls(context, pressed::add);
     private final McpProtocol protocol = new McpProtocol(new AgentTools(context, car));
 
     private JSONObject callTool(String name, JSONObject arguments) throws Exception {
@@ -29,6 +35,18 @@ public class CarControlsTest {
 
     private static String text(JSONObject result) throws Exception {
         return result.getJSONArray("content").getJSONObject(0).getString("text");
+    }
+
+    @Test public void goHomeBringsWendsHomeScreenToTheFront() throws Exception {
+        assertFalse(callTool("go_home", new JSONObject()).getBoolean("isError"));
+        Intent home = shadowOf(context).getNextStartedActivity();
+        assertEquals(MainActivity.class.getName(), home.getComponent().getClassName());
+        assertTrue(home.hasCategory(Intent.CATEGORY_HOME));
+    }
+
+    @Test public void goBackPressesBack() throws Exception {
+        assertFalse(callTool("go_back", new JSONObject()).getBoolean("isError"));
+        assertEquals(Arrays.asList(KeyEvent.KEYCODE_BACK), pressed);
     }
 
     @Test public void screenStatusNamesTheAppInFront() throws Exception {

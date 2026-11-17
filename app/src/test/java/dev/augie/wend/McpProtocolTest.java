@@ -67,7 +67,7 @@ public class McpProtocolTest {
 
     @Test public void itListsItsToolsWithTheirInputSchemas() throws Exception {
         JSONArray tools = ask("tools/list", new JSONObject()).getJSONObject("result").getJSONArray("tools");
-        assertEquals(10, tools.length());
+        assertEquals(12, tools.length());
         assertEquals("navigate_to", tools.getJSONObject(0).getString("name"));
         assertEquals("destination", tools.getJSONObject(0).getJSONObject("inputSchema").getJSONArray("required").getString(0));
         assertEquals("add_stop", tools.getJSONObject(1).getString("name"));
@@ -78,7 +78,7 @@ public class McpProtocolTest {
         assertEquals("switch_route", tools.getJSONObject(5).getString("name"));
         assertEquals("end_navigation", tools.getJSONObject(6).getString("name"));
         assertEquals("trip_status", tools.getJSONObject(7).getString("name"));
-        String[] car = {"screen_status", "screenshot"};
+        String[] car = {"go_home", "go_back", "screen_status", "screenshot"};
         for (int i = 0; i < car.length; i++) assertEquals(car[i], tools.getJSONObject(8 + i).getString("name"));
     }
 

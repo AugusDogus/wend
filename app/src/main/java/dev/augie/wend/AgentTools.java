@@ -142,6 +142,9 @@ final class AgentTools {
                             + " Maps reported them. guiding is false when Maps guides nowhere. The turn's distance is"
                             + " empty, and its meters left out, while Maps itself does not know it, as off the route.",
                             new JSONObject().put("type", "object").put("properties", new JSONObject())))
+                    .put(tool("go_home", "Brings Wend's home screen to the front of the car's screen, as the Home button"
+                            + " does: Maps' map and the media panel, with any app in front put behind.", noArguments()))
+                    .put(tool("go_back", "Presses Back for the app in front of the car's screen, as the Back button does.", noArguments()))
                     .put(tool("screen_status", "Names the app in front of the car's screen; home is true when it is Wend's"
                             + " home screen.", noArguments()))
                     .put(tool("screenshot", "Takes a picture of the car's whole screen, to see what it shows.", noArguments()));
@@ -164,6 +167,8 @@ final class AgentTools {
                 case "list_routes": return listRoutes();
                 case "switch_route": return switchRoute(arguments.optString("route", "").trim());
                 case "trip_status": return onMain(this::tripStatus);
+                case "go_home": return car.home();
+                case "go_back": return car.back();
                 case "screen_status": return car.screenStatus();
                 case "screenshot": return car.screenshot();
                 default: throw new UnknownTool(name);

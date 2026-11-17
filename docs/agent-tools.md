@@ -39,6 +39,9 @@ and list them, so a change right after another counts the stops Maps has, and th
 
 Beyond Maps' guidance, the head unit itself ([`CarControls`](../app/src/main/java/dev/augie/wend/CarControls.java)):
 
+- `go_home()`: brings Wend's home screen to the front, as the Home button does.
+- `go_back()`: presses Back for the app in front, by injecting the key (`INJECT_EVENTS`, which
+  the platform-signed Wend holds).
 - `screen_status()` names the app in front; `screenshot()` returns the whole screen as a JPEG
   (MCP image content), through Android 10's screenshot call, which leaves out secure layers.
 
