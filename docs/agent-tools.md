@@ -42,6 +42,10 @@ Beyond Maps' guidance, the head unit itself ([`CarControls`](../app/src/main/jav
 - `go_home()`: brings Wend's home screen to the front, as the Home button does.
 - `go_back()`: presses Back for the app in front, by injecting the key (`INJECT_EVENTS`, which
   the platform-signed Wend holds).
+- `list_apps()` and `open_app(app)`: the apps Wend's drawer lists, by name and package; `open_app`
+  takes a name, part of one, or a package, and opens it through Wend's home screen as the drawer
+  does, so Maps and YouTube come back in their own tasks. A name that matches more than one app
+  opens nothing and lists them.
 - `screen_status()` names the app in front; `screenshot()` returns the whole screen as a JPEG
   (MCP image content), through Android 10's screenshot call, which leaves out secure layers.
 

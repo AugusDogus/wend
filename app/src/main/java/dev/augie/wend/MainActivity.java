@@ -227,6 +227,14 @@ public final class MainActivity extends Activity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        String requested = intent.getStringExtra(CarControls.OPEN_APP);
+        if (requested != null) {
+            // An agent opens an app, as a tap in the drawer does.
+            if (drawer != null) drawer.close();
+            if (settingsSheet != null) settingsSheet.close();
+            AppLaunch.open(this, requested);
+            return;
+        }
         // Home slides an open sheet away.
         if (drawer != null) drawer.close();
         if (settingsSheet != null) settingsSheet.close();

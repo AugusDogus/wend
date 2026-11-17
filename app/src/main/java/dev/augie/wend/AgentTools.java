@@ -145,6 +145,13 @@ final class AgentTools {
                     .put(tool("go_home", "Brings Wend's home screen to the front of the car's screen, as the Home button"
                             + " does: Maps' map and the media panel, with any app in front put behind.", noArguments()))
                     .put(tool("go_back", "Presses Back for the app in front of the car's screen, as the Back button does.", noArguments()))
+                    .put(tool("list_apps", "Lists the apps on the car's head unit, each with its name and package.", noArguments()))
+                    .put(tool("open_app", "Opens an app on the car's screen, as tapping it in Wend's app drawer does; Maps and"
+                            + " YouTube come back where they were.",
+                            new JSONObject().put("type", "object")
+                                    .put("properties", new JSONObject().put("app", new JSONObject().put("type", "string")
+                                            .put("description", "The app's name, part of it, or its package, from list_apps")))
+                                    .put("required", new JSONArray().put("app"))))
                     .put(tool("screen_status", "Names the app in front of the car's screen; home is true when it is Wend's"
                             + " home screen.", noArguments()))
                     .put(tool("screenshot", "Takes a picture of the car's whole screen, to see what it shows.", noArguments()));
@@ -169,6 +176,8 @@ final class AgentTools {
                 case "trip_status": return onMain(this::tripStatus);
                 case "go_home": return car.home();
                 case "go_back": return car.back();
+                case "list_apps": return car.apps(onMain(this::apps));
+                case "open_app": return car.openApp(arguments.optString("app", "").trim(), onMain(this::apps));
                 case "screen_status": return car.screenStatus();
                 case "screenshot": return car.screenshot();
                 default: throw new UnknownTool(name);
@@ -469,6 +478,12 @@ final class AgentTools {
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
         }
+    }
+
+    /** @return the apps Wend's drawer lists, or null until it has loaded them; main thread */
+    private java.util.List<LauncherApp> apps() {
+        AppCatalog catalog = AppCatalog.get(context);
+        return catalog.status() == AppCatalog.Status.READY ? catalog.apps() : null;
     }
 
     /** An input schema without arguments. */

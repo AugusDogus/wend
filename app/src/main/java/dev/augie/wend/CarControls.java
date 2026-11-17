@@ -14,7 +14,10 @@ import android.view.KeyEvent;
 import android.view.SurfaceControl;
 import android.view.WindowManager;
 import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -26,9 +29,12 @@ final class CarControls {
     /** Presses a key as the driver would; off the main thread. */
     interface Keys { void press(int keyCode); }
 
+    /** Asks Wend's home screen to open the app this extra names, as its dock and drawer do. */
+    static final String OPEN_APP = "dev.augie.wend.OPEN_APP";
     /** How a screenshot is sent: JPEG at this quality keeps a 1280x720 screen near 100 KiB. */
     private static final int JPEG_QUALITY = 80;
 
+    private static final String NO_APPS = "Wend has not loaded the car's apps yet, or could not; try again in a few seconds.";
     private final Context context;
     private final Keys keys;
 
@@ -56,6 +62,56 @@ final class CarControls {
             return AgentTools.Result.failed("Android did not take the Back key: " + failed.getMessage() + ". Nothing changed.");
         }
         return AgentTools.Result.ok("Pressed Back. Call screen_status to see what is in front now.");
+    }
+
+    /** @param apps the apps Wend's drawer lists, null while it still loads them; main thread */
+    AgentTools.Result apps(List<LauncherApp> apps) throws JSONException {
+        if (apps == null) return AgentTools.Result.failed(NO_APPS);
+        JSONArray listed = new JSONArray();
+        for (LauncherApp app : apps) {
+            if (!AppCatalog.canPin(app)) continue;
+            listed.put(new JSONObject().put("name", app.label).put("package", app.key.packageName));
+        }
+        return AgentTools.Result.ok(new JSONObject().put("apps", listed).toString());
+    }
+
+    /**
+     * Opens the app {@code asked} names through Wend's home screen, as a tap in its drawer does:
+     * Maps and the video app come back in their own tasks.
+     *
+     * @param asked an app's package, its name, or part of its name
+     * @param apps the apps Wend's drawer lists, null while it still loads them
+     */
+    AgentTools.Result openApp(String asked, List<LauncherApp> apps) {
+        if (asked.isEmpty()) return AgentTools.Result.failed("open_app needs an app: its name or package, from list_apps.");
+        if (apps == null) return AgentTools.Result.failed(NO_APPS);
+        List<LauncherApp> matches = match(asked, apps);
+        if (matches.isEmpty()) {
+            return AgentTools.Result.failed("No app in the car is named \"" + asked + "\"; list_apps names them. Nothing opened.");
+        }
+        if (matches.size() > 1) {
+            List<String> names = new ArrayList<>();
+            for (LauncherApp app : matches) names.add(app.label + " (" + app.key.packageName + ")");
+            return AgentTools.Result.failed("\"" + asked + "\" names more than one app: " + String.join(", ", names)
+                    + ". Pass one's package. Nothing opened.");
+        }
+        LauncherApp app = matches.get(0);
+        context.startActivity(homeIntent().putExtra(OPEN_APP, app.key.packageName));
+        return AgentTools.Result.ok("Opened " + app.label + ".");
+    }
+
+    /** @return the one app whose package is {@code asked}, else those named it, else those whose name holds it */
+    private static List<LauncherApp> match(String asked, List<LauncherApp> apps) {
+        List<LauncherApp> named = new ArrayList<>(), partly = new ArrayList<>();
+        String lower = asked.toLowerCase(Locale.ROOT);
+        for (LauncherApp app : apps) {
+            if (!AppCatalog.canPin(app)) continue;
+            if (app.key.packageName.equals(asked)) return java.util.Collections.singletonList(app);
+            String label = app.label.toLowerCase(Locale.ROOT);
+            if (label.equals(lower)) named.add(app);
+            else if (label.contains(lower)) partly.add(app);
+        }
+        return named.isEmpty() ? partly : named;
     }
 
     private Intent homeIntent() {
