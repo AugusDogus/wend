@@ -78,6 +78,12 @@ ROM). Elsewhere each says the car has no such unit.
   (never `auto`, which overwrites the presets), and `tune` starts its activity with `freq` (Hz)
   and `start=1`, which puts it behind at once; Wend puts back whatever was in front if it came
   forward anyway.
+- `phone_status()` and `recent_calls(limit)`: the phone connected over Bluetooth, through the
+  unit's exported Bluetooth service (`android.microntek.mtcser/.BlueToothService`, `BTServiceInf`,
+  called by its transaction codes, one at a time:
+  [`HeadUnitPhone`](../app/src/main/java/dev/augie/wend/HeadUnitPhone.java)). Names come from the
+  phone book the module synced (empty until the unit's dialer has synced it), matched by number as
+  the dialer matches them; the call log is the unit's own, filtered to the connected phone.
 - `brightness(percent)`: reads `cfg_backlight` (0 to 255) or sets it with the unit's
   `com.microntek.BLIGHT_SET` broadcast, as its brightness setting does, never below 10.
 - `eq(preset, loudness)`: the EQ preset (0 the driver's own, 1 to 6 the unit's) and loudness,

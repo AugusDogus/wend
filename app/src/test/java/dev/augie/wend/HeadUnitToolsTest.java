@@ -2,6 +2,7 @@ package dev.augie.wend;
 
 import android.app.Application;
 import android.content.Intent;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Before;
 import org.junit.Test;
@@ -21,6 +22,7 @@ public class HeadUnitToolsTest {
     private final Application context = RuntimeEnvironment.getApplication();
     private final FakeMcu mcu = new FakeMcu();
     private HeadUnitTires.Reading tires;
+    private final FakePhone phone = new FakePhone();
     private HeadUnitRadio.Station station;
     private int[] presets;
     private String stationName;
@@ -28,7 +30,7 @@ public class HeadUnitToolsTest {
         @Override public HeadUnitRadio.Station station() { return station; }
         @Override public int[] presets() { return presets; }
         @Override public String name() { return stationName; }
-    });
+    }, phone);
 
     @Before public void quickly() { HeadUnit.settleMs = 0; }
 
@@ -45,7 +47,7 @@ public class HeadUnitToolsTest {
     }
 
     @Test public void withoutAHeadUnitItsToolsSaySo() throws Exception {
-        AgentTools.Result result = new HeadUnitTools(context, null, null, null).call("brightness", new JSONObject());
+        AgentTools.Result result = new HeadUnitTools(context, null, null, null, null).call("brightness", new JSONObject());
         assertTrue(result.error);
         assertTrue(result.text, result.text.contains("no Microntek head unit"));
     }
@@ -165,5 +167,37 @@ public class HeadUnitToolsTest {
         assertTrue(sent("hct.radio.power.switch") != null);
         unit.call("radio", new JSONObject().put("action", "preset").put("preset", 4));
         assertTrue(sent("hct.radio.channel.four") != null);
+    }
+
+    @Test public void phoneStatusNamesTheCallerFromThePhoneBook() throws Exception {
+        phone.state = HeadUnitPhone.RINGING;
+        phone.number = "+1 (415) 555-0134";
+        phone.book.add("Mom^4155550134^Local");
+        JSONObject status = answer("phone_status", new JSONObject());
+        assertTrue(status.getBoolean("connected"));
+        assertEquals("Pixel 8 Pro", status.getString("phone"));
+        assertEquals("ringing", status.getString("call"));
+        assertEquals("Mom", status.getString("name"));
+    }
+
+    @Test public void phoneStatusWithoutAPhoneSaysItIsNotConnected() throws Exception {
+        phone.state = HeadUnitPhone.DISCONNECTED;
+        assertFalse(answer("phone_status", new JSONObject()).getBoolean("connected"));
+        phone.state = null;
+        assertTrue(unit.call("phone_status", new JSONObject()).error);
+    }
+
+    @Test public void recentCallsAreThisPhonesNewestFirst() throws Exception {
+        phone.address = 0xA1B2C3D4E5F6L;
+        phone.book.add("Mom^4155550134^Local");
+        phone.calls.add("A1B2C3D4E5F6^4155550134^2026/11/16^08:00:00^^2");
+        phone.calls.add("0000000000AA^5550000^2026/11/16^09:00:00^^1");
+        phone.calls.add("a1b2c3d4e5f6^8005551212^2026/11/17^10:30:00^^3");
+        JSONArray calls = answer("recent_calls", new JSONObject()).getJSONArray("calls");
+        assertEquals("Another phone's call is left out", 2, calls.length());
+        assertEquals("missed", calls.getJSONObject(0).getString("type"));
+        assertEquals("2026/11/17 10:30:00", calls.getJSONObject(0).getString("when"));
+        assertEquals("Mom", calls.getJSONObject(1).getString("name"));
+        assertEquals("incoming", calls.getJSONObject(1).getString("type"));
     }
 }

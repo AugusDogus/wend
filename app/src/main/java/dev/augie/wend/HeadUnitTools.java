@@ -18,18 +18,21 @@ final class HeadUnitTools {
     private final CarSignals signals;
     private final HeadUnitTires.Source tires;
     private final HeadUnitRadio.Source radio;
+    private final HeadUnitPhone.Source phone;
 
     HeadUnitTools(Context context) { this(context, HeadUnit.mcu()); }
 
     HeadUnitTools(Context context, HeadUnit.Mcu mcu) {
-        this(context, mcu, HeadUnitTires.of(context), mcu == null ? null : HeadUnitRadio.of(context, mcu));
+        this(context, mcu, HeadUnitTires.of(context), mcu == null ? null : HeadUnitRadio.of(context, mcu), HeadUnitPhone.of(context));
     }
 
-    HeadUnitTools(Context context, HeadUnit.Mcu mcu, HeadUnitTires.Source tires, HeadUnitRadio.Source radio) {
+    HeadUnitTools(Context context, HeadUnit.Mcu mcu, HeadUnitTires.Source tires, HeadUnitRadio.Source radio,
+            HeadUnitPhone.Source phone) {
         this.context = context;
         this.mcu = mcu;
         this.tires = tires;
         this.radio = radio;
+        this.phone = phone;
         signals = new CarSignals(context);
     }
 
@@ -57,6 +60,14 @@ final class HeadUnitTools {
                                         .put("description", "For tune: MHz for FM (101.1), kHz for AM (1010)"))
                                 .put("preset", new JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 6)))
                                 .put("required", new JSONArray().put("action"))))
+                .put(tool("phone_status", "Reads the phone connected to the head unit over Bluetooth: its name, and"
+                        + " the call (idle, dialing, ringing or in_call) with its number and the caller's name from the"
+                        + " phone book the unit synced. Off the main thread.", noArguments()))
+                .put(tool("recent_calls", "Lists the latest calls of the phone connected to the head unit, newest"
+                        + " first: number, name from its phone book, when, and outgoing, incoming or missed. Off the main thread.",
+                        new JSONObject().put("type", "object").put("properties", new JSONObject().put("limit",
+                                new JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 50)
+                                        .put("description", "How many; 10 if left out")))))
                 .put(tool("brightness", "Reads the head unit's screen brightness, or sets it to percent, as its own"
                         + " brightness setting does.", new JSONObject().put("type", "object").put("properties", new JSONObject()
                         .put("percent", new JSONObject().put("type", "integer").put("minimum", 0).put("maximum", 100)
@@ -78,6 +89,8 @@ final class HeadUnitTools {
                 return mcu == null ? none() : radio(arguments.optString("action", ""),
                         arguments.has("frequency") ? arguments.optDouble("frequency") : null,
                         arguments.has("preset") ? arguments.optInt("preset") : null);
+            case "phone_status": return mcu == null ? none() : phoneStatus();
+            case "recent_calls": return mcu == null ? none() : recentCalls(arguments.optInt("limit", 10));
             case "brightness": return mcu == null ? none() : brightness(arguments.has("percent") ? arguments.optInt("percent") : null);
             case "eq":
                 return mcu == null ? none() : eq(arguments.has("preset") ? arguments.optInt("preset") : null,
@@ -245,6 +258,61 @@ final class HeadUnitTools {
         android.app.ActivityManager tasks = context.getSystemService(android.app.ActivityManager.class);
         java.util.List<android.app.ActivityManager.RunningTaskInfo> top = tasks == null ? null : tasks.getRunningTasks(1);
         return top == null || top.isEmpty() ? -1 : top.get(0).id;
+    }
+
+    private static final String NO_PHONE = "The head unit's Bluetooth service (android.microntek.mtcser) did not answer.";
+
+    private static String callState(int state) {
+        switch (state) {
+            case HeadUnitPhone.IDLE: return "idle";
+            case HeadUnitPhone.DIALING: return "dialing";
+            case HeadUnitPhone.RINGING: return "ringing";
+            case HeadUnitPhone.IN_CALL: return "in_call";
+            default: return "none";
+        }
+    }
+
+    private AgentTools.Result phoneStatus() throws JSONException {
+        try {
+            Integer state = phone.state();
+            if (state == null) return AgentTools.Result.failed(NO_PHONE);
+            JSONObject status = new JSONObject().put("connected", state != HeadUnitPhone.DISCONNECTED);
+            if (state == HeadUnitPhone.DISCONNECTED) return AgentTools.Result.ok(status.toString());
+            status.put("phone", phone.phoneName()).put("call", callState(state));
+            if (state >= HeadUnitPhone.DIALING) {
+                String number = phone.number();
+                status.put("number", number);
+                String name = HeadUnitPhone.nameOf(number, phone.phoneBook());
+                if (name != null) status.put("name", name);
+            }
+            return AgentTools.Result.ok(status.toString());
+        } catch (android.os.RemoteException | RuntimeException failed) {
+            return AgentTools.Result.failed(NO_PHONE + " " + failed);
+        }
+    }
+
+    private AgentTools.Result recentCalls(int limit) throws JSONException {
+        try {
+            Integer state = phone.state();
+            if (state == null) return AgentTools.Result.failed(NO_PHONE);
+            if (state == HeadUnitPhone.DISCONNECTED) return AgentTools.Result.failed("No phone is connected to the head unit.");
+            long address = phone.phoneAddress();
+            java.util.List<String> book = phone.phoneBook(), log = phone.calls();
+            JSONArray calls = new JSONArray();
+            for (int i = log.size() - 1; i >= 0 && calls.length() < Math.max(1, Math.min(limit, 50)); i--) {
+                String[] fields = log.get(i).split("\\^");
+                // Only this phone's calls: each entry starts with its phone's address in hex.
+                if (fields.length < 6 || address != 0 && !fields[0].equalsIgnoreCase(String.format("%012X", address))) continue;
+                JSONObject call = new JSONObject().put("number", fields[1]).put("when", fields[2] + " " + fields[3])
+                        .put("type", fields[5].equals("1") ? "outgoing" : fields[5].equals("2") ? "incoming" : "missed");
+                String name = HeadUnitPhone.nameOf(fields[1], book);
+                if (name != null) call.put("name", name);
+                calls.put(call);
+            }
+            return AgentTools.Result.ok(new JSONObject().put("calls", calls).toString());
+        } catch (android.os.RemoteException | RuntimeException failed) {
+            return AgentTools.Result.failed(NO_PHONE + " " + failed);
+        }
     }
 
     /** CarSignals hears {@code intent}, as if the car's CAN app sent it; for tests. */
