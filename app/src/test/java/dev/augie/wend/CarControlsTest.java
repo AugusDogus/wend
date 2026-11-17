@@ -4,6 +4,11 @@ import android.app.ActivityManager;
 import android.app.Application;
 import android.content.ComponentName;
 import android.content.Intent;
+import android.media.MediaMetadata;
+import android.media.session.MediaController;
+import android.media.session.MediaSession;
+import android.media.session.MediaSessionManager;
+import android.media.session.PlaybackState;
 import android.os.Process;
 import android.view.KeyEvent;
 import java.util.ArrayList;
@@ -15,6 +20,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
+import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -111,5 +117,50 @@ public class CarControlsTest {
         JSONObject status = new JSONObject(text(callTool("screen_status", new JSONObject())));
         assertEquals(EmbeddedMaps.PACKAGE, status.getString("package"));
         assertFalse(status.getBoolean("home"));
+    }
+
+    /** A session of {@code packageName} in {@code state}, playing {@code title}. */
+    private MediaController session(String packageName, int state, String title) {
+        MediaSession session = new MediaSession(context, packageName);
+        MediaController controller = session.getController();
+        Shadows.shadowOf(controller).setPackageName(packageName);
+        Shadows.shadowOf(controller).setPlaybackState(new PlaybackState.Builder().setState(state, 61_000, 1).build());
+        Shadows.shadowOf(controller).setMetadata(new MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, title).putString(MediaMetadata.METADATA_KEY_ARTIST, "Artist")
+                .putLong(MediaMetadata.METADATA_KEY_DURATION, 200_000).build());
+        Shadows.shadowOf(context.getSystemService(MediaSessionManager.class)).addController(controller);
+        return controller;
+    }
+
+    @Test public void mediaStatusListsTheSessionPlayingFirst() throws Exception {
+        session("com.google.android.youtube", PlaybackState.STATE_PAUSED, "A video");
+        session("com.spotify.music", PlaybackState.STATE_PLAYING, "A song");
+        JSONArray sessions = new JSONObject(text(callTool("media_status", new JSONObject()))).getJSONArray("sessions");
+        assertEquals(2, sessions.length());
+        JSONObject playing = sessions.getJSONObject(0);
+        assertEquals("com.spotify.music", playing.getString("package"));
+        assertEquals("playing", playing.getString("state"));
+        assertEquals("A song", playing.getString("title"));
+        assertEquals(200, playing.getInt("duration_seconds"));
+        assertEquals(61, playing.getInt("position_seconds"));
+        assertEquals("paused", sessions.getJSONObject(1).getString("state"));
+    }
+
+    @Test public void mediaControlActsOnTheSessionPlayingUnlessToldAnother() throws Exception {
+        session("com.google.android.youtube", PlaybackState.STATE_PAUSED, "A video");
+        session("com.spotify.music", PlaybackState.STATE_PLAYING, "A song");
+        // Robolectric's sessions hear no transport controls, so this checks which app and action Wend chose.
+        assertTrue(text(callTool("media_control", new JSONObject().put("action", "toggle"))).startsWith("Asked com.spotify.music to pause."));
+        assertTrue(text(callTool("media_control", new JSONObject().put("action", "next"))).startsWith("Asked com.spotify.music to next."));
+        assertTrue(text(callTool("media_control", new JSONObject().put("action", "play").put("app", "com.google.android.youtube")))
+                .startsWith("Asked com.google.android.youtube to play."));
+    }
+
+    @Test public void mediaControlWithoutSessionsOrWithAnUnknownActionDoesNothing() throws Exception {
+        assertTrue(callTool("media_control", new JSONObject().put("action", "play")).getBoolean("isError"));
+        session("com.spotify.music", PlaybackState.STATE_PLAYING, "A song");
+        JSONObject rewind = callTool("media_control", new JSONObject().put("action", "rewind"));
+        assertTrue(rewind.getBoolean("isError"));
+        assertTrue(text(rewind), text(rewind).contains("play, pause, toggle, next or previous"));
     }
 }

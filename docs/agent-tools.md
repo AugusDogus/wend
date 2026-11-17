@@ -48,6 +48,9 @@ Beyond Maps' guidance, the head unit itself ([`CarControls`](../app/src/main/jav
   opens nothing and lists them.
 - `screen_status()` names the app in front; `screenshot()` returns the whole screen as a JPEG
   (MCP image content), through Android 10's screenshot call, which leaves out secure layers.
+- `media_status()` and `media_control(action, app)`: the active media sessions, the one playing
+  first, with title, artist, album, position and duration; `play`, `pause`, `toggle`, `next` or
+  `previous` on the one playing, or on `app`. Wend reads sessions with `MEDIA_CONTENT_CONTROL`.
 
 ### Why add_stop takes text
 

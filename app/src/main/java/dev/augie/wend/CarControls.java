@@ -9,6 +9,10 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Point;
 import android.graphics.Rect;
+import android.media.MediaMetadata;
+import android.media.session.MediaController;
+import android.media.session.MediaSessionManager;
+import android.media.session.PlaybackState;
 import android.view.Display;
 import android.view.KeyEvent;
 import android.view.SurfaceControl;
@@ -158,6 +162,99 @@ final class CarControls {
             if (drawable != shot) drawable.recycle();
             return AgentTools.Result.image("The car's screen, " + size.x + "x" + size.y + ".", jpeg.toByteArray(), "image/jpeg");
         } finally { shot.recycle(); }
+    }
+
+    /** Lists what plays or played lately in the car, the one media_control acts on first. */
+    AgentTools.Result mediaStatus() throws JSONException {
+        List<MediaController> sessions = sessions();
+        JSONArray listed = new JSONArray();
+        for (MediaController session : sessions) listed.put(describe(session));
+        return AgentTools.Result.ok(new JSONObject().put("sessions", listed).toString());
+    }
+
+    /**
+     * @param action play, pause, toggle, next or previous
+     * @param asked the app to control, by package or name; empty for the one playing, or else the
+     *     latest
+     */
+    AgentTools.Result mediaControl(String action, String asked) throws JSONException {
+        List<MediaController> sessions = sessions();
+        MediaController target = null;
+        for (MediaController session : sessions) {
+            if (asked.isEmpty() || session.getPackageName().equals(asked) || label(session.getPackageName()).equalsIgnoreCase(asked)) {
+                target = session;
+                break;
+            }
+        }
+        if (target == null) {
+            return AgentTools.Result.failed(asked.isEmpty() ? "Nothing plays or played lately in the car; open a media app first."
+                    : "\"" + asked + "\" has no media session now; media_status lists those that do. Nothing changed.");
+        }
+        JSONObject before = describe(target);
+        MediaController.TransportControls controls = target.getTransportControls();
+        if (action.equals("toggle")) action = playing(target) ? "pause" : "play";
+        switch (action) {
+            case "play": controls.play(); break;
+            case "pause": controls.pause(); break;
+            case "next": controls.skipToNext(); break;
+            case "previous": controls.skipToPrevious(); break;
+            default:
+                return AgentTools.Result.failed("media_control takes play, pause, toggle, next or previous, not \"" + action + "\".");
+        }
+        return AgentTools.Result.ok("Asked " + label(target.getPackageName()) + " to " + action + ". Before, it was: " + before);
+    }
+
+    /** @return the active sessions, the one playing first, else in Android's order, the latest first */
+    private List<MediaController> sessions() {
+        MediaSessionManager manager = context.getSystemService(MediaSessionManager.class);
+        List<MediaController> active = manager == null ? new ArrayList<>() : new ArrayList<>(manager.getActiveSessions(null));
+        List<MediaController> ordered = new ArrayList<>();
+        for (MediaController session : active) if (playing(session)) ordered.add(session);
+        for (MediaController session : active) if (!playing(session)) ordered.add(session);
+        return ordered;
+    }
+
+    private JSONObject describe(MediaController session) throws JSONException {
+        JSONObject described = new JSONObject().put("app", label(session.getPackageName())).put("package", session.getPackageName());
+        PlaybackState state = session.getPlaybackState();
+        described.put("state", state == null ? "none" : stateName(state.getState()));
+        MediaMetadata metadata = session.getMetadata();
+        if (metadata != null) {
+            put(described, "title", metadata.getString(MediaMetadata.METADATA_KEY_TITLE));
+            put(described, "artist", metadata.getString(MediaMetadata.METADATA_KEY_ARTIST));
+            put(described, "album", metadata.getString(MediaMetadata.METADATA_KEY_ALBUM));
+            long duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
+            if (duration > 0) described.put("duration_seconds", duration / 1000);
+        }
+        if (state != null && state.getPosition() >= 0) described.put("position_seconds", position(state) / 1000);
+        return described;
+    }
+
+    /** @return where playback is now, in ms: the session reports where it was when its state last changed */
+    private static long position(PlaybackState state) {
+        if (state.getState() != PlaybackState.STATE_PLAYING || state.getLastPositionUpdateTime() <= 0) return state.getPosition();
+        long since = android.os.SystemClock.elapsedRealtime() - state.getLastPositionUpdateTime();
+        return state.getPosition() + (long) (since * state.getPlaybackSpeed());
+    }
+
+    private static void put(JSONObject object, String name, String value) throws JSONException {
+        if (value != null && !value.isEmpty()) object.put(name, value);
+    }
+
+    private static boolean playing(MediaController session) {
+        PlaybackState state = session.getPlaybackState();
+        return state != null && state.getState() == PlaybackState.STATE_PLAYING;
+    }
+
+    private static String stateName(int state) {
+        switch (state) {
+            case PlaybackState.STATE_PLAYING: return "playing";
+            case PlaybackState.STATE_PAUSED: return "paused";
+            case PlaybackState.STATE_STOPPED: return "stopped";
+            case PlaybackState.STATE_BUFFERING: case PlaybackState.STATE_CONNECTING: return "buffering";
+            case PlaybackState.STATE_ERROR: return "error";
+            default: return "none";
+        }
     }
 
     private String label(String packageName) {

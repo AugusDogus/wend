@@ -154,7 +154,20 @@ final class AgentTools {
                                     .put("required", new JSONArray().put("app"))))
                     .put(tool("screen_status", "Names the app in front of the car's screen; home is true when it is Wend's"
                             + " home screen.", noArguments()))
-                    .put(tool("screenshot", "Takes a picture of the car's whole screen, to see what it shows.", noArguments()));
+                    .put(tool("screenshot", "Takes a picture of the car's whole screen, to see what it shows.", noArguments()))
+                    .put(tool("media_status", "Lists the media sessions in the car (music, podcasts, video): each one's app,"
+                            + " state (playing, paused, ...), title, artist, album, and position and duration in seconds."
+                            + " The one playing comes first; media_control acts on it unless told another app.", noArguments()))
+                    .put(tool("media_control", "Plays, pauses or skips what plays in the car, through its app's media"
+                            + " session, as the steering wheel buttons do.",
+                            new JSONObject().put("type", "object")
+                                    .put("properties", new JSONObject()
+                                            .put("action", new JSONObject().put("type", "string")
+                                                    .put("enum", new JSONArray().put("play").put("pause").put("toggle").put("next").put("previous")))
+                                            .put("app", new JSONObject().put("type", "string")
+                                                    .put("description", "The app to control, by name or package; the one playing, or"
+                                                            + " else the latest, if left out")))
+                                    .put("required", new JSONArray().put("action"))));
             return tools;
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
@@ -180,6 +193,8 @@ final class AgentTools {
                 case "open_app": return car.openApp(arguments.optString("app", "").trim(), onMain(this::apps));
                 case "screen_status": return car.screenStatus();
                 case "screenshot": return car.screenshot();
+                case "media_status": return car.mediaStatus();
+                case "media_control": return car.mediaControl(arguments.optString("action", ""), arguments.optString("app", "").trim());
                 default: throw new UnknownTool(name);
             }
         } catch (JSONException impossible) {
