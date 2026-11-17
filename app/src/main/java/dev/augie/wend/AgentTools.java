@@ -168,9 +168,9 @@ final class AgentTools {
                                                     .put("description", "The app to control, by name or package; the one playing, or"
                                                             + " else the latest, if left out")))
                                     .put("required", new JSONArray().put("action"))))
-                    .put(tool("volume", "Reads the car's media volume, or sets it: to percent, or by change. Android shows its"
-                            + " volume bar as it changes. Answers the level as a percent, Android's own level and maximum,"
-                            + " and whether it is muted.",
+                    .put(tool("volume", "Reads the car's volume, or sets it: to percent, or by change. On the head unit it is"
+                            + " the unit's own volume, for every source (Android apps, radio, Bluetooth), as its knob sets"
+                            + " it. Answers the level as a percent, the unit's own level and maximum, and whether it is muted.",
                             new JSONObject().put("type", "object")
                                     .put("properties", new JSONObject()
                                             .put("percent", new JSONObject().put("type", "integer").put("minimum", 0).put("maximum", 100)

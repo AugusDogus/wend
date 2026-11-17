@@ -42,15 +42,20 @@ final class CarControls {
     private static final String NO_APPS = "Wend has not loaded the car's apps yet, or could not; try again in a few seconds.";
     private final Context context;
     private final Keys keys;
+    /** The head unit's MCU, which owns its volume; null without one, as on the emulator. */
+    private final HeadUnit.Mcu mcu;
 
     CarControls(Context context) {
         // Injecting keys needs INJECT_EVENTS, which Wend holds as a platform-signed app.
-        this(context, code -> new Instrumentation().sendKeyDownUpSync(code));
+        this(context, code -> new Instrumentation().sendKeyDownUpSync(code), HeadUnit.mcu());
     }
 
-    CarControls(Context context, Keys keys) {
+    CarControls(Context context, Keys keys) { this(context, keys, null); }
+
+    CarControls(Context context, Keys keys, HeadUnit.Mcu mcu) {
         this.context = context;
         this.keys = keys;
+        this.mcu = mcu;
     }
 
     /** Brings Wend's home screen to the front, as the Home button does. */
@@ -265,11 +270,17 @@ final class CarControls {
      * @param change up, down, mute or unmute, or empty
      */
     AgentTools.Result volume(Integer percent, String change) throws JSONException {
+        if (percent != null && (percent < 0 || percent > 100)) {
+            return AgentTools.Result.failed("percent " + percent + " is not between 0 and 100; nothing changed.");
+        }
+        if (!change.isEmpty() && !java.util.Arrays.asList("up", "down", "mute", "unmute").contains(change)) {
+            return AgentTools.Result.failed("volume's change takes up, down, mute or unmute, not \"" + change + "\".");
+        }
+        if (mcu != null) return unitVolume(percent, change);
         AudioManager audio = context.getSystemService(AudioManager.class);
         if (audio == null) return AgentTools.Result.failed("Android gave Wend no audio service.");
         int stream = AudioManager.STREAM_MUSIC, max = audio.getStreamMaxVolume(stream);
         if (percent != null) {
-            if (percent < 0 || percent > 100) return AgentTools.Result.failed("percent " + percent + " is not between 0 and 100; nothing changed.");
             audio.setStreamVolume(stream, Math.round(percent * max / 100f), AudioManager.FLAG_SHOW_UI);
         } else if (!change.isEmpty()) {
             int direction;
@@ -277,14 +288,50 @@ final class CarControls {
                 case "up": direction = AudioManager.ADJUST_RAISE; break;
                 case "down": direction = AudioManager.ADJUST_LOWER; break;
                 case "mute": direction = AudioManager.ADJUST_MUTE; break;
-                case "unmute": direction = AudioManager.ADJUST_UNMUTE; break;
-                default: return AgentTools.Result.failed("volume's change takes up, down, mute or unmute, not \"" + change + "\".");
+                default: direction = AudioManager.ADJUST_UNMUTE; break;
             }
             audio.adjustStreamVolume(stream, direction, AudioManager.FLAG_SHOW_UI);
         }
         int level = audio.getStreamVolume(stream);
         return AgentTools.Result.ok(new JSONObject().put("percent", max == 0 ? 0 : Math.round(level * 100f / max))
                 .put("level", level).put("max", max).put("muted", audio.isStreamMute(stream)).toString());
+    }
+
+    /**
+     * The head unit's own volume, which its MCU applies to every source (Android, radio,
+     * Bluetooth), not Android's media stream: changed through the unit's system service as its
+     * knob and volume bar change it, so its Settings and on-screen level follow.
+     */
+    private AgentTools.Result unitVolume(Integer percent, String change) throws JSONException {
+        int max = number(mcu.parameter("cfg_maxvolume"), 30), before = unitLevel();
+        boolean wasMuted = unitMuted();
+        if (percent != null) {
+            int target = Math.round(percent * max / 100f);
+            context.sendBroadcast(new Intent(HeadUnit.VOLUME_SET).putExtra("level", target));
+            HeadUnit.settle(() -> unitLevel() == target);
+        } else if (change.equals("up") || change.equals("down")) {
+            context.sendBroadcast(new Intent(HeadUnit.VOLUME_SET).putExtra("type", change.equals("up") ? "add" : "sub"));
+            HeadUnit.settle(() -> unitLevel() != before);
+        } else if (!change.isEmpty() && change.equals("mute") != wasMuted) {
+            // The unit's mute key toggles, so it is pressed only to change the state.
+            context.sendBroadcast(new Intent(HeadUnit.KEY_DOWN).putExtra("keyCode", HeadUnit.KEY_MUTE));
+            HeadUnit.settle(() -> unitMuted() != wasMuted);
+        }
+        int level = unitLevel();
+        return AgentTools.Result.ok(new JSONObject().put("percent", max == 0 ? 0 : Math.round(level * 100f / max))
+                .put("level", level).put("max", max).put("muted", unitMuted()).toString());
+    }
+
+    private int unitLevel() {
+        return android.provider.Settings.System.getInt(context.getContentResolver(), HeadUnit.VOLUME_SETTING, 0);
+    }
+
+    private boolean unitMuted() { return "true".equals(mcu.parameter("av_mute")); }
+
+    /** @return {@code text} as a number, or {@code otherwise} if it is none */
+    static int number(String text, int otherwise) {
+        try { return text == null ? otherwise : Integer.parseInt(text.trim()); }
+        catch (NumberFormatException none) { return otherwise; }
     }
 
     private String label(String packageName) {

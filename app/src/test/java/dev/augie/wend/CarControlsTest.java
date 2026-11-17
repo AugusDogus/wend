@@ -182,4 +182,37 @@ public class CarControlsTest {
         assertTrue(callTool("volume", new JSONObject().put("change", "louder")).getBoolean("isError"));
         assertEquals(before, audio.getStreamVolume(AudioManager.STREAM_MUSIC));
     }
+
+    private Intent sent(String action) {
+        Intent found = null;
+        for (Intent intent : shadowOf(context).getBroadcastIntents()) if (action.equals(intent.getAction())) found = intent;
+        return found;
+    }
+
+    @Test public void onTheHeadUnitVolumeSetsTheUnitsOwnVolume() throws Exception {
+        HeadUnit.settleMs = 0;
+        FakeMcu mcu = new FakeMcu();
+        mcu.parameters.put("cfg_maxvolume", "30");
+        mcu.parameters.put("av_mute", "false");
+        android.provider.Settings.System.putInt(context.getContentResolver(), HeadUnit.VOLUME_SETTING, 12);
+        CarControls unit = new CarControls(context, pressed::add, mcu);
+        JSONObject read = new JSONObject(unit.volume(null, "").text);
+        assertEquals(40, read.getInt("percent"));
+        assertEquals(30, read.getInt("max"));
+        assertFalse(unit.volume(50, "").error);
+        assertEquals(15, sent(HeadUnit.VOLUME_SET).getIntExtra("level", -1));
+        assertFalse(unit.volume(null, "down").error);
+        assertEquals("sub", sent(HeadUnit.VOLUME_SET).getStringExtra("type"));
+    }
+
+    @Test public void onTheHeadUnitMutePressesTheMuteKeyOnlyToChangeIt() throws Exception {
+        HeadUnit.settleMs = 0;
+        FakeMcu mcu = new FakeMcu();
+        mcu.parameters.put("av_mute", "true");
+        CarControls unit = new CarControls(context, pressed::add, mcu);
+        assertFalse(unit.volume(null, "mute").error);
+        assertNull("Already muted", sent(HeadUnit.KEY_DOWN));
+        assertFalse(unit.volume(null, "unmute").error);
+        assertEquals(HeadUnit.KEY_MUTE, sent(HeadUnit.KEY_DOWN).getIntExtra("keyCode", -1));
+    }
 }
