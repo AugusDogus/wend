@@ -75,9 +75,10 @@ ROM). Elsewhere each says the car has no such unit.
   `hct.radio.request.data` and `com.microntek.request.radio` (`type=list`); the RDS name from the
   MCU's `Radio` reports. `on` presses its power toggle only when it is off, `off` sends
   `com.microntek.finish`, presets use `hct.radio.channel.one..six`, seeks set `ctl_radio_seek`
-  (never `auto`, which overwrites the presets), and `tune` starts its activity with `freq` (Hz)
-  and `start=1`, which puts it behind at once; Wend puts back whatever was in front if it came
-  forward anyway.
+  (never `auto`, which overwrites the presets), and `tune` moves its dial
+  (`hct.radio.bar.move`, `FREQ` in Hz), after turning it on and, between FM and AM, stepping its
+  band (`hct.radio.band.next`); the screen stays as it is. On the unit, its activity's `freq` extra
+  was ignored when the activity was new, so Wend does not use it.
 - `phone_status()` and `recent_calls(limit)`: the phone connected over Bluetooth, through the
   unit's exported Bluetooth service (`android.microntek.mtcser/.BlueToothService`, `BTServiceInf`,
   called by its transaction codes, one at a time:

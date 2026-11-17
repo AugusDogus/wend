@@ -135,20 +135,37 @@ public class HeadUnitToolsTest {
         assertTrue(status.getJSONObject("presets").getJSONArray("FM1").isNull(1));
     }
 
-    @Test public void radioTunesThroughItsAppInTheBackground() throws Exception {
+    @Test public void radioTunesAsItsDialDoesAndTurnsOnFirst() throws Exception {
         station = fm(88_500_000, 0);
+        mcu.states.put("av_channel", "sys");
         assertFalse(unit.call("radio", new JSONObject().put("action", "tune").put("frequency", 101.1)).error);
-        Intent tune = shadowOf(context).getNextStartedActivity();
-        assertEquals("com.microntek.radio.MainActivity", tune.getComponent().getClassName());
-        assertEquals("101100000", tune.getStringExtra("freq"));
-        assertEquals(1, tune.getIntExtra("start", 0));
+        assertTrue("Turned on first", sent("hct.radio.power.switch") != null);
+        assertEquals(101_100_000, sent("hct.radio.bar.move").getIntExtra("FREQ", -1));
+        assertNull("Nothing comes to the front", shadowOf(context).getNextStartedActivity());
+    }
+
+    @Test public void radioStepsBandsBetweenFmAndAm() throws Exception {
+        station = fm(88_500_000, 0);
+        mcu.states.put("av_channel", "fm");
+        AgentTools.Result result = unit.call("radio", new JSONObject().put("action", "tune").put("frequency", 1010));
+        assertTrue("This radio stays on FM", result.error);
+        assertTrue(sent("hct.radio.band.next") != null);
+        assertNull(sent("hct.radio.bar.move"));
+    }
+
+    @Test public void radioStatusLeavesOutAPresetTheDialLeft() throws Exception {
+        mcu.states.put("av_channel", "fm");
+        station = fm(101_500_000, 1);
+        presets = new int[30];
+        presets[1] = 89_500_000;
+        assertFalse(answer("radio_status", new JSONObject()).has("preset"));
     }
 
     @Test public void radioRefusesAFrequencyItsBandDoesNotHave() throws Exception {
         station = fm(88_500_000, 0);
         AgentTools.Result result = unit.call("radio", new JSONObject().put("action", "tune").put("frequency", 101.0));
         assertTrue("Odd tenths only, as in the USA", result.error);
-        assertNull(shadowOf(context).getNextStartedActivity());
+        assertNull(sent("hct.radio.bar.move"));
     }
 
     @Test public void radioSeeksOnlyWhileItPlaysAndNeverAutomatically() throws Exception {

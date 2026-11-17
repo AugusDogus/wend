@@ -199,10 +199,14 @@ final class HeadUnitTools {
         }
         status.put("band", HeadUnitRadio.BANDS[Math.min(station.band, 4)]).put("frequency", HeadUnitRadio.words(station.hz))
                 .put("frequency_hz", station.hz);
-        if (station.preset >= 0) status.put("preset", station.preset + 1);
+        int[] presets = radio.presets();
+        // Tuned by the dial, the radio app keeps the preset it left; only a preset it is on counts.
+        int presetAt = station.band * 6 + station.preset;
+        if (station.preset >= 0 && (presets == null || presetAt < presets.length && presets[presetAt] == station.hz)) {
+            status.put("preset", station.preset + 1);
+        }
         String name = radio.name();
         if (name != null) status.put("station", name);
-        int[] presets = radio.presets();
         if (presets != null) {
             JSONObject bands = new JSONObject();
             for (int band = 0; band < HeadUnitRadio.BANDS.length; band++) {
@@ -250,37 +254,36 @@ final class HeadUnitTools {
     }
 
     /**
-     * Tunes through the radio app's activity, which sets its band and preset right and starts its
-     * audio; started with {@code start}, it goes behind at once, and whatever was in front is put
-     * back if it came forward anyway.
+     * Tunes as the radio app's dial does ({@code hct.radio.bar.move}), which keeps whatever is on
+     * screen in front. The radio app sets no band from it, so the radio is turned on first and,
+     * between FM and AM, stepped to a band of the other kind ({@code hct.radio.band.next}).
+     * (Its activity's {@code freq} extra is ignored when the activity is new, as found on the unit.)
      */
     private AgentTools.Result tune(Double frequency) throws JSONException {
         int hz = frequency == null ? -1 : HeadUnitRadio.hz(frequency);
         if (hz < 0) return AgentTools.Result.failed("tune needs a frequency: MHz for FM (101.1) or kHz for AM (1010).");
+        boolean fm = hz >= 10_000_000;
+        if (!radioPlays()) {
+            context.sendBroadcast(new Intent("hct.radio.power.switch"));
+            HeadUnit.settle(this::radioPlays);
+        }
         HeadUnitRadio.Station station = radio.station();
-        if (station != null && station.fm == hz >= 10_000_000 && station.minHz > 0
-                && (hz < station.minHz || hz > station.maxHz || station.stepHz > 0 && (hz - station.minHz) % station.stepHz != 0)) {
+        for (int step = 0; station != null && station.fm != fm && step < HeadUnitRadio.BANDS.length; step++) {
+            context.sendBroadcast(new Intent("hct.radio.band.next"));
+            HeadUnit.settle(() -> { HeadUnitRadio.Station now = radio.station(); return now != null && now.fm == fm; });
+            station = radio.station();
+        }
+        if (station == null) return AgentTools.Result.failed("The head unit's radio app did not answer; nothing changed.");
+        if (station.fm != fm) return AgentTools.Result.failed("The radio did not change to " + (fm ? "FM" : "AM") + "; nothing was tuned.");
+        if (station.minHz > 0 && (hz < station.minHz || hz > station.maxHz
+                || station.stepHz > 0 && (hz - station.minHz) % station.stepHz != 0)) {
             return AgentTools.Result.failed(HeadUnitRadio.words(hz) + " is not a frequency this radio tunes: from "
                     + HeadUnitRadio.words(station.minHz) + " to " + HeadUnitRadio.words(station.maxHz) + " in steps of "
-                    + station.stepHz / 1000 + " kHz. Nothing changed.");
+                    + station.stepHz / 1000 + " kHz. Nothing was tuned.");
         }
-        int front = frontTask();
-        context.startActivity(new Intent().setClassName("com.microntek.radio", "com.microntek.radio.MainActivity")
-                .putExtra("freq", String.valueOf(hz)).putExtra("start", 1).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        HeadUnit.settle(this::radioPlays);
-        if (front != -1 && frontTask() != front) {
-            android.app.ActivityManager tasks = context.getSystemService(android.app.ActivityManager.class);
-            if (tasks != null) tasks.moveTaskToFront(front, 0);
-        }
+        context.sendBroadcast(new Intent("hct.radio.bar.move").putExtra("FREQ", hz));
+        HeadUnit.settle(() -> { HeadUnitRadio.Station now = radio.station(); return now != null && now.hz == hz; });
         return AgentTools.Result.ok("The radio tunes to " + HeadUnitRadio.words(hz) + ".");
-    }
-
-    /** @return the task in front, or -1 if Android does not say */
-    @SuppressWarnings("deprecation")
-    private int frontTask() {
-        android.app.ActivityManager tasks = context.getSystemService(android.app.ActivityManager.class);
-        java.util.List<android.app.ActivityManager.RunningTaskInfo> top = tasks == null ? null : tasks.getRunningTasks(1);
-        return top == null || top.isEmpty() ? -1 : top.get(0).id;
     }
 
     private static final String NO_PHONE = "The head unit's Bluetooth service (android.microntek.mtcser) did not answer.";
