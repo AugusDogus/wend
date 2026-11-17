@@ -237,4 +237,11 @@ public class HeadUnitToolsTest {
         assertFalse(unit.call("hang_up", new JSONObject()).error);
         assertEquals(java.util.Arrays.asList("answer", "hang up"), phone.asked);
     }
+
+    @Test public void radioWaitsForAPhoneCall() throws Exception {
+        phone.state = HeadUnitPhone.IN_CALL;
+        assertTrue(unit.call("radio", new JSONObject().put("action", "on")).error);
+        assertNull(sent("hct.radio.power.switch"));
+        assertFalse("It may still be turned off", unit.call("radio", new JSONObject().put("action", "off")).error);
+    }
 }

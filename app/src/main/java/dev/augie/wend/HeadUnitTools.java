@@ -214,6 +214,10 @@ final class HeadUnitTools {
     private static final String[] PRESETS = {"one", "two", "three", "four", "five", "six"};
 
     private AgentTools.Result radio(String action, Double frequency, Integer preset) throws JSONException {
+        // The unit's phone call owns the audio; the radio app ignores its keys then, and so does Wend.
+        if (!action.equals("off") && phoneState() >= HeadUnitPhone.DIALING) {
+            return AgentTools.Result.failed("A phone call is on; the radio waits until it ends. Nothing changed.");
+        }
         switch (action) {
             case "on":
                 // The radio app's power switch toggles, so it is pressed only to turn it on.
