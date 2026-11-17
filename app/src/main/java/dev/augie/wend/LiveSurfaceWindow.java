@@ -102,7 +102,12 @@ final class LiveSurfaceWindow {
         this.tag = tag;
         windows = host.getSystemService(WindowManager.class);
         host.getWindowManager().getDefaultDisplay().getRealSize(screen);
+        ReverseGear.start(HeadUnit.mcu());
+        ReverseGear.listen(reverse);
     }
+
+    /** In reverse the head unit shows its backup camera, which nothing of Wend's may cover. */
+    private final ReverseGear.Listener reverse = reversing -> { if (running != null) running.reversing(reversing); };
 
     boolean active() { return running != null; }
 
@@ -127,6 +132,7 @@ final class LiveSurfaceWindow {
     void release() {
         cancel();
         stopRoutingHome();
+        ReverseGear.stop(reverse);
     }
 
     private void routeHome() {
@@ -393,6 +399,7 @@ final class LiveSurfaceWindow {
                 currentOutline = 0;
                 currentAlpha = emerging ? 0 : 1;
                 surface.attach(overlay, current, currentRadius, currentAlpha);
+                if (ReverseGear.engaged()) reversing(true);
                 frames = OverlayFrames.of(overlay);
                 target = emerging ? Target.HIDDEN : Target.CARD;
                 phase = Phase.RESTING;
@@ -401,6 +408,14 @@ final class LiveSurfaceWindow {
                 else if (entry == Entry.HELD_AT_CARD) { if (leaveWhenAttached) leaveCard(); }
                 else animateTo(Target.CORNER, MOTION_MS, motion, this::entered);
             } catch (ReflectiveOperationException | RuntimeException error) { fail(error); }
+        }
+
+        /**
+         * Hides the window, and the display it presents, while the car reverses: an invisible
+         * window shows no surface and takes no touches. It shows again where it was.
+         */
+        void reversing(boolean reversing) {
+            overlay.setVisibility(reversing ? View.INVISIBLE : View.VISIBLE);
         }
 
         void createOutline() {

@@ -45,6 +45,25 @@ public class LiveSurfaceWindowTest {
     private final LiveSurfaceWindow window = new LiveSurfaceWindow(host, "Wend test window", "WendTest");
     private final List<String> events = new ArrayList<>();
 
+    @org.junit.After public void forgetReverse() { ReverseGear.forget(); }
+
+    @Test public void reversingHidesTheFloatingWindowFromTheBackupCameraUntilItEnds() {
+        FakeMcu mcu = new FakeMcu();
+        ReverseGear.start(mcu);
+        openFloating();
+        android.os.Bundle reverse = new android.os.Bundle();
+        reverse.putString("type", "backview");
+        reverse.putBoolean("value", true);
+        mcu.listeners.get("CarEvent").accept("CarEvent", reverse);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertEquals(View.INVISIBLE, overlay().getVisibility());
+        reverse.putBoolean("value", false);
+        mcu.listeners.get("CarEvent").accept("CarEvent", reverse);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertEquals(View.VISIBLE, overlay().getVisibility());
+        window.cancel();
+    }
+
     @Before public void drawFramesAtDisplayRate() {
         // Otherwise Robolectric runs every animation frame at once, and nothing is caught moving.
         ShadowChoreographer.setFrameDelay(Duration.ofMillis(16));

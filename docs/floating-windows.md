@@ -670,6 +670,16 @@ never drawn is recycled at once; one that was drawn is left to the collector,
 because the renderer may still hold it. A new title or an ended session drops
 the still, so a still of another video never stands for this one.
 
+## Reverse gear
+
+Wend's windows above other apps are `TYPE_APPLICATION_OVERLAY`, which sit above every activity,
+including the head unit's backup camera (`com.microntek.backview`, which its system service opens
+in reverse). [`ReverseGear`](../app/src/main/java/dev/augie/wend/ReverseGear.java) follows the MCU's
+`backview` state and `CarEvent` reports, and `LiveSurfaceWindow` makes its overlay invisible while
+the car reverses: an invisible window shows no surface, so the live display it presents goes too,
+and takes no touches. It shows again, where it was, when reverse ends. Without the unit's MCU, as
+on the emulator, the car is never in reverse. Not yet checked on the PX6.
+
 ## Validation
 
 ### Floating video and the PiP fix
