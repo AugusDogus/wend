@@ -200,4 +200,41 @@ public class HeadUnitToolsTest {
         assertEquals("Mom", calls.getJSONObject(1).getString("name"));
         assertEquals("incoming", calls.getJSONObject(1).getString("type"));
     }
+
+    @Test public void callDialsANumberWithoutItsPunctuation() throws Exception {
+        assertFalse(unit.call("call", new JSONObject().put("number", "+1 (415) 555-0134")).error);
+        assertEquals(java.util.Arrays.asList("dial +14155550134"), phone.asked);
+    }
+
+    @Test public void callDialsNothingButDigits() throws Exception {
+        assertTrue(unit.call("call", new JSONObject().put("number", "4155550134\r\nAT-CD")).error);
+        assertTrue(unit.call("call", new JSONObject().put("number", "pizza")).error);
+        assertTrue(phone.asked.isEmpty());
+    }
+
+    @Test public void callFindsAContactByName() throws Exception {
+        phone.book.add("Mom^4155550134^Local");
+        phone.book.add("Mom Work^4155550199^Local");
+        phone.book.add("Dad^4155550111^Local");
+        assertFalse(unit.call("call", new JSONObject().put("contact", "mom")).error);
+        assertEquals("The exact name wins", java.util.Arrays.asList("dial 4155550134"), phone.asked);
+        phone.book.add("Dad Cell^4155550112^Local");
+        AgentTools.Result two = unit.call("call", new JSONObject().put("contact", "da"));
+        assertTrue(two.text, two.error && two.text.contains("4155550112"));
+    }
+
+    @Test public void callOnlyFromAnIdlePhone() throws Exception {
+        phone.state = HeadUnitPhone.IN_CALL;
+        assertTrue(unit.call("call", new JSONObject().put("number", "411")).error);
+        assertTrue(phone.asked.isEmpty());
+    }
+
+    @Test public void answerAndHangUpOnlyWhenThereIsACall() throws Exception {
+        assertTrue(unit.call("answer", new JSONObject()).error);
+        assertTrue(unit.call("hang_up", new JSONObject()).error);
+        phone.state = HeadUnitPhone.RINGING;
+        assertFalse(unit.call("answer", new JSONObject()).error);
+        assertFalse(unit.call("hang_up", new JSONObject()).error);
+        assertEquals(java.util.Arrays.asList("answer", "hang up"), phone.asked);
+    }
 }

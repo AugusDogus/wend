@@ -68,6 +68,16 @@ final class HeadUnitTools {
                         new JSONObject().put("type", "object").put("properties", new JSONObject().put("limit",
                                 new JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 50)
                                         .put("description", "How many; 10 if left out")))))
+                .put(tool("call", "Calls a number, or a contact by name from the phone book the head unit synced,"
+                        + " on the phone connected over Bluetooth; the call plays through the car. Give number or"
+                        + " contact. Off the main thread.",
+                        new JSONObject().put("type", "object").put("properties", new JSONObject()
+                                .put("number", new JSONObject().put("type", "string").put("description", "Digits, with + * # allowed"))
+                                .put("contact", new JSONObject().put("type", "string")
+                                        .put("description", "A name, or part of one, from the phone book")))))
+                .put(tool("answer", "Answers the call ringing on the phone connected to the head unit.", noArguments()))
+                .put(tool("hang_up", "Hangs up the call on the phone connected to the head unit, or declines it while it"
+                        + " rings.", noArguments()))
                 .put(tool("brightness", "Reads the head unit's screen brightness, or sets it to percent, as its own"
                         + " brightness setting does.", new JSONObject().put("type", "object").put("properties", new JSONObject()
                         .put("percent", new JSONObject().put("type", "integer").put("minimum", 0).put("maximum", 100)
@@ -91,6 +101,10 @@ final class HeadUnitTools {
                         arguments.has("preset") ? arguments.optInt("preset") : null);
             case "phone_status": return mcu == null ? none() : phoneStatus();
             case "recent_calls": return mcu == null ? none() : recentCalls(arguments.optInt("limit", 10));
+            case "call":
+                return mcu == null ? none() : call(arguments.optString("number", "").trim(), arguments.optString("contact", "").trim());
+            case "answer": return mcu == null ? none() : answer();
+            case "hang_up": return mcu == null ? none() : hangUp();
             case "brightness": return mcu == null ? none() : brightness(arguments.has("percent") ? arguments.optInt("percent") : null);
             case "eq":
                 return mcu == null ? none() : eq(arguments.has("preset") ? arguments.optInt("preset") : null,
@@ -310,6 +324,94 @@ final class HeadUnitTools {
                 calls.put(call);
             }
             return AgentTools.Result.ok(new JSONObject().put("calls", calls).toString());
+        } catch (android.os.RemoteException | RuntimeException failed) {
+            return AgentTools.Result.failed(NO_PHONE + " " + failed);
+        }
+    }
+
+    /** What the Bluetooth module may be asked to dial: anything else could carry its own commands. */
+    private static final java.util.regex.Pattern DIALABLE = java.util.regex.Pattern.compile("\\+?[0-9*#]{1,32}");
+
+    private AgentTools.Result call(String number, String contact) throws JSONException {
+        if (number.isEmpty() == contact.isEmpty()) return AgentTools.Result.failed("call needs a number or a contact, not both.");
+        try {
+            Integer state = phone.state();
+            if (state == null) return AgentTools.Result.failed(NO_PHONE);
+            if (state == HeadUnitPhone.DISCONNECTED) return AgentTools.Result.failed("No phone is connected to the head unit.");
+            if (state != HeadUnitPhone.IDLE) return AgentTools.Result.failed("The phone is " + callState(state) + "; nothing was dialed.");
+            String name = null;
+            if (!contact.isEmpty()) {
+                java.util.Map<String, String> found = contacts(contact, phone.phoneBook());
+                if (found.isEmpty()) {
+                    return AgentTools.Result.failed("No one in the phone book the head unit synced is named \"" + contact + "\"."
+                            + (phone.phoneBook().isEmpty() ? " Its phone book is empty: open the unit's Bluetooth phone app"
+                            + " once with the phone connected to sync it." : "") + " Nothing was dialed.");
+                }
+                if (found.size() > 1) {
+                    return AgentTools.Result.failed("\"" + contact + "\" matches more than one number: " + found
+                            + ". Pass the number. Nothing was dialed.");
+                }
+                java.util.Map.Entry<String, String> only = found.entrySet().iterator().next();
+                number = only.getKey();
+                name = only.getValue();
+            }
+            String dialed = number.replaceAll("[\\s().-]", "");
+            if (!DIALABLE.matcher(dialed).matches()) {
+                return AgentTools.Result.failed("\"" + number + "\" is not a phone number: digits, with + * # allowed. Nothing was dialed.");
+            }
+            phone.dial(dialed);
+            HeadUnit.settle(() -> phoneState() != HeadUnitPhone.IDLE);
+            return AgentTools.Result.ok("Dialing " + (name == null ? dialed : name + " (" + dialed + ")") + " on the phone;"
+                    + " the unit's call screen shows it. hang_up ends it.");
+        } catch (android.os.RemoteException | RuntimeException failed) {
+            return AgentTools.Result.failed(NO_PHONE + " " + failed);
+        }
+    }
+
+    /** @return the numbers in {@code phoneBook} of names that hold {@code contact}, each with its name */
+    static java.util.Map<String, String> contacts(String contact, java.util.List<String> phoneBook) {
+        java.util.Map<String, String> exact = new java.util.LinkedHashMap<>(), partly = new java.util.LinkedHashMap<>();
+        String wanted = contact.toLowerCase(java.util.Locale.ROOT);
+        for (String entry : phoneBook) {
+            String[] fields = entry.split("\\^");
+            if (fields.length < 2 || fields[1].isEmpty()) continue;
+            String name = fields[0].toLowerCase(java.util.Locale.ROOT);
+            if (name.equals(wanted)) exact.put(fields[1], fields[0]);
+            else if (name.contains(wanted)) partly.put(fields[1], fields[0]);
+        }
+        return exact.isEmpty() ? partly : exact;
+    }
+
+    private int phoneState() {
+        try {
+            Integer state = phone.state();
+            return state == null ? HeadUnitPhone.DISCONNECTED : state;
+        } catch (android.os.RemoteException failed) {
+            return HeadUnitPhone.DISCONNECTED;
+        }
+    }
+
+    private AgentTools.Result answer() throws JSONException {
+        try {
+            Integer state = phone.state();
+            if (state == null) return AgentTools.Result.failed(NO_PHONE);
+            if (state != HeadUnitPhone.RINGING) return AgentTools.Result.failed("No call is ringing; the phone is " + callState(state) + ".");
+            phone.answer();
+            HeadUnit.settle(() -> phoneState() == HeadUnitPhone.IN_CALL);
+            return AgentTools.Result.ok("Answered the call.");
+        } catch (android.os.RemoteException | RuntimeException failed) {
+            return AgentTools.Result.failed(NO_PHONE + " " + failed);
+        }
+    }
+
+    private AgentTools.Result hangUp() throws JSONException {
+        try {
+            Integer state = phone.state();
+            if (state == null) return AgentTools.Result.failed(NO_PHONE);
+            if (state < HeadUnitPhone.DIALING) return AgentTools.Result.failed("There is no call; the phone is " + callState(state) + ".");
+            phone.hangUp();
+            HeadUnit.settle(() -> phoneState() < HeadUnitPhone.DIALING);
+            return AgentTools.Result.ok(state == HeadUnitPhone.RINGING ? "Declined the call." : "Hung up.");
         } catch (android.os.RemoteException | RuntimeException failed) {
             return AgentTools.Result.failed(NO_PHONE + " " + failed);
         }

@@ -84,6 +84,11 @@ ROM). Elsewhere each says the car has no such unit.
   [`HeadUnitPhone`](../app/src/main/java/dev/augie/wend/HeadUnitPhone.java)). Names come from the
   phone book the module synced (empty until the unit's dialer has synced it), matched by number as
   the dialer matches them; the call log is the unit's own, filtered to the connected phone.
+- `call(number | contact)`, `answer()`, `hang_up()`: through the same service's `dialOut`,
+  `answerCall` and `hangupCall`, each only in the call state it applies to. The service writes the
+  number straight to the Bluetooth module's serial commands, so Wend dials only `+`, digits, `*`
+  and `#`. A contact is matched by name in the synced phone book; more than one number answers with
+  them all and dials nothing.
 - `brightness(percent)`: reads `cfg_backlight` (0 to 255) or sets it with the unit's
   `com.microntek.BLIGHT_SET` broadcast, as its brightness setting does, never below 10.
 - `eq(preset, loudness)`: the EQ preset (0 the driver's own, 1 to 6 the unit's) and loudness,
