@@ -457,6 +457,8 @@ final class HeadUnitTools {
             mcu.eq(preset);
         }
         if (loudness != null) mcu.loudness(loudness);
+        // The unit applies them a moment later; its own state says so once it has.
+        HeadUnit.settle(() -> (preset == null || mcu.eq() == preset) && (loudness == null || mcu.loudness() == loudness));
         return AgentTools.Result.ok(new JSONObject().put("preset", mcu.eq()).put("loudness", mcu.loudness()).toString());
     }
 
