@@ -57,6 +57,15 @@ Beyond Maps' guidance, the head unit itself ([`CarControls`](../app/src/main/jav
   unit's `com.microntek.VOLUME_SET` broadcast and mute key, as the knob does (see
   `build/px6/rom/notes/mcu.md`, from the Hal9k ROM). Elsewhere it is Android's media stream.
 
+What only the Microntek head unit has ([`HeadUnitTools`](../app/src/main/java/dev/augie/wend/HeadUnitTools.java)),
+through its MCU's `android.microntek.CarManager` (see `build/px6/rom/notes/`, from the Hal9k 5.0
+ROM). Elsewhere each says the car has no such unit.
+
+- `brightness(percent)`: reads `cfg_backlight` (0 to 255) or sets it with the unit's
+  `com.microntek.BLIGHT_SET` broadcast, as its brightness setting does, never below 10.
+- `eq(preset, loudness)`: the EQ preset (0 the driver's own, 1 to 6 the unit's) and loudness,
+  through `CarManager.setEqIdx` and `setLud`.
+
 ### Why add_stop takes text
 
 On 2026-11-15, three `add_stop` input schemas were compared on the emulator. A headless Claude

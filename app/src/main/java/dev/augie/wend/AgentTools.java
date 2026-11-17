@@ -26,7 +26,8 @@ import org.json.JSONObject;
 /**
  * What an agent may do in the car through Wend's MCP server ({@link AgentServer}): start Maps'
  * guidance somewhere, add or remove a stop of the trip Maps guides, list and switch its routes, end that
- * guidance, and read the trip; and, through {@link CarControls}, use the head unit itself. Each tool has a name,
+ * guidance, and read the trip; and, through {@link CarControls} and {@link HeadUnitTools}, use the head
+ * unit itself. Each tool has a name,
  * a description and an input schema for the agent, and a call. Called on any thread; what reads or
  * changes Maps' guidance as Wend keeps it runs on the main thread, and adding a stop waits off it.
  */
@@ -74,13 +75,17 @@ final class AgentTools {
     private static final Map<Integer, CompletableFuture<Bundle>> stopAnswers = new ConcurrentHashMap<>();
     private final Context context;
     private final CarControls car;
+    private final HeadUnitTools headUnit;
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    AgentTools(Context context) { this(context, new CarControls(context)); }
+    AgentTools(Context context) { this(context, new CarControls(context), new HeadUnitTools(context)); }
 
-    AgentTools(Context context, CarControls car) {
+    AgentTools(Context context, CarControls car) { this(context, car, new HeadUnitTools(context, null)); }
+
+    AgentTools(Context context, CarControls car, HeadUnitTools headUnit) {
         this.context = context;
         this.car = car;
+        this.headUnit = headUnit;
     }
 
     /** @return the tools, as MCP's tools/list gives them */
@@ -178,6 +183,8 @@ final class AgentTools {
                                             .put("change", new JSONObject().put("type", "string")
                                                     .put("enum", new JSONArray().put("up").put("down").put("mute").put("unmute"))
                                                     .put("description", "One step up or down, or mute or unmute")))));
+            JSONArray unit = headUnit.list();
+            for (int i = 0; i < unit.length(); i++) tools.put(unit.get(i));
             return tools;
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
@@ -207,7 +214,10 @@ final class AgentTools {
                 case "media_control": return car.mediaControl(arguments.optString("action", ""), arguments.optString("app", "").trim());
                 case "volume":
                     return car.volume(arguments.has("percent") ? arguments.optInt("percent") : null, arguments.optString("change", ""));
-                default: throw new UnknownTool(name);
+                default:
+                    Result unit = headUnit.call(name, arguments);
+                    if (unit == null) throw new UnknownTool(name);
+                    return unit;
             }
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
