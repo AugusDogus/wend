@@ -1,7 +1,7 @@
 # Agent tools
 
 Wend runs a small MCP server so an agent (Grok Bot, Claude, a local model) can drive Google
-Maps in the car. It speaks MCP's Streamable HTTP transport: each JSON-RPC message is POSTed to
+Maps in the car, and the head unit itself. It speaks MCP's Streamable HTTP transport: each JSON-RPC message is POSTed to
 `http://127.0.0.1:7311/mcp` and answered as JSON. It has no resources, prompts or event stream.
 
 ## Tools
@@ -36,6 +36,11 @@ and list them, so a change right after another counts the stops Maps has, and th
   Maps bridge module): the next turn (its distance as Maps words it, and in meters and seconds;
   none while Maps does not know it, as off the route), the time and distance left, the arrival
   time, whether the car is on the route, the destination and the stops ahead.
+
+Beyond Maps' guidance, the head unit itself ([`CarControls`](../app/src/main/java/dev/augie/wend/CarControls.java)):
+
+- `screen_status()` names the app in front; `screenshot()` returns the whole screen as a JPEG
+  (MCP image content), through Android 10's screenshot call, which leaves out secure layers.
 
 ### Why add_stop takes text
 

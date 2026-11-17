@@ -36,7 +36,7 @@ Then press Home, pick Wend and tap Always. Requires JDK 17+ and Android SDK plat
 
 - [Floating windows](docs/floating-windows.md): how the windows behave and how they were validated
 - [Launcher UI](docs/launcher-ui.md): app drawer, dock and settings
-- [Agent tools](docs/agent-tools.md): the MCP server that lets an agent drive Maps
+- [Agent tools](docs/agent-tools.md): the MCP server that lets an agent drive Maps and the head unit
 - [YouTube](docs/youtube-window-transitions.md) and [Maps](docs/maps-window-transitions.md) window transitions
 - [Maps recovery](docs/maps-recovery.md) and the [development log](docs/development-log.md)
 - [Offline development](task-fixture/README.md) with fixture apps on the emulator

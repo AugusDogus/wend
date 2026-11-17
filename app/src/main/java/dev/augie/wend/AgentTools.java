@@ -26,7 +26,7 @@ import org.json.JSONObject;
 /**
  * What an agent may do in the car through Wend's MCP server ({@link AgentServer}): start Maps'
  * guidance somewhere, add or remove a stop of the trip Maps guides, list and switch its routes, end that
- * guidance, and read the trip. Each tool has a name,
+ * guidance, and read the trip; and, through {@link CarControls}, use the head unit itself. Each tool has a name,
  * a description and an input schema for the agent, and a call. Called on any thread; what reads or
  * changes Maps' guidance as Wend keeps it runs on the main thread, and adding a stop waits off it.
  */
@@ -37,14 +37,20 @@ final class AgentTools {
     static final class Result {
         final String text;
         final boolean error;
+        /** A picture for the agent after the text, as {@link #imageType}, or null. */
+        final byte[] image;
+        final String imageType;
 
-        private Result(String text, boolean error) {
+        private Result(String text, boolean error, byte[] image, String imageType) {
             this.text = text;
             this.error = error;
+            this.image = image;
+            this.imageType = imageType;
         }
 
-        static Result ok(String text) { return new Result(text, false); }
-        static Result failed(String text) { return new Result(text, true); }
+        static Result ok(String text) { return new Result(text, false, null, null); }
+        static Result failed(String text) { return new Result(text, true, null, null); }
+        static Result image(String text, byte[] image, String type) { return new Result(text, false, image, type); }
     }
 
     /** No such tool; the agent asked for a name {@link #list()} does not give. */
@@ -67,9 +73,15 @@ final class AgentTools {
     /** Maps' answers to come, by request. */
     private static final Map<Integer, CompletableFuture<Bundle>> stopAnswers = new ConcurrentHashMap<>();
     private final Context context;
+    private final CarControls car;
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    AgentTools(Context context) { this.context = context; }
+    AgentTools(Context context) { this(context, new CarControls(context)); }
+
+    AgentTools(Context context, CarControls car) {
+        this.context = context;
+        this.car = car;
+    }
 
     /** @return the tools, as MCP's tools/list gives them */
     JSONArray list() {
@@ -129,7 +141,10 @@ final class AgentTools {
                             + " arrival time, whether the car is on the route, and the destination and stops ahead when"
                             + " Maps reported them. guiding is false when Maps guides nowhere. The turn's distance is"
                             + " empty, and its meters left out, while Maps itself does not know it, as off the route.",
-                            new JSONObject().put("type", "object").put("properties", new JSONObject())));
+                            new JSONObject().put("type", "object").put("properties", new JSONObject())))
+                    .put(tool("screen_status", "Names the app in front of the car's screen; home is true when it is Wend's"
+                            + " home screen.", noArguments()))
+                    .put(tool("screenshot", "Takes a picture of the car's whole screen, to see what it shows.", noArguments()));
             return tools;
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
@@ -149,8 +164,12 @@ final class AgentTools {
                 case "list_routes": return listRoutes();
                 case "switch_route": return switchRoute(arguments.optString("route", "").trim());
                 case "trip_status": return onMain(this::tripStatus);
+                case "screen_status": return car.screenStatus();
+                case "screenshot": return car.screenshot();
                 default: throw new UnknownTool(name);
             }
+        } catch (JSONException impossible) {
+            throw new IllegalStateException(impossible);
         } catch (TimeoutException busy) {
             return Result.failed("Wend did not answer within " + MAIN_WAIT_MS + " ms, so " + name + " may or may not have"
                     + " run; call trip_status before trying again.");
@@ -446,6 +465,9 @@ final class AgentTools {
             throw new IllegalStateException(impossible);
         }
     }
+
+    /** An input schema without arguments. */
+    private static JSONObject noArguments() throws JSONException { return new JSONObject().put("type", "object").put("properties", new JSONObject()); }
 
     private static JSONObject tool(String name, String description, JSONObject inputSchema) throws JSONException {
         return new JSONObject().put("name", name).put("description", description).put("inputSchema", inputSchema);

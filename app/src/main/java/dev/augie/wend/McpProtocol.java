@@ -53,7 +53,7 @@ final class McpProtocol {
                 .put("protocolVersion", VERSIONS.contains(asked) ? asked : VERSIONS.get(0))
                 .put("capabilities", new JSONObject().put("tools", new JSONObject()))
                 .put("serverInfo", new JSONObject().put("name", "wend").put("version", BuildConfig.VERSION_NAME))
-                .put("instructions", "Wend is the launcher of a car's head unit. Its tools drive Google Maps there.");
+                .put("instructions", "Wend is the launcher of a car's head unit. Its tools drive Google Maps there, and the head unit itself.");
     }
 
     private JSONObject call(Object id, JSONObject params) throws JSONException {
@@ -66,9 +66,12 @@ final class McpProtocol {
         } catch (AgentTools.UnknownTool unknown) {
             return error(id, INVALID_PARAMS, unknown.getMessage());
         }
-        return result(id, new JSONObject()
-                .put("content", new JSONArray().put(new JSONObject().put("type", "text").put("text", result.text)))
-                .put("isError", result.error));
+        JSONArray content = new JSONArray().put(new JSONObject().put("type", "text").put("text", result.text));
+        if (result.image != null) {
+            content.put(new JSONObject().put("type", "image").put("mimeType", result.imageType)
+                    .put("data", android.util.Base64.encodeToString(result.image, android.util.Base64.NO_WRAP)));
+        }
+        return result(id, new JSONObject().put("content", content).put("isError", result.error));
     }
 
     private static JSONObject result(Object id, JSONObject result) throws JSONException {
