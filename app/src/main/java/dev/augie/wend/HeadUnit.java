@@ -31,6 +31,11 @@ final class HeadUnit {
         void eq(int preset);
         boolean loudness();
         void loudness(boolean on);
+        /**
+         * Hears the MCU's reports of {@code types} ("Radio") from now on, each with its Bundle
+         * ({@code type}, {@code value}, ...), on a binder thread.
+         */
+        void listen(String types, java.util.function.BiConsumer<String, android.os.Bundle> listener);
     }
 
     /** How long a change may take to show in the unit's state; tests set it to 0. */
@@ -92,6 +97,24 @@ final class HeadUnit {
         @Override public void eq(int preset) { call(setEqIdx, preset); }
         @Override public boolean loudness() { return ((Integer) call(getLud)) != 0; }
         @Override public void loudness(boolean on) { call(setLud, on); }
+
+        @Override public void listen(String types, java.util.function.BiConsumer<String, android.os.Bundle> listener) {
+            try {
+                // attach works once per CarManager, so each listener has its own.
+                Class<?> type = Class.forName("android.microntek.CarManager"), callback = Class.forName("android.microntek.CarListener");
+                Object own = type.getConstructor().newInstance();
+                Object proxy = java.lang.reflect.Proxy.newProxyInstance(callback.getClassLoader(), new Class<?>[]{callback},
+                        (self, method, arguments) -> {
+                            if (method.getName().equals("onStatusChanged")) {
+                                listener.accept((String) arguments[0], (android.os.Bundle) arguments[1]);
+                            }
+                            return method.getDeclaringClass() == Object.class ? method.invoke(this, arguments) : null;
+                        });
+                type.getMethod("attach", callback, String.class).invoke(own, proxy, types);
+            } catch (ReflectiveOperationException failed) {
+                throw new IllegalStateException("Could not listen to the head unit's " + types + " reports", failed);
+            }
+        }
 
         private Object call(Method method, Object... arguments) {
             try {

@@ -69,6 +69,15 @@ ROM). Elsewhere each says the car has no such unit.
   `ITpmsService` (`com.microntek.tpms`), called by its transaction codes
   ([`HeadUnitTires`](../app/src/main/java/dev/augie/wend/HeadUnitTires.java)); none when the MCU's
   `cfg_tpms` is 0.
+- `radio_status()` and `radio(action, frequency, preset)`: the FM/AM tuner through the radio app's
+  background service ([`HeadUnitRadio`](../app/src/main/java/dev/augie/wend/HeadUnitRadio.java)).
+  Its station and presets come from its `com.microntek.radio.report` answers to
+  `hct.radio.request.data` and `com.microntek.request.radio` (`type=list`); the RDS name from the
+  MCU's `Radio` reports. `on` presses its power toggle only when it is off, `off` sends
+  `com.microntek.finish`, presets use `hct.radio.channel.one..six`, seeks set `ctl_radio_seek`
+  (never `auto`, which overwrites the presets), and `tune` starts its activity with `freq` (Hz)
+  and `start=1`, which puts it behind at once; Wend puts back whatever was in front if it came
+  forward anyway.
 - `brightness(percent)`: reads `cfg_backlight` (0 to 255) or sets it with the unit's
   `com.microntek.BLIGHT_SET` broadcast, as its brightness setting does, never below 10.
 - `eq(preset, loudness)`: the EQ preset (0 the driver's own, 1 to 6 the unit's) and loudness,

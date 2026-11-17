@@ -17,15 +17,19 @@ final class HeadUnitTools {
     private final HeadUnit.Mcu mcu;
     private final CarSignals signals;
     private final HeadUnitTires.Source tires;
+    private final HeadUnitRadio.Source radio;
 
     HeadUnitTools(Context context) { this(context, HeadUnit.mcu()); }
 
-    HeadUnitTools(Context context, HeadUnit.Mcu mcu) { this(context, mcu, HeadUnitTires.of(context)); }
+    HeadUnitTools(Context context, HeadUnit.Mcu mcu) {
+        this(context, mcu, HeadUnitTires.of(context), mcu == null ? null : HeadUnitRadio.of(context, mcu));
+    }
 
-    HeadUnitTools(Context context, HeadUnit.Mcu mcu, HeadUnitTires.Source tires) {
+    HeadUnitTools(Context context, HeadUnit.Mcu mcu, HeadUnitTires.Source tires, HeadUnitRadio.Source radio) {
         this.context = context;
         this.mcu = mcu;
         this.tires = tires;
+        this.radio = radio;
         signals = new CarSignals(context);
     }
 
@@ -39,6 +43,20 @@ final class HeadUnitTools {
                         + " CAN adapter sends them.", noArguments()))
                 .put(tool("tire_pressure", "Reads each tire's pressure, temperature and alarm from the head unit's TPMS"
                         + " app, when the car has a TPMS box set up on the unit. Off the main thread.", noArguments()))
+                .put(tool("radio_status", "Reads the head unit's FM/AM radio: whether it plays, its band, frequency,"
+                        + " preset, the station's RDS name when it sends one, and the presets of each band. Off the main"
+                        + " thread.", noArguments()))
+                .put(tool("radio", "Controls the head unit's FM/AM radio through its radio app, which stays behind"
+                        + " whatever is on screen: on (makes the radio the car's audio), off, tune (to frequency, MHz for"
+                        + " FM like 101.1 or kHz for AM like 1010), seek_up or seek_down to the next station, or preset"
+                        + " (1 to 6 of the band it is on).",
+                        new JSONObject().put("type", "object").put("properties", new JSONObject()
+                                .put("action", new JSONObject().put("type", "string").put("enum", new JSONArray().put("on")
+                                        .put("off").put("tune").put("seek_up").put("seek_down").put("preset")))
+                                .put("frequency", new JSONObject().put("type", "number")
+                                        .put("description", "For tune: MHz for FM (101.1), kHz for AM (1010)"))
+                                .put("preset", new JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 6)))
+                                .put("required", new JSONArray().put("action"))))
                 .put(tool("brightness", "Reads the head unit's screen brightness, or sets it to percent, as its own"
                         + " brightness setting does.", new JSONObject().put("type", "object").put("properties", new JSONObject()
                         .put("percent", new JSONObject().put("type", "integer").put("minimum", 0).put("maximum", 100)
@@ -55,6 +73,11 @@ final class HeadUnitTools {
         switch (name) {
             case "car_status": return mcu == null ? none() : carStatus();
             case "tire_pressure": return mcu == null ? none() : tirePressure();
+            case "radio_status": return mcu == null ? none() : radioStatus();
+            case "radio":
+                return mcu == null ? none() : radio(arguments.optString("action", ""),
+                        arguments.has("frequency") ? arguments.optDouble("frequency") : null,
+                        arguments.has("preset") ? arguments.optInt("preset") : null);
             case "brightness": return mcu == null ? none() : brightness(arguments.has("percent") ? arguments.optInt("percent") : null);
             case "eq":
                 return mcu == null ? none() : eq(arguments.has("preset") ? arguments.optInt("preset") : null,
@@ -131,6 +154,97 @@ final class HeadUnitTools {
             answer.put(names[i], read);
         }
         return AgentTools.Result.ok(answer.toString());
+    }
+
+    private boolean radioPlays() { return "fm".equals(mcu.stringState("av_channel")); }
+
+    private AgentTools.Result radioStatus() throws JSONException {
+        JSONObject status = new JSONObject().put("on", radioPlays());
+        HeadUnitRadio.Station station = radio.station();
+        if (station == null) {
+            return AgentTools.Result.failed("The head unit's radio app (com.microntek.radio) did not answer; it may not be"
+                    + " running, or this unit has no tuner.");
+        }
+        status.put("band", HeadUnitRadio.BANDS[Math.min(station.band, 4)]).put("frequency", HeadUnitRadio.words(station.hz))
+                .put("frequency_hz", station.hz);
+        if (station.preset >= 0) status.put("preset", station.preset + 1);
+        String name = radio.name();
+        if (name != null) status.put("station", name);
+        int[] presets = radio.presets();
+        if (presets != null) {
+            JSONObject bands = new JSONObject();
+            for (int band = 0; band < HeadUnitRadio.BANDS.length; band++) {
+                JSONArray own = new JSONArray();
+                for (int hz : HeadUnitRadio.band(presets, band)) own.put(hz > 0 ? HeadUnitRadio.words(hz) : JSONObject.NULL);
+                bands.put(HeadUnitRadio.BANDS[band], own);
+            }
+            status.put("presets", bands);
+        }
+        return AgentTools.Result.ok(status.toString());
+    }
+
+    /** The radio app's own broadcasts for presets 1 to 6 of its band. */
+    private static final String[] PRESETS = {"one", "two", "three", "four", "five", "six"};
+
+    private AgentTools.Result radio(String action, Double frequency, Integer preset) throws JSONException {
+        switch (action) {
+            case "on":
+                // The radio app's power switch toggles, so it is pressed only to turn it on.
+                if (!radioPlays()) context.sendBroadcast(new Intent("hct.radio.power.switch"));
+                HeadUnit.settle(this::radioPlays);
+                return radioPlays() ? AgentTools.Result.ok("The radio plays.") : AgentTools.Result.failed("The radio did not start.");
+            case "off":
+                context.sendBroadcast(new Intent("com.microntek.finish").putExtra("class", "com.microntek.radio"));
+                HeadUnit.settle(() -> !radioPlays());
+                return AgentTools.Result.ok("The radio is off.");
+            case "seek_up": case "seek_down":
+                if (!radioPlays()) return AgentTools.Result.failed("The radio is off; turn it on first. Nothing changed.");
+                // Never "auto": that scans and overwrites the presets.
+                mcu.set("ctl_radio_seek", action.equals("seek_up") ? "up" : "down");
+                return AgentTools.Result.ok("The radio seeks the " + (action.equals("seek_up") ? "next" : "previous")
+                        + " station; call radio_status in a few seconds for where it stopped.");
+            case "preset":
+                if (preset == null || preset < 1 || preset > 6) return AgentTools.Result.failed("preset needs a preset from 1 to 6.");
+                context.sendBroadcast(new Intent("hct.radio.channel." + PRESETS[preset - 1]));
+                return AgentTools.Result.ok("The radio tunes to preset " + preset + " of its band.");
+            case "tune": return tune(frequency);
+            default:
+                return AgentTools.Result.failed("radio's action is on, off, tune, seek_up, seek_down or preset, not \"" + action + "\".");
+        }
+    }
+
+    /**
+     * Tunes through the radio app's activity, which sets its band and preset right and starts its
+     * audio; started with {@code start}, it goes behind at once, and whatever was in front is put
+     * back if it came forward anyway.
+     */
+    private AgentTools.Result tune(Double frequency) throws JSONException {
+        int hz = frequency == null ? -1 : HeadUnitRadio.hz(frequency);
+        if (hz < 0) return AgentTools.Result.failed("tune needs a frequency: MHz for FM (101.1) or kHz for AM (1010).");
+        HeadUnitRadio.Station station = radio.station();
+        if (station != null && station.fm == hz >= 10_000_000 && station.minHz > 0
+                && (hz < station.minHz || hz > station.maxHz || station.stepHz > 0 && (hz - station.minHz) % station.stepHz != 0)) {
+            return AgentTools.Result.failed(HeadUnitRadio.words(hz) + " is not a frequency this radio tunes: from "
+                    + HeadUnitRadio.words(station.minHz) + " to " + HeadUnitRadio.words(station.maxHz) + " in steps of "
+                    + station.stepHz / 1000 + " kHz. Nothing changed.");
+        }
+        int front = frontTask();
+        context.startActivity(new Intent().setClassName("com.microntek.radio", "com.microntek.radio.MainActivity")
+                .putExtra("freq", String.valueOf(hz)).putExtra("start", 1).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        HeadUnit.settle(this::radioPlays);
+        if (front != -1 && frontTask() != front) {
+            android.app.ActivityManager tasks = context.getSystemService(android.app.ActivityManager.class);
+            if (tasks != null) tasks.moveTaskToFront(front, 0);
+        }
+        return AgentTools.Result.ok("The radio tunes to " + HeadUnitRadio.words(hz) + ".");
+    }
+
+    /** @return the task in front, or -1 if Android does not say */
+    @SuppressWarnings("deprecation")
+    private int frontTask() {
+        android.app.ActivityManager tasks = context.getSystemService(android.app.ActivityManager.class);
+        java.util.List<android.app.ActivityManager.RunningTaskInfo> top = tasks == null ? null : tasks.getRunningTasks(1);
+        return top == null || top.isEmpty() ? -1 : top.get(0).id;
     }
 
     /** CarSignals hears {@code intent}, as if the car's CAN app sent it; for tests. */

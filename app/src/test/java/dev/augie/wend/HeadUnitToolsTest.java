@@ -21,7 +21,14 @@ public class HeadUnitToolsTest {
     private final Application context = RuntimeEnvironment.getApplication();
     private final FakeMcu mcu = new FakeMcu();
     private HeadUnitTires.Reading tires;
-    private final HeadUnitTools unit = new HeadUnitTools(context, mcu, () -> tires);
+    private HeadUnitRadio.Station station;
+    private int[] presets;
+    private String stationName;
+    private final HeadUnitTools unit = new HeadUnitTools(context, mcu, () -> tires, new HeadUnitRadio.Source() {
+        @Override public HeadUnitRadio.Station station() { return station; }
+        @Override public int[] presets() { return presets; }
+        @Override public String name() { return stationName; }
+    });
 
     @Before public void quickly() { HeadUnit.settleMs = 0; }
 
@@ -38,7 +45,7 @@ public class HeadUnitToolsTest {
     }
 
     @Test public void withoutAHeadUnitItsToolsSaySo() throws Exception {
-        AgentTools.Result result = new HeadUnitTools(context, null).call("brightness", new JSONObject());
+        AgentTools.Result result = new HeadUnitTools(context, null, null, null).call("brightness", new JSONObject());
         assertTrue(result.error);
         assertTrue(result.text, result.text.contains("no Microntek head unit"));
     }
@@ -103,5 +110,60 @@ public class HeadUnitToolsTest {
         assertTrue("No TPMS service", unit.call("tire_pressure", new JSONObject()).error);
         mcu.parameters.put("cfg_tpms", "0");
         assertTrue(unit.call("tire_pressure", new JSONObject()).text.contains("no TPMS box"));
+    }
+
+    private static HeadUnitRadio.Station fm(int hz, int preset) {
+        return new HeadUnitRadio.Station(0, hz, preset, 87_500_000, 107_900_000, 200_000, true);
+    }
+
+    @Test public void radioStatusGivesTheStationNameAndPresets() throws Exception {
+        mcu.states.put("av_channel", "fm");
+        station = fm(101_100_000, 2);
+        stationName = "KQED";
+        presets = new int[30];
+        presets[0] = 88_500_000;
+        presets[2] = 101_100_000;
+        JSONObject status = answer("radio_status", new JSONObject());
+        assertTrue(status.getBoolean("on"));
+        assertEquals("FM1", status.getString("band"));
+        assertEquals("101.1 MHz", status.getString("frequency"));
+        assertEquals(3, status.getInt("preset"));
+        assertEquals("KQED", status.getString("station"));
+        assertEquals("88.5 MHz", status.getJSONObject("presets").getJSONArray("FM1").getString(0));
+        assertTrue(status.getJSONObject("presets").getJSONArray("FM1").isNull(1));
+    }
+
+    @Test public void radioTunesThroughItsAppInTheBackground() throws Exception {
+        station = fm(88_500_000, 0);
+        assertFalse(unit.call("radio", new JSONObject().put("action", "tune").put("frequency", 101.1)).error);
+        Intent tune = shadowOf(context).getNextStartedActivity();
+        assertEquals("com.microntek.radio.MainActivity", tune.getComponent().getClassName());
+        assertEquals("101100000", tune.getStringExtra("freq"));
+        assertEquals(1, tune.getIntExtra("start", 0));
+    }
+
+    @Test public void radioRefusesAFrequencyItsBandDoesNotHave() throws Exception {
+        station = fm(88_500_000, 0);
+        AgentTools.Result result = unit.call("radio", new JSONObject().put("action", "tune").put("frequency", 101.0));
+        assertTrue("Odd tenths only, as in the USA", result.error);
+        assertNull(shadowOf(context).getNextStartedActivity());
+    }
+
+    @Test public void radioSeeksOnlyWhileItPlaysAndNeverAutomatically() throws Exception {
+        assertTrue(unit.call("radio", new JSONObject().put("action", "seek_up")).error);
+        mcu.states.put("av_channel", "fm");
+        assertFalse(unit.call("radio", new JSONObject().put("action", "seek_up")).error);
+        assertEquals(java.util.Arrays.asList("ctl_radio_seek=up"), mcu.set);
+    }
+
+    @Test public void radioOnPressesItsToggleOnlyWhenOff() throws Exception {
+        mcu.states.put("av_channel", "fm");
+        unit.call("radio", new JSONObject().put("action", "on"));
+        assertNull(sent("hct.radio.power.switch"));
+        mcu.states.put("av_channel", "sys");
+        unit.call("radio", new JSONObject().put("action", "on"));
+        assertTrue(sent("hct.radio.power.switch") != null);
+        unit.call("radio", new JSONObject().put("action", "preset").put("preset", 4));
+        assertTrue(sent("hct.radio.channel.four") != null);
     }
 }

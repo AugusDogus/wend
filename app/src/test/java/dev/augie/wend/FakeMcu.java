@@ -21,4 +21,8 @@ final class FakeMcu implements HeadUnit.Mcu {
     @Override public void eq(int preset) { eq = preset; }
     @Override public boolean loudness() { return loudness; }
     @Override public void loudness(boolean on) { loudness = on; }
+    final Map<String, java.util.function.BiConsumer<String, android.os.Bundle>> listeners = new HashMap<>();
+    @Override public void listen(String types, java.util.function.BiConsumer<String, android.os.Bundle> listener) {
+        listeners.put(types, listener);
+    }
 }
