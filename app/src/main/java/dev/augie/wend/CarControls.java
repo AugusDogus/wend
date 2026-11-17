@@ -138,8 +138,11 @@ final class CarControls {
             return AgentTools.Result.failed("Android did not say which app is in front.");
         }
         String app = tasks.get(0).topActivity.getPackageName();
-        JSONObject status = new JSONObject().put("app", label(app)).put("package", app)
-                .put("home", context.getPackageName().equals(app));
+        JSONObject status = new JSONObject();
+        // An app without a name, as the head unit's backup camera, goes by its package alone.
+        String name = label(app);
+        if (!name.trim().isEmpty() && !name.equals(app)) status.put("app", name);
+        status.put("package", app).put("home", context.getPackageName().equals(app));
         return AgentTools.Result.ok(status.toString());
     }
 

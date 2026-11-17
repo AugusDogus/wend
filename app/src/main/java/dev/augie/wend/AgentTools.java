@@ -157,7 +157,7 @@ final class AgentTools {
                                     .put("properties", new JSONObject().put("app", new JSONObject().put("type", "string")
                                             .put("description", "The app's name, part of it, or its package, from list_apps")))
                                     .put("required", new JSONArray().put("app"))))
-                    .put(tool("screen_status", "Names the app in front of the car's screen; home is true when it is Wend's"
+                    .put(tool("screen_status", "Names the app in front of the car's screen (app, left out for an app without a name, and package); home is true when it is Wend's"
                             + " home screen.", noArguments()))
                     .put(tool("screenshot", "Takes a picture of the car's whole screen, to see what it shows.", noArguments()))
                     .put(tool("media_status", "Lists the media sessions in the car (music, podcasts, video): each one's app,"

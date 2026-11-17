@@ -120,6 +120,15 @@ public class CarControlsTest {
         assertFalse(status.getBoolean("home"));
     }
 
+    @Test public void screenStatusLeavesOutTheNameOfAnAppWithout() throws Exception {
+        ActivityManager.RunningTaskInfo camera = new ActivityManager.RunningTaskInfo();
+        camera.topActivity = new ComponentName("com.microntek.backview", "com.microntek.backview.MainActivity");
+        shadowOf(context.getSystemService(ActivityManager.class)).setTasks(Arrays.asList(camera));
+        JSONObject status = new JSONObject(text(callTool("screen_status", new JSONObject())));
+        assertFalse(status.has("app"));
+        assertEquals("com.microntek.backview", status.getString("package"));
+    }
+
     /** A session of {@code packageName} in {@code state}, playing {@code title}. */
     private MediaController session(String packageName, int state, String title) {
         MediaSession session = new MediaSession(context, packageName);
