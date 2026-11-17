@@ -168,6 +168,11 @@ final class HeadUnitTools {
             return AgentTools.Result.failed("The head unit's TPMS app did not answer: " + failed + ".");
         }
         if (reading == null) return AgentTools.Result.failed("The head unit's TPMS app (com.microntek.tpms) is not running or not installed.");
+        boolean any = false;
+        for (HeadUnitTires.Tire tire : reading.tires) {
+            any |= tire.alarm != 0 || tire.pressure != null && !tire.pressure.isEmpty();
+        }
+        if (!any) return AgentTools.Result.failed("The head unit's TPMS app has no readings: no tire sensors report to it.");
         JSONObject answer = new JSONObject()
                 .put("pressure_unit", reading.pressureUnit == 2 ? "psi" : reading.pressureUnit == 1 ? "bar" : "kPa")
                 .put("temperature_unit", reading.temperatureUnit == 1 ? "F" : "C");

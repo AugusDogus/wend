@@ -244,4 +244,11 @@ public class HeadUnitToolsTest {
         assertNull(sent("hct.radio.power.switch"));
         assertFalse("It may still be turned off", unit.call("radio", new JSONObject().put("action", "off")).error);
     }
+
+    @Test public void tirePressureWithoutSensorsSaysSo() throws Exception {
+        HeadUnitTires.Tire none = new HeadUnitTires.Tire("", "", 0);
+        tires = new HeadUnitTires.Reading(new HeadUnitTires.Tire[]{none, none, none, none}, 0, 0);
+        AgentTools.Result result = unit.call("tire_pressure", new JSONObject());
+        assertTrue(result.text, result.error && result.text.contains("no tire sensors"));
+    }
 }
