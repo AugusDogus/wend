@@ -63,4 +63,26 @@ public class HeadUnitToolsTest {
         assertTrue(unit.call("eq", new JSONObject().put("preset", 7)).error);
         assertEquals(3, mcu.eq);
     }
+
+    @Test public void carStatusIsTheUnitsStateAndWhatTheCarSent() throws Exception {
+        mcu.states.put("backview", true);
+        mcu.states.put("backview_mode", "backview");
+        mcu.states.put("headlight", true);
+        mcu.states.put("handbrake", false);
+        mcu.states.put("carpower", "power_on");
+        mcu.states.put("av_channel", "fm");
+        mcu.parameters.put("av_mute", "false");
+        mcu.parameters.put("sta_mcu_version", "MTCE_GS_V3.83");
+        unit.heard(new Intent(CarSignals.SPEED).putExtra("speed", "42"));
+        JSONObject status = answer("car_status", new JSONObject());
+        assertTrue(status.getBoolean("reverse"));
+        assertEquals("backview", status.getString("camera"));
+        assertTrue(status.getBoolean("headlights"));
+        assertTrue("No driving lock: the brake is on", status.getBoolean("parking_brake"));
+        assertEquals("radio", status.getString("audio_source"));
+        assertEquals("42", status.getString("speed_kmh"));
+        assertEquals(0, status.getInt("speed_kmh_seconds_ago"));
+        assertFalse("This car sent no RPM", status.has("rpm"));
+        assertEquals("MTCE_GS_V3.83", status.getString("mcu_version"));
+    }
 }
