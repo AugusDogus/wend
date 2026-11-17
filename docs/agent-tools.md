@@ -65,6 +65,10 @@ ROM). Elsewhere each says the car has no such unit.
   parking brake from its driving lock, power, audio source, mute, the MCU version), and the speed,
   RPM and outside temperature its CAN app broadcasts, with their age, when the car's CAN adapter
   sends them ([`CarSignals`](../app/src/main/java/dev/augie/wend/CarSignals.java)).
+- `tire_pressure()`: each tire's pressure, temperature and alarm from the TPMS app's exported
+  `ITpmsService` (`com.microntek.tpms`), called by its transaction codes
+  ([`HeadUnitTires`](../app/src/main/java/dev/augie/wend/HeadUnitTires.java)); none when the MCU's
+  `cfg_tpms` is 0.
 - `brightness(percent)`: reads `cfg_backlight` (0 to 255) or sets it with the unit's
   `com.microntek.BLIGHT_SET` broadcast, as its brightness setting does, never below 10.
 - `eq(preset, loudness)`: the EQ preset (0 the driver's own, 1 to 6 the unit's) and loudness,

@@ -16,12 +16,16 @@ final class HeadUnitTools {
     /** The unit's MCU; null without one, as on the emulator. */
     private final HeadUnit.Mcu mcu;
     private final CarSignals signals;
+    private final HeadUnitTires.Source tires;
 
     HeadUnitTools(Context context) { this(context, HeadUnit.mcu()); }
 
-    HeadUnitTools(Context context, HeadUnit.Mcu mcu) {
+    HeadUnitTools(Context context, HeadUnit.Mcu mcu) { this(context, mcu, HeadUnitTires.of(context)); }
+
+    HeadUnitTools(Context context, HeadUnit.Mcu mcu, HeadUnitTires.Source tires) {
         this.context = context;
         this.mcu = mcu;
+        this.tires = tires;
         signals = new CarSignals(context);
     }
 
@@ -33,6 +37,8 @@ final class HeadUnitTools {
                         + " radio, bluetooth, aux, ...), whether it is muted, and the MCU's version; and the speed (km/h),"
                         + " RPM and outside temperature with how many seconds ago the car sent each, only if this car's"
                         + " CAN adapter sends them.", noArguments()))
+                .put(tool("tire_pressure", "Reads each tire's pressure, temperature and alarm from the head unit's TPMS"
+                        + " app, when the car has a TPMS box set up on the unit. Off the main thread.", noArguments()))
                 .put(tool("brightness", "Reads the head unit's screen brightness, or sets it to percent, as its own"
                         + " brightness setting does.", new JSONObject().put("type", "object").put("properties", new JSONObject()
                         .put("percent", new JSONObject().put("type", "integer").put("minimum", 0).put("maximum", 100)
@@ -48,6 +54,7 @@ final class HeadUnitTools {
     AgentTools.Result call(String name, JSONObject arguments) throws JSONException {
         switch (name) {
             case "car_status": return mcu == null ? none() : carStatus();
+            case "tire_pressure": return mcu == null ? none() : tirePressure();
             case "brightness": return mcu == null ? none() : brightness(arguments.has("percent") ? arguments.optInt("percent") : null);
             case "eq":
                 return mcu == null ? none() : eq(arguments.has("preset") ? arguments.optInt("preset") : null,
@@ -98,6 +105,32 @@ final class HeadUnitTools {
         CarSignals.Signal heard = signals.last(action);
         if (heard == null) return;
         status.put(name, heard.value).put(name + "_seconds_ago", (android.os.SystemClock.uptimeMillis() - heard.at) / 1000);
+    }
+
+    private AgentTools.Result tirePressure() throws JSONException {
+        if ("0".equals(mcu.parameter("cfg_tpms"))) {
+            return AgentTools.Result.failed("This head unit has no TPMS box set up (its MCU's cfg_tpms is 0), so it reads no tire pressures.");
+        }
+        HeadUnitTires.Reading reading;
+        try {
+            reading = tires.read();
+        } catch (android.os.RemoteException | RuntimeException failed) {
+            return AgentTools.Result.failed("The head unit's TPMS app did not answer: " + failed + ".");
+        }
+        if (reading == null) return AgentTools.Result.failed("The head unit's TPMS app (com.microntek.tpms) is not running or not installed.");
+        JSONObject answer = new JSONObject()
+                .put("pressure_unit", reading.pressureUnit == 2 ? "psi" : reading.pressureUnit == 1 ? "bar" : "kPa")
+                .put("temperature_unit", reading.temperatureUnit == 1 ? "F" : "C");
+        String[] names = {"front_left", "front_right", "rear_left", "rear_right"};
+        for (int i = 0; i < names.length; i++) {
+            HeadUnitTires.Tire tire = reading.tires[i];
+            JSONObject read = new JSONObject().put("alarm", tire.alarm != 0);
+            if (tire.pressure != null && !tire.pressure.isEmpty()) read.put("pressure", tire.pressure);
+            if (tire.temperature != null && !tire.temperature.isEmpty()) read.put("temperature", tire.temperature);
+            if (tire.alarm != 0) read.put("alarm_code", tire.alarm);
+            answer.put(names[i], read);
+        }
+        return AgentTools.Result.ok(answer.toString());
     }
 
     /** CarSignals hears {@code intent}, as if the car's CAN app sent it; for tests. */

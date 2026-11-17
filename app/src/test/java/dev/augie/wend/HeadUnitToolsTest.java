@@ -20,7 +20,8 @@ import static org.robolectric.Shadows.shadowOf;
 public class HeadUnitToolsTest {
     private final Application context = RuntimeEnvironment.getApplication();
     private final FakeMcu mcu = new FakeMcu();
-    private final HeadUnitTools unit = new HeadUnitTools(context, mcu);
+    private HeadUnitTires.Reading tires;
+    private final HeadUnitTools unit = new HeadUnitTools(context, mcu, () -> tires);
 
     @Before public void quickly() { HeadUnit.settleMs = 0; }
 
@@ -84,5 +85,23 @@ public class HeadUnitToolsTest {
         assertEquals(0, status.getInt("speed_kmh_seconds_ago"));
         assertFalse("This car sent no RPM", status.has("rpm"));
         assertEquals("MTCE_GS_V3.83", status.getString("mcu_version"));
+    }
+
+    @Test public void tirePressureGivesEachTireInItsUnits() throws Exception {
+        tires = new HeadUnitTires.Reading(new HeadUnitTires.Tire[]{new HeadUnitTires.Tire("32.5", "21", 0),
+                new HeadUnitTires.Tire("32.0", "22", 0), new HeadUnitTires.Tire("24.1", "20", 3),
+                new HeadUnitTires.Tire("", "", 0)}, 2, 0);
+        JSONObject read = answer("tire_pressure", new JSONObject());
+        assertEquals("psi", read.getString("pressure_unit"));
+        assertEquals("32.5", read.getJSONObject("front_left").getString("pressure"));
+        assertTrue(read.getJSONObject("rear_left").getBoolean("alarm"));
+        assertEquals(3, read.getJSONObject("rear_left").getInt("alarm_code"));
+        assertFalse("Nothing heard from it yet", read.getJSONObject("rear_right").has("pressure"));
+    }
+
+    @Test public void tirePressureWithoutATpmsBoxOrAppSaysSo() throws Exception {
+        assertTrue("No TPMS service", unit.call("tire_pressure", new JSONObject()).error);
+        mcu.parameters.put("cfg_tpms", "0");
+        assertTrue(unit.call("tire_pressure", new JSONObject()).text.contains("no TPMS box"));
     }
 }
