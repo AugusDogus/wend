@@ -167,7 +167,17 @@ final class AgentTools {
                                             .put("app", new JSONObject().put("type", "string")
                                                     .put("description", "The app to control, by name or package; the one playing, or"
                                                             + " else the latest, if left out")))
-                                    .put("required", new JSONArray().put("action"))));
+                                    .put("required", new JSONArray().put("action"))))
+                    .put(tool("volume", "Reads the car's media volume, or sets it: to percent, or by change. Android shows its"
+                            + " volume bar as it changes. Answers the level as a percent, Android's own level and maximum,"
+                            + " and whether it is muted.",
+                            new JSONObject().put("type", "object")
+                                    .put("properties", new JSONObject()
+                                            .put("percent", new JSONObject().put("type", "integer").put("minimum", 0).put("maximum", 100)
+                                                    .put("description", "The level to set, 0 to 100"))
+                                            .put("change", new JSONObject().put("type", "string")
+                                                    .put("enum", new JSONArray().put("up").put("down").put("mute").put("unmute"))
+                                                    .put("description", "One step up or down, or mute or unmute")))));
             return tools;
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
@@ -195,6 +205,8 @@ final class AgentTools {
                 case "screenshot": return car.screenshot();
                 case "media_status": return car.mediaStatus();
                 case "media_control": return car.mediaControl(arguments.optString("action", ""), arguments.optString("app", "").trim());
+                case "volume":
+                    return car.volume(arguments.has("percent") ? arguments.optInt("percent") : null, arguments.optString("change", ""));
                 default: throw new UnknownTool(name);
             }
         } catch (JSONException impossible) {

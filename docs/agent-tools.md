@@ -51,6 +51,9 @@ Beyond Maps' guidance, the head unit itself ([`CarControls`](../app/src/main/jav
 - `media_status()` and `media_control(action, app)`: the active media sessions, the one playing
   first, with title, artist, album, position and duration; `play`, `pause`, `toggle`, `next` or
   `previous` on the one playing, or on `app`. Wend reads sessions with `MEDIA_CONTENT_CONTROL`.
+- `volume(percent | change)`: reads or sets the media stream's volume (`up`, `down`, `mute`,
+  `unmute`), showing Android's volume bar. On the PX6 the knob may drive its own volume rather
+  than Android's media stream; that was not checked yet.
 
 ### Why add_stop takes text
 

@@ -9,6 +9,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Point;
 import android.graphics.Rect;
+import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSessionManager;
@@ -255,6 +256,35 @@ final class CarControls {
             case PlaybackState.STATE_ERROR: return "error";
             default: return "none";
         }
+    }
+
+    /**
+     * Reads or changes the media volume, showing Android's volume bar as the car's knob does.
+     *
+     * @param percent the level to set, 0 to 100, or null
+     * @param change up, down, mute or unmute, or empty
+     */
+    AgentTools.Result volume(Integer percent, String change) throws JSONException {
+        AudioManager audio = context.getSystemService(AudioManager.class);
+        if (audio == null) return AgentTools.Result.failed("Android gave Wend no audio service.");
+        int stream = AudioManager.STREAM_MUSIC, max = audio.getStreamMaxVolume(stream);
+        if (percent != null) {
+            if (percent < 0 || percent > 100) return AgentTools.Result.failed("percent " + percent + " is not between 0 and 100; nothing changed.");
+            audio.setStreamVolume(stream, Math.round(percent * max / 100f), AudioManager.FLAG_SHOW_UI);
+        } else if (!change.isEmpty()) {
+            int direction;
+            switch (change) {
+                case "up": direction = AudioManager.ADJUST_RAISE; break;
+                case "down": direction = AudioManager.ADJUST_LOWER; break;
+                case "mute": direction = AudioManager.ADJUST_MUTE; break;
+                case "unmute": direction = AudioManager.ADJUST_UNMUTE; break;
+                default: return AgentTools.Result.failed("volume's change takes up, down, mute or unmute, not \"" + change + "\".");
+            }
+            audio.adjustStreamVolume(stream, direction, AudioManager.FLAG_SHOW_UI);
+        }
+        int level = audio.getStreamVolume(stream);
+        return AgentTools.Result.ok(new JSONObject().put("percent", max == 0 ? 0 : Math.round(level * 100f / max))
+                .put("level", level).put("max", max).put("muted", audio.isStreamMute(stream)).toString());
     }
 
     private String label(String packageName) {

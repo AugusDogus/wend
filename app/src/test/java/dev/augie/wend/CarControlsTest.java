@@ -4,6 +4,7 @@ import android.app.ActivityManager;
 import android.app.Application;
 import android.content.ComponentName;
 import android.content.Intent;
+import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSession;
@@ -162,5 +163,23 @@ public class CarControlsTest {
         JSONObject rewind = callTool("media_control", new JSONObject().put("action", "rewind"));
         assertTrue(rewind.getBoolean("isError"));
         assertTrue(text(rewind), text(rewind).contains("play, pause, toggle, next or previous"));
+    }
+
+    @Test public void volumeReadsAndSetsTheMediaVolume() throws Exception {
+        AudioManager audio = context.getSystemService(AudioManager.class);
+        int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+        JSONObject set = new JSONObject(text(callTool("volume", new JSONObject().put("percent", 50))));
+        assertEquals(Math.round(max / 2f), audio.getStreamVolume(AudioManager.STREAM_MUSIC));
+        assertEquals(max, set.getInt("max"));
+        JSONObject read = new JSONObject(text(callTool("volume", new JSONObject())));
+        assertEquals(set.getInt("level"), read.getInt("level"));
+    }
+
+    @Test public void volumeRefusesALevelOutOfRangeOrAnUnknownChange() throws Exception {
+        AudioManager audio = context.getSystemService(AudioManager.class);
+        int before = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+        assertTrue(callTool("volume", new JSONObject().put("percent", 120)).getBoolean("isError"));
+        assertTrue(callTool("volume", new JSONObject().put("change", "louder")).getBoolean("isError"));
+        assertEquals(before, audio.getStreamVolume(AudioManager.STREAM_MUSIC));
     }
 }
